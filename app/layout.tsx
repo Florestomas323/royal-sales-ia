@@ -40,10 +40,10 @@ export const metadata: Metadata = {
       'El sistema operativo con IA para equipos de marketing y ventas de alto rendimiento. Campañas, leads, pipeline y atribución en un solo command center.',
     images: [
       {
-        url: '/royal-sales-logo.png',
-        width: 1700,
-        height: 955,
-        alt: 'Royal Sales IA',
+        url: '/royal-sales-og.png',
+        width: 1024,
+        height: 1024,
+        alt: 'Royal Sales IA — Marketing & Sales OS',
       },
     ],
   },
@@ -52,7 +52,7 @@ export const metadata: Metadata = {
     title: 'Royal Sales IA — Marketing & Sales OS',
     description:
       'El sistema operativo con IA para equipos de marketing y ventas de alto rendimiento.',
-    images: ['/royal-sales-logo.png'],
+    images: ['/royal-sales-og.png'],
   },
 }
 
