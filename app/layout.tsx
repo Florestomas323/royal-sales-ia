@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
+import { AuthProvider } from '@/lib/firebase/auth-context'
 import './globals.css'
 
 const geistSans = Geist({
@@ -44,7 +45,9 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} bg-background`}
     >
       <body className="font-sans antialiased">
-        <TooltipProvider delay={200}>{children}</TooltipProvider>
+        <AuthProvider>
+          <TooltipProvider delay={200}>{children}</TooltipProvider>
+        </AuthProvider>
         <Toaster position="top-right" />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

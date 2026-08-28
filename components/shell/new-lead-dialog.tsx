@@ -26,18 +26,43 @@ import {
 } from '@/components/ui/select'
 import { campaigns, users } from '@/lib/mock-data'
 import { PLATFORM_LABELS } from '@/lib/constants'
+import { createLead } from '@/lib/firebase/leads'
 
 export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
   const [open, setOpen] = React.useState(false)
+  const [campaignId, setCampaignId] = React.useState(campaigns[0].id)
+  const [assignedToId, setAssignedToId] = React.useState(users[1].id)
+  const [submitting, setSubmitting] = React.useState(false)
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    const name =
-      (new FormData(e.currentTarget).get('name') as string) || 'New lead'
-    toast.success('Lead created', {
-      description: `${name} was added to New Lead. (Mock action — no data is persisted yet.)`,
-    })
-    setOpen(false)
+    const form = new FormData(e.currentTarget)
+    const name = (form.get('name') as string)?.trim() || 'Nuevo lead'
+    const phone = (form.get('phone') as string)?.trim()
+    const email = (form.get('email') as string)?.trim()
+    const campaign = campaigns.find((c) => c.id === campaignId)
+
+    setSubmitting(true)
+    try {
+      await createLead({
+        name,
+        phone,
+        email,
+        assignedToId,
+        campaignId,
+        campaignName: campaign?.name,
+        source: campaign?.platform,
+        clientId: campaign?.clientId,
+      })
+      toast.success('Lead creado', {
+        description: `${name} se añadió a Nuevo Lead.`,
+      })
+      setOpen(false)
+    } catch {
+      toast.error('No se pudo crear el lead. Inténtalo de nuevo.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -58,8 +83,7 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
         <DialogHeader>
           <DialogTitle>New lead</DialogTitle>
           <DialogDescription>
-            Manually add a lead to the pipeline. This is a mock action for
-            Phase 1.
+            Añade un lead manualmente al pipeline. Se guarda en tiempo real.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
@@ -80,7 +104,7 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
             </div>
             <Field>
               <FieldLabel>Campaign</FieldLabel>
-              <Select defaultValue={campaigns[0].id}>
+              <Select value={campaignId} onValueChange={setCampaignId}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select campaign" />
                 </SelectTrigger>
@@ -95,7 +119,7 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
             </Field>
             <Field>
               <FieldLabel>Assign to</FieldLabel>
-              <Select defaultValue={users[1].id}>
+              <Select value={assignedToId} onValueChange={setAssignedToId}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select rep" />
                 </SelectTrigger>
@@ -115,7 +139,9 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
             <DialogClose render={<Button variant="outline" type="button" />}>
               Cancel
             </DialogClose>
-            <Button type="submit">Create lead</Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? 'Creando…' : 'Create lead'}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

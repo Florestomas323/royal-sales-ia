@@ -1,14 +1,15 @@
-import { leads } from "@/lib/mock-data"
+import type { Lead } from "@/types"
 import { formatCurrency } from "@/lib/format"
 import { Card, CardContent } from "@/components/ui/card"
 
-export function PipelineSummary() {
+export function PipelineSummary({ leads }: { leads: Lead[] }) {
+  const total = leads.length || 1
   const open = leads.filter((l) => l.stage !== "sale")
   const openValue = open.reduce((sum, l) => sum + l.potentialValue, 0)
   const won = leads.filter((l) => l.stage === "sale")
   const wonValue = won.reduce((sum, l) => sum + l.potentialValue, 0)
-  const avgScore = Math.round(leads.reduce((sum, l) => sum + l.score, 0) / leads.length)
-  const winRate = Math.round((won.length / leads.length) * 100)
+  const avgScore = Math.round(leads.reduce((sum, l) => sum + l.score, 0) / total)
+  const winRate = Math.round((won.length / total) * 100)
 
   const stats = [
     { label: "Open pipeline", value: formatCurrency(openValue, true), sub: `${open.length} active leads` },

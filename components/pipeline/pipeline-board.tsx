@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import { GripVertical } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { leads as seedLeads } from "@/lib/mock-data"
+import { updateLeadStage } from "@/lib/firebase/leads"
 import { STAGE_ORDER, STAGE_LABELS } from "@/lib/constants"
 import { formatCurrency } from "@/lib/format"
 import type { Lead, PipelineStage } from "@/types"
@@ -23,8 +23,7 @@ const STAGE_ACCENT: Record<PipelineStage, string> = {
   sale: "var(--success)",
 }
 
-export function PipelineBoard() {
-  const [leads, setLeads] = useState<Lead[]>(seedLeads)
+export function PipelineBoard({ leads }: { leads: Lead[] }) {
   const [dragId, setDragId] = useState<string | null>(null)
   const [overStage, setOverStage] = useState<PipelineStage | null>(null)
   const [selected, setSelected] = useState<Lead | null>(null)
@@ -38,14 +37,19 @@ export function PipelineBoard() {
     return map
   }, [leads])
 
-  function handleDrop(stage: PipelineStage) {
+  async function handleDrop(stage: PipelineStage) {
     if (!dragId) return
     const lead = leads.find((l) => l.id === dragId)
     setOverStage(null)
     setDragId(null)
     if (!lead || lead.stage === stage) return
-    setLeads((prev) => prev.map((l) => (l.id === dragId ? { ...l, stage } : l)))
-    toast.success(`${lead.name} moved to ${STAGE_LABELS[stage]}`)
+    // Firestore latency compensation updates the live snapshot instantly.
+    try {
+      await updateLeadStage(lead.id, stage)
+      toast.success(`${lead.name} → ${STAGE_LABELS[stage]}`)
+    } catch {
+      toast.error("No se pudo mover el lead. Inténtalo de nuevo.")
+    }
   }
 
   return (
@@ -115,7 +119,7 @@ export function PipelineBoard() {
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium">{lead.name}</p>
                           <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                            <PlatformMark platform={lead.platform} className="size-4" />
+                            <PlatformMark platform={lead.source} className="size-4" />
                             <span className="truncate">{lead.campaignName}</span>
                           </div>
                         </div>

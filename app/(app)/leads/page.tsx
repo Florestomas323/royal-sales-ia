@@ -1,7 +1,6 @@
 import type { Metadata } from "next"
 import { PageHeader } from "@/components/shared/page-header"
-import { LeadsView } from "@/components/leads/leads-view"
-import { leads } from "@/lib/mock-data"
+import { LeadsLive } from "@/components/leads/leads-live"
 
 export const metadata: Metadata = {
   title: "Leads · Royal Sales IA",
@@ -15,7 +14,7 @@ export default function LeadsPage() {
         title="Leads"
         description="Every lead from every campaign — scored, attributed and ready to work."
       />
-      <LeadsView leads={leads} />
+      <LeadsLive />
     </div>
   )
 }

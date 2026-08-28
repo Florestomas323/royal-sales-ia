@@ -1,7 +1,6 @@
 import type { Metadata } from "next"
 import { PageHeader } from "@/components/shared/page-header"
-import { PipelineSummary } from "@/components/pipeline/pipeline-summary"
-import { PipelineBoard } from "@/components/pipeline/pipeline-board"
+import { PipelineLive } from "@/components/pipeline/pipeline-live"
 
 export const metadata: Metadata = {
   title: "Pipeline · Royal Sales IA",
@@ -14,8 +13,7 @@ export default function PipelinePage() {
         title="Pipeline"
         description="Drag leads across stages to keep every deal moving forward."
       />
-      <PipelineSummary />
-      <PipelineBoard />
+      <PipelineLive />
     </div>
   )
 }

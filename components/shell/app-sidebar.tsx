@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { ChevronsUpDown, Crown, LogOut, Settings, Sparkles } from 'lucide-react'
 
 import {
@@ -30,9 +30,21 @@ import { UserAvatar } from '@/components/shared/user-avatar'
 import { navSections } from './nav-config'
 import { currentUser, currentWorkspace } from '@/lib/mock-data'
 import { ROLE_LABELS } from '@/lib/constants'
+import { useAuth } from '@/lib/firebase/auth-context'
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+  const { user, signOut } = useAuth()
+
+  // Prefer the signed-in Firebase identity, fall back to demo profile.
+  const displayName = user?.displayName || currentUser.name
+  const displayEmail = user?.email || currentUser.email
+
+  async function handleLogout() {
+    await signOut()
+    router.replace('/login')
+  }
 
   return (
     <Sidebar collapsible="icon">
@@ -98,12 +110,12 @@ export function AppSidebar() {
                 }
               >
                 <UserAvatar
-                  name={currentUser.name}
+                  name={displayName}
                   color={currentUser.avatarColor}
                 />
                 <div className="flex flex-1 flex-col text-left leading-tight group-data-[collapsible=icon]:hidden">
                   <span className="truncate text-sm font-medium text-sidebar-foreground">
-                    {currentUser.name}
+                    {displayName}
                   </span>
                   <span className="truncate text-[11px] text-sidebar-foreground/60">
                     {currentWorkspace.name} · {ROLE_LABELS[currentUser.role]}
@@ -118,15 +130,15 @@ export function AppSidebar() {
               >
                 <DropdownMenuLabel className="flex items-center gap-2">
                   <UserAvatar
-                    name={currentUser.name}
+                    name={displayName}
                     color={currentUser.avatarColor}
                   />
                   <div className="flex flex-col leading-tight">
                     <span className="text-sm font-medium">
-                      {currentUser.name}
+                      {displayName}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {currentUser.email}
+                      {displayEmail}
                     </span>
                   </div>
                 </DropdownMenuLabel>
@@ -144,9 +156,9 @@ export function AppSidebar() {
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive">
+                <DropdownMenuItem variant="destructive" onClick={handleLogout}>
                   <LogOut />
-                  Log out
+                  Cerrar sesión
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
