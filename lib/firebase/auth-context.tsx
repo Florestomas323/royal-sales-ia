@@ -10,8 +10,10 @@ import {
 } from "react"
 import {
   createUserWithEmailAndPassword,
+  GoogleAuthProvider,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut as fbSignOut,
   updateProfile,
   type User,
@@ -23,6 +25,7 @@ interface AuthContextValue {
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
   signUp: (name: string, email: string, password: string) => Promise<void>
+  signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -54,6 +57,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Refresh local user so displayName is available immediately.
           setUser({ ...cred.user })
         }
+      },
+      async signInWithGoogle() {
+        const provider = new GoogleAuthProvider()
+        provider.setCustomParameters({ prompt: "select_account" })
+        await signInWithPopup(auth, provider)
       },
       async signOut() {
         await fbSignOut(auth)
