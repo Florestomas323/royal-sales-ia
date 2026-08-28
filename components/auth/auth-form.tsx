@@ -79,6 +79,17 @@ export function AuthForm() {
 
   return (
     <form onSubmit={handleSubmit} noValidate>
+      <div className="mb-6 flex flex-col gap-1.5">
+        <h2 className="text-2xl font-semibold tracking-tight text-balance">
+          {isSignup ? "Crea tu cuenta" : "Bienvenido de vuelta"}
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          {isSignup
+            ? "Empieza a operar tu marketing y ventas con IA."
+            : "Ingresa a tu command center de ventas."}
+        </p>
+      </div>
+
       <FieldGroup>
         {isSignup && (
           <Field>

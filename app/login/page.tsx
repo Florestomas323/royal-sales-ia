@@ -91,15 +91,6 @@ export default function LoginPage() {
             <span className="text-lg font-semibold tracking-tight">Royal Sales IA</span>
           </div>
 
-          <div className="mb-6 flex flex-col gap-1.5">
-            <h2 className="text-2xl font-semibold tracking-tight text-balance">
-              Bienvenido de vuelta
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Ingresa a tu command center de ventas.
-            </p>
-          </div>
-
           <AuthForm />
         </div>
       </div>
