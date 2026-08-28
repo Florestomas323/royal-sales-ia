@@ -2,9 +2,10 @@
 
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Crown, Sparkles, TrendingUp, Users } from "lucide-react"
+import { Sparkles, TrendingUp, Users } from "lucide-react"
 
 import { AuthForm } from "@/components/auth/auth-form"
+import { BrandMark } from "@/components/shared/brand-mark"
 import { useAuth } from "@/lib/firebase/auth-context"
 
 const HIGHLIGHTS = [
@@ -48,9 +49,7 @@ export default function LoginPage() {
           }}
         />
         <div className="relative flex items-center gap-2.5">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-primary-foreground/15">
-            <Crown className="size-5" />
-          </div>
+          <BrandMark size={40} priority className="size-10 ring-1 ring-primary-foreground/20" />
           <div className="flex flex-col leading-tight">
             <span className="text-sm font-semibold tracking-tight">Royal Sales IA</span>
             <span className="text-[11px] text-primary-foreground/70">Marketing & Sales OS</span>
@@ -85,9 +84,7 @@ export default function LoginPage() {
       <div className="flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           <div className="mb-8 flex flex-col items-center gap-3 text-center lg:hidden">
-            <div className="flex size-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-              <Crown className="size-5" />
-            </div>
+            <BrandMark size={48} priority className="size-12" />
             <span className="text-lg font-semibold tracking-tight">Royal Sales IA</span>
           </div>
 

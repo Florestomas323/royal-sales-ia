@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { ChevronsUpDown, Crown, LogOut, Settings, Sparkles } from 'lucide-react'
+import { ChevronsUpDown, LogOut, Settings, Sparkles } from 'lucide-react'
 
 import {
   Sidebar,
@@ -27,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { UserAvatar } from '@/components/shared/user-avatar'
+import { BrandMark } from '@/components/shared/brand-mark'
 import { navSections } from './nav-config'
 import { currentUser, currentWorkspace } from '@/lib/mock-data'
 import { ROLE_LABELS } from '@/lib/constants'
@@ -50,9 +51,7 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <div className="flex items-center gap-2.5 px-1 py-1.5">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-            <Crown className="size-4" />
-          </div>
+          <BrandMark size={32} priority className="size-8" />
           <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
               Royal Sales IA

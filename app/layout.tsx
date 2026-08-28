@@ -17,10 +17,43 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Royal Sales IA — Marketing & Sales OS',
+  metadataBase: new URL('https://royal-sales-ia.vercel.app'),
+  title: {
+    default: 'Royal Sales IA — Marketing & Sales OS',
+    template: '%s · Royal Sales IA',
+  },
   description:
     'The AI operating system for high-performance marketing and sales teams. Campaigns, leads, pipeline, attribution and intelligence in one command center.',
+  applicationName: 'Royal Sales IA',
   generator: 'v0.app',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    title: 'Royal Sales IA',
+    statusBarStyle: 'black-translucent',
+  },
+  openGraph: {
+    type: 'website',
+    siteName: 'Royal Sales IA',
+    title: 'Royal Sales IA — Marketing & Sales OS',
+    description:
+      'El sistema operativo con IA para equipos de marketing y ventas de alto rendimiento. Campañas, leads, pipeline y atribución en un solo command center.',
+    images: [
+      {
+        url: '/royal-sales-logo.png',
+        width: 1700,
+        height: 955,
+        alt: 'Royal Sales IA',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Royal Sales IA — Marketing & Sales OS',
+    description:
+      'El sistema operativo con IA para equipos de marketing y ventas de alto rendimiento.',
+    images: ['/royal-sales-logo.png'],
+  },
 }
 
 export const viewport: Viewport = {
