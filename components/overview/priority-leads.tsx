@@ -26,6 +26,7 @@ export function PriorityLeads() {
         <Button
           variant="ghost"
           size="sm"
+          nativeButton={false}
           className="gap-1 text-xs"
           render={<Link href="/leads" />}
         >

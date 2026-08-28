@@ -98,6 +98,7 @@ export function AiInsights() {
                 <Button
                   variant="ghost"
                   size="sm"
+                  nativeButton={false}
                   className="mt-0.5 h-7 w-fit gap-1 px-2 text-xs text-primary hover:text-primary"
                   render={<Link href={insight.actionHref} />}
                 >
