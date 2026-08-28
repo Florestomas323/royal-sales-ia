@@ -3,7 +3,6 @@ import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
-import { AppShell } from '@/components/shell/app-shell'
 import './globals.css'
 
 const geistSans = Geist({
@@ -21,15 +20,6 @@ export const metadata: Metadata = {
   description:
     'The AI operating system for high-performance marketing and sales teams. Campaigns, leads, pipeline, attribution and intelligence in one command center.',
   generator: 'v0.app',
-  manifest: '/manifest.json',
-  icons: {
-    icon: [
-      { url: '/icon-light-32x32.png', media: '(prefers-color-scheme: light)' },
-      { url: '/icon-dark-32x32.png', media: '(prefers-color-scheme: dark)' },
-      { url: '/icon.svg', type: 'image/svg+xml' },
-    ],
-    apple: '/apple-icon.png',
-  },
 }
 
 export const viewport: Viewport = {
@@ -54,9 +44,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} bg-background`}
     >
       <body className="font-sans antialiased">
-        <TooltipProvider delay={200}>
-          <AppShell>{children}</AppShell>
-        </TooltipProvider>
+        <TooltipProvider delay={200}>{children}</TooltipProvider>
         <Toaster position="top-right" />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

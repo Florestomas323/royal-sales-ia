@@ -14,6 +14,8 @@ export * from './leads'
 export * from './activities'
 export * from './insights'
 export * from './integrations'
+export * from './notifications'
+export * from './timeseries'
 
 import { users } from './workspace'
 import { clients } from './clients'

@@ -52,3 +52,19 @@ export function initials(name: string): string {
     .join('')
     .toUpperCase()
 }
+
+/** Format a KPI value according to its declared format. */
+export function formatKpi(
+  value: number,
+  format: 'currency' | 'number' | 'percent',
+): string {
+  if (format === 'currency') return formatCurrency(value, true)
+  if (format === 'percent') return formatPercent(value, 1)
+  return formatNumber(value)
+}
+
+/** Signed percentage change — alias kept for component readability. */
+export const percentChange = changePct
+
+/** Relative time — alias kept for component readability. */
+export const relativeTime = formatRelativeTime

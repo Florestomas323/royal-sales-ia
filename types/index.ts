@@ -197,3 +197,14 @@ export interface LeadQuality {
   showRate: number
   closeRate: number
 }
+
+export type NotificationTone = 'success' | 'warning' | 'danger' | 'info'
+
+export interface Notification {
+  id: string
+  tone: NotificationTone
+  title: string
+  body: string
+  read: boolean
+  createdAt: string
+}
