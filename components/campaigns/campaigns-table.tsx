@@ -13,11 +13,10 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Search } from "lucide-react"
-import { campaigns } from "@/lib/mock-data"
 import { PlatformMark } from "@/components/shared/platform-badge"
 import { formatCurrency, formatNumber } from "@/lib/format"
 import { PLATFORM_LABELS } from "@/lib/constants"
-import type { CampaignStatus } from "@/types"
+import type { Campaign, CampaignStatus } from "@/types"
 
 const STATUS_VARIANT: Record<CampaignStatus, "default" | "secondary" | "outline"> = {
   active: "default",
@@ -26,7 +25,7 @@ const STATUS_VARIANT: Record<CampaignStatus, "default" | "secondary" | "outline"
   ended: "outline",
 }
 
-export function CampaignsTable() {
+export function CampaignsTable({ campaigns }: { campaigns: Campaign[] }) {
   const [query, setQuery] = useState("")
 
   const rows = useMemo(() => {
@@ -37,7 +36,7 @@ export function CampaignsTable() {
         c.name.toLowerCase().includes(q) ||
         PLATFORM_LABELS[c.platform].toLowerCase().includes(q),
     )
-  }, [query])
+  }, [query, campaigns])
 
   return (
     <Card>

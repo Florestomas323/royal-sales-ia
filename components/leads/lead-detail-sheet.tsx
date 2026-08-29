@@ -19,7 +19,8 @@ import { StageBadge } from "@/components/shared/score-badge"
 import { TemperatureDot } from "@/components/shared/score-badge"
 import { LeadTimeline } from "@/components/leads/lead-timeline"
 import { LeadAiAssistant } from "@/components/leads/lead-ai-assistant"
-import { getActivities, getUserById } from "@/lib/mock-data"
+import { getActivities } from "@/lib/mock-data"
+import { useUsersMap } from "@/lib/firebase/collections"
 import { formatCurrency, formatRelativeTime } from "@/lib/format"
 
 interface LeadDetailSheetProps {
@@ -29,8 +30,9 @@ interface LeadDetailSheetProps {
 }
 
 export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetProps) {
+  const usersMap = useUsersMap()
   if (!lead) return null
-  const rep = getUserById(lead.assignedToId)
+  const rep = usersMap[lead.assignedToId]
   const activities = getActivities(lead.id)
 
   return (

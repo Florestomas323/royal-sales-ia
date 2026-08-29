@@ -23,13 +23,14 @@ import { ScoreBadge, StageBadge } from "@/components/shared/score-badge"
 import { PlatformMark } from "@/components/shared/platform-badge"
 import { LeadDetailSheet } from "@/components/leads/lead-detail-sheet"
 import { STAGE_LABELS, STAGE_ORDER, PLATFORM_LABELS } from "@/lib/constants"
-import { getUserById } from "@/lib/mock-data"
+import { useUsersMap } from "@/lib/firebase/collections"
 import { formatCurrency, formatRelativeTime, initials } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 type SortKey = "score" | "value" | "recent"
 
 export function LeadsView({ leads }: { leads: Lead[] }) {
+  const usersMap = useUsersMap()
   const [query, setQuery] = useState("")
   const [stage, setStage] = useState<PipelineStage | "all">("all")
   const [platform, setPlatform] = useState<Platform | "all">("all")
@@ -165,7 +166,7 @@ export function LeadsView({ leads }: { leads: Lead[] }) {
             </TableHeader>
             <TableBody>
               {filtered.map((lead) => {
-                const rep = getUserById(lead.assignedToId)
+                const rep = usersMap[lead.assignedToId]
                 return (
                   <TableRow
                     key={lead.id}

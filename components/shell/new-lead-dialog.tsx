@@ -24,15 +24,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { campaigns, users } from '@/lib/mock-data'
 import { PLATFORM_LABELS } from '@/lib/constants'
 import { createLead } from '@/lib/firebase/leads'
+import { useCampaigns, useUsers } from '@/lib/firebase/collections'
 
 export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
+  const { campaigns } = useCampaigns()
+  const { users } = useUsers()
   const [open, setOpen] = React.useState(false)
-  const [campaignId, setCampaignId] = React.useState(campaigns[0].id)
-  const [assignedToId, setAssignedToId] = React.useState(users[1].id)
+  const [campaignId, setCampaignId] = React.useState('')
+  const [assignedToId, setAssignedToId] = React.useState('')
   const [submitting, setSubmitting] = React.useState(false)
+
+  const activeReps = users.filter((u) => u.status === 'active')
+
+  // Default selections once live data arrives.
+  React.useEffect(() => {
+    if (!campaignId && campaigns.length > 0) setCampaignId(campaigns[0].id)
+  }, [campaigns, campaignId])
+  React.useEffect(() => {
+    if (!assignedToId && activeReps.length > 0) setAssignedToId(activeReps[0].id)
+  }, [activeReps, assignedToId])
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -124,13 +136,11 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
                   <SelectValue placeholder="Select rep" />
                 </SelectTrigger>
                 <SelectContent>
-                  {users
-                    .filter((u) => u.status === 'active')
-                    .map((u) => (
-                      <SelectItem key={u.id} value={u.id}>
-                        {u.name}
-                      </SelectItem>
-                    ))}
+                  {activeReps.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </Field>
