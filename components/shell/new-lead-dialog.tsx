@@ -27,6 +27,7 @@ import {
 import { PLATFORM_LABELS } from '@/lib/constants'
 import { createLead } from '@/lib/firebase/leads'
 import { useCampaigns, useUsers } from '@/lib/firebase/collections'
+import { t } from '@/lib/i18n'
 
 export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
   const { campaigns } = useCampaigns()
@@ -49,7 +50,7 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const form = new FormData(e.currentTarget)
-    const name = (form.get('name') as string)?.trim() || 'Nuevo lead'
+    const name = (form.get('name') as string)?.trim() || t.leads.defaultName
     const phone = (form.get('phone') as string)?.trim()
     const email = (form.get('email') as string)?.trim()
     const campaign = campaigns.find((c) => c.id === campaignId)
@@ -66,12 +67,12 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
         source: campaign?.platform,
         clientId: campaign?.clientId,
       })
-      toast.success('Lead creado', {
-        description: `${name} se añadió a Nuevo Lead.`,
+      toast.success(t.leads.createdTitle, {
+        description: t.leads.createdDescription(name),
       })
       setOpen(false)
     } catch {
-      toast.error('No se pudo crear el lead. Inténtalo de nuevo.')
+      toast.error(t.leads.createError)
     } finally {
       setSubmitting(false)
     }
@@ -86,39 +87,47 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
           ) : (
             <Button size="sm">
               <Plus data-icon="inline-start" />
-              New Lead
+              {t.leads.newLead}
             </Button>
           )
         }
       />
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New lead</DialogTitle>
-          <DialogDescription>
-            Añade un lead manualmente al pipeline. Se guarda en tiempo real.
-          </DialogDescription>
+          <DialogTitle>{t.leads.dialogTitle}</DialogTitle>
+          <DialogDescription>{t.leads.dialogDescription}</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="name">Full name</FieldLabel>
-              <Input id="name" name="name" placeholder="e.g. Marta Díaz" required />
+              <FieldLabel htmlFor="name">{t.leads.fullName}</FieldLabel>
+              <Input
+                id="name"
+                name="name"
+                placeholder={t.leads.fullNamePlaceholder}
+                required
+              />
             </Field>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field>
-                <FieldLabel htmlFor="phone">Phone</FieldLabel>
-                <Input id="phone" name="phone" placeholder="+34 600 000 000" />
+                <FieldLabel htmlFor="phone">{t.leads.phone}</FieldLabel>
+                <Input id="phone" name="phone" placeholder="+1 555 000 0000" />
               </Field>
               <Field>
-                <FieldLabel htmlFor="email">Email</FieldLabel>
-                <Input id="email" name="email" type="email" placeholder="name@email.com" />
+                <FieldLabel htmlFor="email">{t.leads.email}</FieldLabel>
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  placeholder={t.leads.emailPlaceholder}
+                />
               </Field>
             </div>
             <Field>
-              <FieldLabel>Campaign</FieldLabel>
+              <FieldLabel>{t.leads.campaign}</FieldLabel>
               <Select value={campaignId} onValueChange={(v) => setCampaignId(v ?? "")}>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select campaign" />
+                  <SelectValue placeholder={t.leads.campaignPlaceholder} />
                 </SelectTrigger>
                 <SelectContent>
                   {campaigns.map((c) => (
@@ -130,10 +139,10 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
               </Select>
             </Field>
             <Field>
-              <FieldLabel>Assign to</FieldLabel>
+              <FieldLabel>{t.leads.assignTo}</FieldLabel>
               <Select value={assignedToId} onValueChange={(v) => setAssignedToId(v ?? "")}>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select rep" />
+                  <SelectValue placeholder={t.leads.assignPlaceholder} />
                 </SelectTrigger>
                 <SelectContent>
                   {activeReps.map((u) => (
@@ -147,10 +156,10 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
           </FieldGroup>
           <DialogFooter className="mt-6">
             <DialogClose render={<Button variant="outline" type="button" />}>
-              Cancel
+              {t.common.cancel}
             </DialogClose>
             <Button type="submit" disabled={submitting}>
-              {submitting ? 'Creando…' : 'Create lead'}
+              {submitting ? t.common.creating : t.leads.create}
             </Button>
           </DialogFooter>
         </form>

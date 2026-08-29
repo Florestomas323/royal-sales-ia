@@ -1,6 +1,7 @@
 import type { Lead } from "@/types"
 import { formatCurrency } from "@/lib/format"
 import { Card, CardContent } from "@/components/ui/card"
+import { t } from "@/lib/i18n"
 
 export function PipelineSummary({ leads }: { leads: Lead[] }) {
   const total = leads.length || 1
@@ -12,10 +13,26 @@ export function PipelineSummary({ leads }: { leads: Lead[] }) {
   const winRate = Math.round((won.length / total) * 100)
 
   const stats = [
-    { label: "Open pipeline", value: formatCurrency(openValue, true), sub: `${open.length} active leads` },
-    { label: "Won this period", value: formatCurrency(wonValue, true), sub: `${won.length} closed deals` },
-    { label: "Win rate", value: `${winRate}%`, sub: "of all leads" },
-    { label: "Avg. lead score", value: `${avgScore}`, sub: "quality index" },
+    {
+      label: t.pipeline.stats.open,
+      value: formatCurrency(openValue, true),
+      sub: t.pipeline.stats.openSub(open.length),
+    },
+    {
+      label: t.pipeline.stats.won,
+      value: formatCurrency(wonValue, true),
+      sub: t.pipeline.stats.wonSub(won.length),
+    },
+    {
+      label: t.pipeline.stats.winRate,
+      value: `${winRate}%`,
+      sub: t.pipeline.stats.winRateSub,
+    },
+    {
+      label: t.pipeline.stats.avgScore,
+      value: `${avgScore}`,
+      sub: t.pipeline.stats.avgScoreSub,
+    },
   ]
 
   return (

@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/firebase/auth-context"
 import { BrandMark } from "@/components/shared/brand-mark"
+import { t } from "@/lib/i18n"
 
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
@@ -24,7 +25,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
           <BrandMark size={48} priority className="size-12" />
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span className="size-4 animate-spin rounded-full border-2 border-muted border-t-primary" />
-            Cargando tu workspace…
+            {t.shell.loadingWorkspace}
           </div>
         </div>
       </div>

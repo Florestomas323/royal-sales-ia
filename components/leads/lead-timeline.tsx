@@ -10,6 +10,7 @@ import {
 } from "lucide-react"
 import type { Activity, ActivityType } from "@/types"
 import { formatRelativeTime } from "@/lib/format"
+import { t } from "@/lib/i18n"
 
 const ICONS: Record<ActivityType, typeof Inbox> = {
   lead_received: Inbox,
@@ -53,7 +54,9 @@ export function LeadTimeline({ activities }: { activities: Activity[] }) {
                   <span className="text-xs text-muted-foreground">{formatRelativeTime(a.timestamp)}</span>
                 </div>
                 <p className="text-sm text-muted-foreground text-pretty">{a.description}</p>
-                <span className="text-xs text-muted-foreground">by {a.actor}</span>
+                <span className="text-xs text-muted-foreground">
+                  {t.common.by} {a.actor}
+                </span>
               </div>
             </li>
           )

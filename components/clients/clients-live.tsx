@@ -3,6 +3,9 @@
 import { Building2, TrendingUp } from "lucide-react"
 import { useClients } from "@/lib/firebase/collections"
 import { formatCurrency, formatNumber } from "@/lib/format"
+import { CLIENT_STATUS_LABELS } from "@/lib/constants"
+import { t } from "@/lib/i18n"
+import type { ClientStatus } from "@/types"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -49,10 +52,8 @@ export function ClientsLive() {
       <Card className="border-dashed">
         <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
           <Building2 className="size-8 text-muted-foreground" />
-          <p className="font-medium">Aún no hay clientes</p>
-          <p className="text-sm text-muted-foreground">
-            Añade tu primer cliente para empezar a gestionar campañas y leads.
-          </p>
+          <p className="font-medium">{t.clients.emptyTitle}</p>
+          <p className="text-sm text-muted-foreground">{t.clients.emptyDescription}</p>
         </CardContent>
       </Card>
     )
@@ -64,12 +65,12 @@ export function ClientsLive() {
         const roas = client.adSpend > 0 ? client.revenue / client.adSpend : 0
         const cpl = client.leads > 0 ? client.adSpend / client.leads : 0
         const metrics = [
-          { label: "Ad spend", value: formatCurrency(client.adSpend, true) },
-          { label: "Revenue", value: formatCurrency(client.revenue, true) },
-          { label: "Leads", value: formatNumber(client.leads) },
-          { label: "Cost / lead", value: formatCurrency(cpl) },
-          { label: "Appointments", value: formatNumber(client.appointments) },
-          { label: "Sales", value: formatNumber(client.sales) },
+          { label: t.clients.metrics.adSpend, value: formatCurrency(client.adSpend, true) },
+          { label: t.clients.metrics.revenue, value: formatCurrency(client.revenue, true) },
+          { label: t.clients.metrics.leads, value: formatNumber(client.leads) },
+          { label: t.clients.metrics.cpl, value: formatCurrency(cpl) },
+          { label: t.clients.metrics.appointments, value: formatNumber(client.appointments) },
+          { label: t.clients.metrics.sales, value: formatNumber(client.sales) },
         ]
         return (
           <Card key={client.id} className="gap-0 overflow-hidden">
@@ -87,8 +88,8 @@ export function ClientsLive() {
                     <p className="text-xs text-muted-foreground">{client.industry}</p>
                   </div>
                 </div>
-                <Badge variant={STATUS_VARIANT[client.status] ?? "outline"} className="capitalize">
-                  {client.status}
+                <Badge variant={STATUS_VARIANT[client.status] ?? "outline"}>
+                  {CLIENT_STATUS_LABELS[client.status as ClientStatus] ?? client.status}
                 </Badge>
               </div>
             </CardHeader>
@@ -96,7 +97,7 @@ export function ClientsLive() {
               <div className="flex items-center justify-between rounded-lg bg-accent/60 px-3 py-2">
                 <span className="flex items-center gap-1.5 text-xs font-medium text-accent-foreground">
                   <TrendingUp className="size-3.5" />
-                  Return on ad spend
+                  {t.clients.roas}
                 </span>
                 <span className="font-mono text-sm font-semibold tabular-nums text-accent-foreground">
                   {roas.toFixed(1)}x

@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { PlatformBadge } from "@/components/shared/platform-badge"
 import { platformMetrics } from "@/lib/mock-data"
 import { formatCurrency, formatNumber } from "@/lib/format"
+import { t } from "@/lib/i18n"
 
 export function PlatformPerformance() {
   const totalLeads = platformMetrics.reduce((s, p) => s + p.leads, 0)
@@ -9,8 +10,8 @@ export function PlatformPerformance() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Performance by platform</CardTitle>
-        <CardDescription>Where your leads and revenue come from</CardDescription>
+        <CardTitle className="text-base">{t.overview.platformPerformance}</CardTitle>
+        <CardDescription>{t.overview.platformPerformanceDescription}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-1">
         {platformMetrics.map((p) => {
@@ -32,7 +33,9 @@ export function PlatformPerformance() {
                 </div>
               </div>
               <div className="flex w-40 shrink-0 items-center justify-end gap-4 text-sm tabular-nums">
-                <span className="text-muted-foreground">{formatNumber(p.leads)} leads</span>
+                <span className="text-muted-foreground">
+                  {formatNumber(p.leads)} {t.overview.leadsUnit}
+                </span>
                 <span className="font-medium">{formatCurrency(p.cpl)}</span>
               </div>
             </div>

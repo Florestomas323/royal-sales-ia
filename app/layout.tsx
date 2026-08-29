@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     template: '%s · Royal Sales IA',
   },
   description:
-    'The AI operating system for high-performance marketing and sales teams. Campaigns, leads, pipeline, attribution and intelligence in one command center.',
+    'El sistema operativo con IA para equipos de marketing y ventas de alto rendimiento. Campañas, prospectos, embudo, atribución e inteligencia en un solo centro de mando.',
   applicationName: 'Royal Sales IA',
   generator: 'v0.app',
   manifest: '/manifest.webmanifest',
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
     siteName: 'Royal Sales IA',
     title: 'Royal Sales IA — Marketing & Sales OS',
     description:
-      'El sistema operativo con IA para equipos de marketing y ventas de alto rendimiento. Campañas, leads, pipeline y atribución en un solo command center.',
+      'El sistema operativo con IA para equipos de marketing y ventas de alto rendimiento. Campañas, prospectos, embudo y atribución en un solo centro de mando.',
     images: [
       {
         url: '/royal-sales-og.png',
@@ -74,7 +74,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="es"
       className={`${geistSans.variable} ${geistMono.variable} bg-background`}
     >
       <body className="font-sans antialiased">

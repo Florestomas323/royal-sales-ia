@@ -2,7 +2,9 @@
 
 import { useUsers } from "@/lib/firebase/collections"
 import { UserAvatar } from "@/components/shared/user-avatar"
-import { ROLE_LABELS } from "@/lib/constants"
+import { MEMBER_STATUS_LABELS, ROLE_LABELS } from "@/lib/constants"
+import { t } from "@/lib/i18n"
+import type { MemberStatus } from "@/types"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -37,10 +39,10 @@ export function TeamLive() {
   const totalSales = users.reduce((s, u) => s + u.sales, 0)
 
   const stats = [
-    { label: "Team members", value: users.length },
-    { label: "Active seats", value: active.length },
-    { label: "Assigned leads", value: totalLeads },
-    { label: "Sales closed", value: totalSales },
+    { label: t.team.stats.members, value: users.length },
+    { label: t.team.stats.activeSeats, value: active.length },
+    { label: t.team.stats.assignedLeads, value: totalLeads },
+    { label: t.team.stats.salesClosed, value: totalSales },
   ]
 
   if (loading) {
@@ -91,12 +93,12 @@ export function TeamLive() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Member</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Leads</TableHead>
-              <TableHead className="text-right">Appointments</TableHead>
-              <TableHead className="text-right">Sales</TableHead>
+              <TableHead>{t.team.table.member}</TableHead>
+              <TableHead>{t.team.table.role}</TableHead>
+              <TableHead>{t.team.table.status}</TableHead>
+              <TableHead className="text-right">{t.team.table.leads}</TableHead>
+              <TableHead className="text-right">{t.team.table.appointments}</TableHead>
+              <TableHead className="text-right">{t.team.table.sales}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -117,8 +119,8 @@ export function TeamLive() {
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <Badge variant={STATUS_VARIANT[user.status] ?? "outline"} className="capitalize">
-                    {user.status}
+                  <Badge variant={STATUS_VARIANT[user.status] ?? "outline"}>
+                    {MEMBER_STATUS_LABELS[user.status as MemberStatus] ?? user.status}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right font-mono tabular-nums">

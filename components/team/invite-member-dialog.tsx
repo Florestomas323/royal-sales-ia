@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select"
 import { createUser } from "@/lib/firebase/collections"
 import { ROLE_LABELS } from "@/lib/constants"
+import { t } from "@/lib/i18n"
 import type { UserRole } from "@/types"
 
 const ROLE_OPTIONS = Object.entries(ROLE_LABELS) as [UserRole, string][]
@@ -45,13 +46,13 @@ export function InviteMemberDialog() {
     setSubmitting(true)
     try {
       await createUser({ name, email, role })
-      toast.success("Invitación enviada", {
-        description: `${name} se añadió al equipo como ${ROLE_LABELS[role]}.`,
+      toast.success(t.team.invitedTitle, {
+        description: t.team.invitedDescription(name, ROLE_LABELS[role]),
       })
       setOpen(false)
       setRole("sales_rep")
     } catch {
-      toast.error("No se pudo invitar al miembro. Inténtalo de nuevo.")
+      toast.error(t.team.inviteError)
     } finally {
       setSubmitting(false)
     }
@@ -63,35 +64,38 @@ export function InviteMemberDialog() {
         render={
           <Button size="sm">
             <UserPlus data-icon="inline-start" />
-            Invite member
+            {t.team.invite}
           </Button>
         }
       />
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Invitar miembro</DialogTitle>
-          <DialogDescription>
-            Añade a alguien a tu equipo de ventas. Entrará como invitado hasta que acepte.
-          </DialogDescription>
+          <DialogTitle>{t.team.dialogTitle}</DialogTitle>
+          <DialogDescription>{t.team.dialogDescription}</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="member-name">Nombre completo</FieldLabel>
-              <Input id="member-name" name="name" placeholder="e.g. Diego Torres" required />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="member-email">Email</FieldLabel>
+              <FieldLabel htmlFor="member-name">{t.team.nameLabel}</FieldLabel>
               <Input
-                id="member-email"
-                name="email"
-                type="email"
-                placeholder="name@royalagency.com"
+                id="member-name"
+                name="name"
+                placeholder={t.team.namePlaceholder}
                 required
               />
             </Field>
             <Field>
-              <FieldLabel>Rol</FieldLabel>
+              <FieldLabel htmlFor="member-email">{t.team.emailLabel}</FieldLabel>
+              <Input
+                id="member-email"
+                name="email"
+                type="email"
+                placeholder={t.team.emailPlaceholder}
+                required
+              />
+            </Field>
+            <Field>
+              <FieldLabel>{t.team.roleLabel}</FieldLabel>
               <Select value={role} onValueChange={(v) => setRole(v as UserRole)}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -107,9 +111,11 @@ export function InviteMemberDialog() {
             </Field>
           </FieldGroup>
           <DialogFooter className="mt-6">
-            <DialogClose render={<Button variant="outline" type="button" />}>Cancel</DialogClose>
+            <DialogClose render={<Button variant="outline" type="button" />}>
+              {t.common.cancel}
+            </DialogClose>
             <Button type="submit" disabled={submitting}>
-              {submitting ? "Enviando…" : "Send invite"}
+              {submitting ? t.common.sending : t.team.send}
             </Button>
           </DialogFooter>
         </form>

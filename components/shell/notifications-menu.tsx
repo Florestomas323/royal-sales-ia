@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { notifications } from "@/lib/mock-data"
 import { relativeTime } from "@/lib/format"
+import { t } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 const toneStyles: Record<string, string> = {
@@ -30,7 +31,7 @@ export function NotificationsMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button variant="ghost" size="icon" className="relative" aria-label="Notifications" />
+          <Button variant="ghost" size="icon" className="relative" aria-label={t.notifications.ariaLabel} />
         }
       >
         <Bell />
@@ -43,8 +44,8 @@ export function NotificationsMenu() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80">
         <DropdownMenuLabel className="flex items-center justify-between">
-          <span>Notifications</span>
-          <Badge variant="secondary">{unread} new</Badge>
+          <span>{t.notifications.title}</span>
+          <Badge variant="secondary">{t.notifications.unread(unread)}</Badge>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>

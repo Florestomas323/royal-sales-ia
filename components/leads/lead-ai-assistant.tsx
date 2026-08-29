@@ -5,7 +5,8 @@ import { Sparkles, Send, Copy, Check, MessageSquareText } from "lucide-react"
 import type { Lead } from "@/types"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { STAGE_LABELS } from "@/lib/constants"
+import { STAGE_LABELS, TEMPERATURE_LABELS } from "@/lib/constants"
+import { t } from "@/lib/i18n"
 import { formatCurrency } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
@@ -21,24 +22,33 @@ interface Suggestion {
  */
 function generateReply(lead: Lead, prompt: string): string {
   const first = lead.name.split(" ")[0]
-  if (/whatsapp|message|mensaje|text/i.test(prompt)) {
-    return `Hi ${first}! Thanks for your interest coming from ${lead.campaignName}. I'd love to show you how we can help — do you have 10 minutes today or tomorrow for a quick call?`
+  if (/whatsapp|message|mensaje|texto/i.test(prompt)) {
+    return t.ai.replies.whatsapp(first, lead.campaignName)
   }
-  if (/objection|precio|price|expensive|cost/i.test(prompt)) {
-    return `${first} is likely price-sensitive. Lead with the outcome, not the fee: anchor on the ${formatCurrency(
-      lead.potentialValue,
-    )} value at stake, then offer a starter option. Ask what result would make this a clear yes.`
+  if (/objec|precio|price|caro|costo/i.test(prompt)) {
+    return t.ai.replies.objection(first, formatCurrency(lead.potentialValue))
   }
-  if (/next|action|siguiente|do/i.test(prompt)) {
-    return `Best next step for ${first}: ${lead.nextAction}. They are in "${STAGE_LABELS[lead.stage]}" with a score of ${lead.score}/100 — move fast while intent is high.`
+  if (/next|action|siguiente|acción|paso/i.test(prompt)) {
+    return t.ai.replies.nextAction(
+      first,
+      lead.nextAction,
+      STAGE_LABELS[lead.stage],
+      lead.score,
+    )
   }
-  return `${first} scored ${lead.score}/100 from ${lead.campaignName}. They look ${lead.temperature.toUpperCase()}. I'd ${lead.nextAction.toLowerCase()} and reference the creative they engaged with to keep context warm.`
+  return t.ai.replies.summary(
+    first,
+    lead.score,
+    lead.campaignName,
+    TEMPERATURE_LABELS[lead.temperature].toLowerCase(),
+    lead.nextAction.toLowerCase(),
+  )
 }
 
 const SUGGESTIONS: Suggestion[] = [
-  { id: "s1", label: "Draft a WhatsApp opener", prompt: "Draft a WhatsApp message to open the conversation" },
-  { id: "s2", label: "What's the best next action?", prompt: "What is the best next action for this lead?" },
-  { id: "s3", label: "Handle price objection", prompt: "How do I handle a price objection?" },
+  { id: "s1", label: t.ai.suggestions.whatsapp, prompt: t.ai.prompts.whatsapp },
+  { id: "s2", label: t.ai.suggestions.nextAction, prompt: t.ai.prompts.nextAction },
+  { id: "s3", label: t.ai.suggestions.objection, prompt: t.ai.prompts.objection },
 ]
 
 interface Message {
@@ -52,7 +62,7 @@ export function LeadAiAssistant({ lead }: { lead: Lead }) {
     {
       id: "m0",
       role: "assistant",
-      text: generateReply(lead, "summary"),
+      text: generateReply(lead, "resumen"),
     },
   ])
   const [input, setInput] = useState("")
@@ -83,8 +93,8 @@ export function LeadAiAssistant({ lead }: { lead: Lead }) {
           <Sparkles className="size-3.5" />
         </div>
         <div className="flex flex-col">
-          <span className="text-sm font-semibold leading-none">Royal AI Assistant</span>
-          <span className="text-xs text-muted-foreground">Coaching for this lead</span>
+          <span className="text-sm font-semibold leading-none">{t.ai.assistant}</span>
+          <span className="text-xs text-muted-foreground">{t.ai.assistantSubtitle}</span>
         </div>
       </div>
 
@@ -108,11 +118,11 @@ export function LeadAiAssistant({ lead }: { lead: Lead }) {
               >
                 {copiedId === m.id ? (
                   <>
-                    <Check className="size-3" /> Copied
+                    <Check className="size-3" /> {t.common.copied}
                   </>
                 ) : (
                   <>
-                    <Copy className="size-3" /> Copy
+                    <Copy className="size-3" /> {t.common.copy}
                   </>
                 )}
               </button>
@@ -151,12 +161,12 @@ export function LeadAiAssistant({ lead }: { lead: Lead }) {
               send(input)
             }
           }}
-          placeholder="Ask Royal AI about this lead..."
+          placeholder={t.ai.inputPlaceholder}
           className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         />
         <Button type="submit" size="icon-sm" disabled={!input.trim()}>
           <Send className="size-3.5" />
-          <span className="sr-only">Send</span>
+          <span className="sr-only">{t.common.send}</span>
         </Button>
       </form>
     </div>

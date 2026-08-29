@@ -16,6 +16,7 @@ import {
   Settings,
   type LucideIcon,
 } from 'lucide-react'
+import { t } from '@/lib/i18n'
 
 export interface NavItem {
   label: string
@@ -31,49 +32,49 @@ export interface NavSection {
 
 export const navSections: NavSection[] = [
   {
-    label: 'Overview',
-    items: [{ label: 'Command Center', href: '/', icon: LayoutDashboard }],
+    label: t.nav.sections.overview,
+    items: [{ label: t.nav.items.commandCenter, href: '/', icon: LayoutDashboard }],
   },
   {
-    label: 'Marketing',
+    label: t.nav.sections.marketing,
     items: [
-      { label: 'Campaigns', href: '/campaigns', icon: Megaphone },
-      { label: 'AI Media Buyer', href: '/media-buyer', icon: BrainCircuit },
-      { label: 'Content Lab', href: '/content-lab', icon: Sparkles },
+      { label: t.nav.items.campaigns, href: '/campaigns', icon: Megaphone },
+      { label: t.nav.items.mediaBuyer, href: '/media-buyer', icon: BrainCircuit },
+      { label: t.nav.items.contentLab, href: '/content-lab', icon: Sparkles },
     ],
   },
   {
-    label: 'Sales',
+    label: t.nav.sections.sales,
     items: [
-      { label: 'Leads', href: '/leads', icon: Users, badge: '12' },
-      { label: 'Pipeline', href: '/pipeline', icon: GitBranch },
-      { label: 'Inbox', href: '/inbox', icon: Inbox },
-      { label: 'Calendar', href: '/calendar', icon: Calendar },
+      { label: t.nav.items.leads, href: '/leads', icon: Users, badge: '12' },
+      { label: t.nav.items.pipeline, href: '/pipeline', icon: GitBranch },
+      { label: t.nav.items.inbox, href: '/inbox', icon: Inbox },
+      { label: t.nav.items.calendar, href: '/calendar', icon: Calendar },
     ],
   },
   {
-    label: 'Intelligence',
+    label: t.nav.sections.intelligence,
     items: [
-      { label: 'Analytics', href: '/analytics', icon: BarChart3 },
-      { label: 'Reports', href: '/reports', icon: FileText },
+      { label: t.nav.items.analytics, href: '/analytics', icon: BarChart3 },
+      { label: t.nav.items.reports, href: '/reports', icon: FileText },
     ],
   },
   {
-    label: 'Automation',
-    items: [{ label: 'Automations', href: '/automations', icon: Workflow }],
+    label: t.nav.sections.automation,
+    items: [{ label: t.nav.items.automations, href: '/automations', icon: Workflow }],
   },
   {
-    label: 'Management',
+    label: t.nav.sections.management,
     items: [
-      { label: 'Clients', href: '/clients', icon: Building2 },
-      { label: 'Team', href: '/team', icon: UsersRound },
+      { label: t.nav.items.clients, href: '/clients', icon: Building2 },
+      { label: t.nav.items.team, href: '/team', icon: UsersRound },
     ],
   },
   {
-    label: 'System',
+    label: t.nav.sections.system,
     items: [
-      { label: 'Integrations', href: '/integrations', icon: Plug },
-      { label: 'Settings', href: '/settings', icon: Settings },
+      { label: t.nav.items.integrations, href: '/integrations', icon: Plug },
+      { label: t.nav.items.settings, href: '/settings', icon: Settings },
     ],
   },
 ]

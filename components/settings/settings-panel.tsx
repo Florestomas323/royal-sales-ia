@@ -24,48 +24,43 @@ import {
 } from "@/components/ui/field"
 import { currentUser, currentWorkspace } from "@/lib/mock-data"
 import { UserAvatar } from "@/components/shared/user-avatar"
+import { t } from "@/lib/i18n"
 
 function saved() {
-  toast.success("Changes saved", { description: "Your settings have been updated." })
+  toast.success(t.settings.savedTitle, { description: t.settings.savedDescription })
 }
 
-const notifications = [
-  { id: "new-lead", title: "New lead assigned", description: "Notify me when a lead is routed to me.", on: true },
-  { id: "hot-lead", title: "Hot lead alerts", description: "Instant alerts for leads scoring 80+.", on: true },
-  { id: "appointment", title: "Appointment booked", description: "When a lead books a call from any funnel.", on: true },
-  { id: "cold", title: "Lead going cold", description: "When a hot lead has no activity for 24h.", on: false },
-  { id: "digest", title: "Daily digest", description: "Morning summary of pipeline and priorities.", on: true },
-]
+const notifications = t.settings.notifications.items
 
 export function SettingsPanel() {
   return (
     <Tabs defaultValue="workspace" className="gap-6">
       <TabsList>
-        <TabsTrigger value="workspace">Workspace</TabsTrigger>
-        <TabsTrigger value="profile">Profile</TabsTrigger>
-        <TabsTrigger value="notifications">Notifications</TabsTrigger>
-        <TabsTrigger value="billing">Billing</TabsTrigger>
+        <TabsTrigger value="workspace">{t.settings.tabs.workspace}</TabsTrigger>
+        <TabsTrigger value="profile">{t.settings.tabs.profile}</TabsTrigger>
+        <TabsTrigger value="notifications">{t.settings.tabs.notifications}</TabsTrigger>
+        <TabsTrigger value="billing">{t.settings.tabs.billing}</TabsTrigger>
       </TabsList>
 
       <TabsContent value="workspace">
         <Card>
           <CardHeader>
-            <CardTitle>Workspace</CardTitle>
-            <CardDescription>General information about your agency workspace.</CardDescription>
+            <CardTitle>{t.settings.workspace.title}</CardTitle>
+            <CardDescription>{t.settings.workspace.description}</CardDescription>
           </CardHeader>
           <CardContent>
             <FieldGroup>
               <Field orientation="responsive">
                 <FieldContent>
-                  <FieldLabel htmlFor="ws-name">Workspace name</FieldLabel>
-                  <FieldDescription>Displayed across the app and on client reports.</FieldDescription>
+                  <FieldLabel htmlFor="ws-name">{t.settings.workspace.nameLabel}</FieldLabel>
+                  <FieldDescription>{t.settings.workspace.nameDescription}</FieldDescription>
                 </FieldContent>
                 <Input id="ws-name" defaultValue={currentWorkspace.name} className="sm:max-w-xs" />
               </Field>
               <Field orientation="responsive">
                 <FieldContent>
-                  <FieldLabel htmlFor="ws-plan">Plan</FieldLabel>
-                  <FieldDescription>Your current subscription tier.</FieldDescription>
+                  <FieldLabel htmlFor="ws-plan">{t.settings.workspace.planLabel}</FieldLabel>
+                  <FieldDescription>{t.settings.workspace.planDescription}</FieldDescription>
                 </FieldContent>
                 <div className="flex items-center">
                   <Badge variant="secondary" className="capitalize">{currentWorkspace.plan}</Badge>
@@ -73,15 +68,17 @@ export function SettingsPanel() {
               </Field>
               <Field orientation="responsive">
                 <FieldContent>
-                  <FieldLabel htmlFor="ws-currency">Default currency</FieldLabel>
-                  <FieldDescription>Used for spend, revenue, and pipeline values.</FieldDescription>
+                  <FieldLabel htmlFor="ws-currency">
+                    {t.settings.workspace.currencyLabel}
+                  </FieldLabel>
+                  <FieldDescription>{t.settings.workspace.currencyDescription}</FieldDescription>
                 </FieldContent>
                 <Input id="ws-currency" defaultValue="USD ($)" className="sm:max-w-xs" />
               </Field>
             </FieldGroup>
           </CardContent>
           <CardFooter className="justify-end">
-            <Button onClick={saved}>Save changes</Button>
+            <Button onClick={saved}>{t.common.saveChanges}</Button>
           </CardFooter>
         </Card>
       </TabsContent>
@@ -89,31 +86,33 @@ export function SettingsPanel() {
       <TabsContent value="profile">
         <Card>
           <CardHeader>
-            <CardTitle>Profile</CardTitle>
-            <CardDescription>Update your personal information.</CardDescription>
+            <CardTitle>{t.settings.profile.title}</CardTitle>
+            <CardDescription>{t.settings.profile.description}</CardDescription>
           </CardHeader>
           <CardContent>
             <FieldGroup>
               <div className="flex items-center gap-4">
                 <UserAvatar name={currentUser.name} color={currentUser.avatarColor} className="size-14" />
-                <Button variant="outline" size="sm" onClick={saved}>Change photo</Button>
+                <Button variant="outline" size="sm" onClick={saved}>
+                  {t.settings.profile.changePhoto}
+                </Button>
               </div>
               <Field orientation="responsive">
                 <FieldContent>
-                  <FieldLabel htmlFor="name">Full name</FieldLabel>
+                  <FieldLabel htmlFor="name">{t.settings.profile.nameLabel}</FieldLabel>
                 </FieldContent>
                 <Input id="name" defaultValue={currentUser.name} className="sm:max-w-xs" />
               </Field>
               <Field orientation="responsive">
                 <FieldContent>
-                  <FieldLabel htmlFor="email">Email</FieldLabel>
+                  <FieldLabel htmlFor="email">{t.settings.profile.emailLabel}</FieldLabel>
                 </FieldContent>
                 <Input id="email" type="email" defaultValue={currentUser.email} className="sm:max-w-xs" />
               </Field>
             </FieldGroup>
           </CardContent>
           <CardFooter className="justify-end">
-            <Button onClick={saved}>Save changes</Button>
+            <Button onClick={saved}>{t.common.saveChanges}</Button>
           </CardFooter>
         </Card>
       </TabsContent>
@@ -121,8 +120,8 @@ export function SettingsPanel() {
       <TabsContent value="notifications">
         <Card>
           <CardHeader>
-            <CardTitle>Notifications</CardTitle>
-            <CardDescription>Choose what you want to be notified about.</CardDescription>
+            <CardTitle>{t.settings.notifications.title}</CardTitle>
+            <CardDescription>{t.settings.notifications.description}</CardDescription>
           </CardHeader>
           <CardContent>
             <FieldGroup>
@@ -143,23 +142,33 @@ export function SettingsPanel() {
       <TabsContent value="billing">
         <Card>
           <CardHeader>
-            <CardTitle>Billing</CardTitle>
-            <CardDescription>Manage your plan and payment method.</CardDescription>
+            <CardTitle>{t.settings.billing.title}</CardTitle>
+            <CardDescription>{t.settings.billing.description}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="flex items-center justify-between rounded-lg border p-4">
               <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium capitalize">{currentWorkspace.plan} plan</span>
-                <span className="text-xs text-muted-foreground">Billed annually &middot; renews Jan 2027</span>
+                <span className="text-sm font-medium capitalize">
+                  {t.settings.billing.plan(currentWorkspace.plan)}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {t.settings.billing.billedAnnually}
+                </span>
               </div>
-              <Button variant="outline" size="sm" onClick={saved}>Manage plan</Button>
+              <Button variant="outline" size="sm" onClick={saved}>
+                {t.settings.billing.managePlan}
+              </Button>
             </div>
             <div className="flex items-center justify-between rounded-lg border p-4">
               <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium">Visa ending in 4242</span>
-                <span className="text-xs text-muted-foreground">Expires 08 / 2028</span>
+                <span className="text-sm font-medium">{t.settings.billing.cardEnding}</span>
+                <span className="text-xs text-muted-foreground">
+                  {t.settings.billing.cardExpires}
+                </span>
               </div>
-              <Button variant="outline" size="sm" onClick={saved}>Update</Button>
+              <Button variant="outline" size="sm" onClick={saved}>
+                {t.settings.billing.update}
+              </Button>
             </div>
           </CardContent>
         </Card>

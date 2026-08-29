@@ -9,17 +9,18 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart"
 import { performanceTrend } from "@/lib/mock-data"
+import { t } from "@/lib/i18n"
 
 const config = {
-  revenue: { label: "Revenue", color: "var(--chart-1)" },
+  revenue: { label: t.analytics.revenue, color: "var(--chart-1)" },
 } satisfies ChartConfig
 
 export function RevenueChart() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Revenue by day</CardTitle>
-        <CardDescription>Closed-won revenue attributed over the last 14 days</CardDescription>
+        <CardTitle>{t.analytics.revenueByDay}</CardTitle>
+        <CardDescription>{t.analytics.revenueByDayDescription}</CardDescription>
       </CardHeader>
       <CardContent>
         <ChartContainer config={config} className="h-[240px] w-full">

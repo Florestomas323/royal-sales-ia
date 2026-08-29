@@ -25,15 +25,16 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { createCampaign, useClients } from "@/lib/firebase/collections"
-import { PLATFORM_LABELS } from "@/lib/constants"
+import { CAMPAIGN_STATUS_LABELS, PLATFORM_LABELS } from "@/lib/constants"
+import { t } from "@/lib/i18n"
 import type { Campaign, Platform } from "@/types"
 
 const PLATFORM_OPTIONS: Platform[] = ["meta", "google", "tiktok", "instagram", "facebook"]
 
 const STATUS_OPTIONS: { value: Campaign["status"]; label: string }[] = [
-  { value: "learning", label: "Learning" },
-  { value: "active", label: "Activa" },
-  { value: "paused", label: "Pausada" },
+  { value: "learning", label: CAMPAIGN_STATUS_LABELS.learning },
+  { value: "active", label: CAMPAIGN_STATUS_LABELS.active },
+  { value: "paused", label: CAMPAIGN_STATUS_LABELS.paused },
 ]
 
 export function NewCampaignDialog() {
@@ -58,12 +59,14 @@ export function NewCampaignDialog() {
     setSubmitting(true)
     try {
       await createCampaign({ name, platform, clientId, status })
-      toast.success("Campaña creada", { description: `${name} se creó correctamente.` })
+      toast.success(t.campaigns.createdTitle, {
+        description: t.campaigns.createdDescription(name),
+      })
       setOpen(false)
       setPlatform("meta")
       setStatus("learning")
     } catch {
-      toast.error("No se pudo crear la campaña. Inténtalo de nuevo.")
+      toast.error(t.campaigns.createError)
     } finally {
       setSubmitting(false)
     }
@@ -75,31 +78,29 @@ export function NewCampaignDialog() {
         render={
           <Button size="sm">
             <Plus data-icon="inline-start" />
-            New campaign
+            {t.campaigns.newCampaign}
           </Button>
         }
       />
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Nueva campaña</DialogTitle>
-          <DialogDescription>
-            Registra una campaña y asígnala a un cliente. Se guarda en tiempo real.
-          </DialogDescription>
+          <DialogTitle>{t.campaigns.dialogTitle}</DialogTitle>
+          <DialogDescription>{t.campaigns.dialogDescription}</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="campaign-name">Nombre de la campaña</FieldLabel>
+              <FieldLabel htmlFor="campaign-name">{t.campaigns.nameLabel}</FieldLabel>
               <Input
                 id="campaign-name"
                 name="name"
-                placeholder="e.g. Healthy Cooking — Prospecting"
+                placeholder={t.campaigns.namePlaceholder}
                 required
               />
             </Field>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field>
-                <FieldLabel>Plataforma</FieldLabel>
+                <FieldLabel>{t.campaigns.platformLabel}</FieldLabel>
                 <Select value={platform} onValueChange={(v) => setPlatform(v as Platform)}>
                   <SelectTrigger className="w-full">
                     <SelectValue />
@@ -114,7 +115,7 @@ export function NewCampaignDialog() {
                 </Select>
               </Field>
               <Field>
-                <FieldLabel>Estado</FieldLabel>
+                <FieldLabel>{t.campaigns.statusLabel}</FieldLabel>
                 <Select
                   value={status}
                   onValueChange={(v) => setStatus(v as Campaign["status"])}
@@ -133,10 +134,10 @@ export function NewCampaignDialog() {
               </Field>
             </div>
             <Field>
-              <FieldLabel>Cliente</FieldLabel>
+              <FieldLabel>{t.campaigns.clientLabel}</FieldLabel>
               <Select value={clientId} onValueChange={(v) => setClientId(v ?? "")}>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Selecciona un cliente" />
+                  <SelectValue placeholder={t.campaigns.clientPlaceholder} />
                 </SelectTrigger>
                 <SelectContent>
                   {clients.map((c) => (
@@ -149,9 +150,11 @@ export function NewCampaignDialog() {
             </Field>
           </FieldGroup>
           <DialogFooter className="mt-6">
-            <DialogClose render={<Button variant="outline" type="button" />}>Cancel</DialogClose>
+            <DialogClose render={<Button variant="outline" type="button" />}>
+              {t.common.cancel}
+            </DialogClose>
             <Button type="submit" disabled={submitting}>
-              {submitting ? "Creando…" : "Create campaign"}
+              {submitting ? t.common.creating : t.campaigns.create}
             </Button>
           </DialogFooter>
         </form>

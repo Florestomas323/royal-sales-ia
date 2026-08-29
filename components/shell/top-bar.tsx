@@ -17,6 +17,7 @@ import { NotificationsMenu } from "./notifications-menu"
 import { NewLeadDialog } from "./new-lead-dialog"
 import { navSections } from "./nav-config"
 import { periods } from "@/lib/mock-data"
+import { t } from "@/lib/i18n"
 
 function useCurrentTitle() {
   const pathname = usePathname()
@@ -24,7 +25,7 @@ function useCurrentTitle() {
   const match =
     all.find((i) => i.href !== "/" && pathname.startsWith(i.href)) ??
     all.find((i) => i.href === pathname)
-  return match?.label ?? "Overview"
+  return match?.label ?? t.nav.sections.overview
 }
 
 export function TopBar() {
@@ -43,7 +44,7 @@ export function TopBar() {
           <GlobalSearch />
         </div>
         <Select defaultValue="7d">
-          <SelectTrigger className="h-9 gap-2" aria-label="Reporting period">
+          <SelectTrigger className="h-9 gap-2" aria-label={t.shell.reportingPeriod}>
             <CalendarDays className="size-4 text-muted-foreground" />
             <SelectValue />
           </SelectTrigger>

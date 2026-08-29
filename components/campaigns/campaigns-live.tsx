@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { CampaignsTable } from "@/components/campaigns/campaigns-table"
 import { useCampaigns } from "@/lib/firebase/collections"
 import { formatCurrency, formatNumber } from "@/lib/format"
+import { t } from "@/lib/i18n"
 
 export function CampaignsLive() {
   const { campaigns, loading } = useCampaigns()
@@ -16,11 +17,11 @@ export function CampaignsLive() {
   const activeCount = campaigns.filter((c) => c.status === "active").length
 
   const stats = [
-    { label: "Ad spend", value: formatCurrency(totalSpend, true) },
-    { label: "Leads generated", value: formatNumber(totalLeads) },
-    { label: "Revenue", value: formatCurrency(totalRevenue, true) },
-    { label: "Blended ROAS", value: `${blendedRoas.toFixed(1)}x` },
-    { label: "Active campaigns", value: String(activeCount) },
+    { label: t.campaigns.stats.spend, value: formatCurrency(totalSpend, true) },
+    { label: t.campaigns.stats.leads, value: formatNumber(totalLeads) },
+    { label: t.campaigns.stats.revenue, value: formatCurrency(totalRevenue, true) },
+    { label: t.campaigns.stats.roas, value: `${blendedRoas.toFixed(1)}x` },
+    { label: t.campaigns.stats.active, value: String(activeCount) },
   ]
 
   if (loading) {

@@ -15,38 +15,40 @@ import {
   FieldLabel,
 } from "@/components/ui/field"
 import { useAuth } from "@/lib/firebase/auth-context"
+import { t } from "@/lib/i18n"
 
 type Mode = "signin" | "signup"
 
 function friendlyError(code: string): string {
+  const e = t.auth.errors
   switch (code) {
     case "auth/invalid-email":
-      return "El correo no tiene un formato válido."
+      return e.invalidEmail
     case "auth/invalid-credential":
     case "auth/wrong-password":
     case "auth/user-not-found":
-      return "Correo o contraseña incorrectos."
+      return e.invalidCredential
     case "auth/email-already-in-use":
-      return "Ya existe una cuenta con este correo. Inicia sesión."
+      return e.emailInUse
     case "auth/weak-password":
-      return "La contraseña debe tener al menos 6 caracteres."
+      return e.weakPassword
     case "auth/too-many-requests":
-      return "Demasiados intentos. Espera un momento e inténtalo de nuevo."
+      return e.tooManyRequests
     case "auth/operation-not-allowed":
-      return "El acceso con email/contraseña aún no está habilitado en Firebase. Actívalo en Authentication → Sign-in method."
+      return e.operationNotAllowed
     case "auth/configuration-not-found":
-      return "Falta configurar Authentication en Firebase. Habilita el proveedor Email/Password en la consola."
+      return e.configurationNotFound
     case "auth/network-request-failed":
-      return "Error de red. Revisa tu conexión e inténtalo de nuevo."
+      return e.networkFailed
     case "auth/popup-closed-by-user":
     case "auth/cancelled-popup-request":
-      return "Se cerró la ventana de Google antes de terminar. Inténtalo de nuevo."
+      return e.popupClosed
     case "auth/popup-blocked":
-      return "El navegador bloqueó la ventana de Google. Permite las ventanas emergentes."
+      return e.popupBlocked
     case "auth/unauthorized-domain":
-      return "Este dominio no está autorizado en Firebase. Agrégalo en Authentication → Settings → Authorized domains."
+      return e.unauthorizedDomain
     default:
-      return "Algo salió mal. Inténtalo de nuevo."
+      return e.generic
   }
 }
 
@@ -97,7 +99,7 @@ export function AuthForm() {
       if (err instanceof FirebaseError) {
         setError(friendlyError(err.code))
       } else {
-        setError("No se pudo continuar con Google. Inténtalo de nuevo.")
+        setError(t.auth.errors.googleFailed)
       }
       setGoogleLoading(false)
     }
@@ -118,7 +120,7 @@ export function AuthForm() {
       if (err instanceof FirebaseError) {
         setError(friendlyError(err.code))
       } else {
-        setError("Algo salió mal. Inténtalo de nuevo.")
+        setError(t.auth.errors.generic)
       }
       setSubmitting(false)
     }
@@ -128,12 +130,10 @@ export function AuthForm() {
     <form onSubmit={handleSubmit} noValidate>
       <div className="mb-6 flex flex-col gap-1.5">
         <h2 className="text-2xl font-semibold tracking-tight text-balance">
-          {isSignup ? "Crea tu cuenta" : "Bienvenido de vuelta"}
+          {isSignup ? t.auth.createAccount : t.auth.welcomeBack}
         </h2>
         <p className="text-sm text-muted-foreground">
-          {isSignup
-            ? "Empieza a operar tu marketing y ventas con IA."
-            : "Ingresa a tu command center de ventas."}
+          {isSignup ? t.auth.signUpSubtitle : t.auth.signInSubtitle}
         </p>
       </div>
 
@@ -150,23 +150,23 @@ export function AuthForm() {
           ) : (
             <GoogleMark />
           )}
-          Continuar con Google
+          {t.auth.continueWithGoogle}
         </Button>
 
         <div className="flex items-center gap-3">
           <span className="h-px flex-1 bg-border" />
-          <span className="text-xs text-muted-foreground">o con tu correo</span>
+          <span className="text-xs text-muted-foreground">{t.auth.orWithEmail}</span>
           <span className="h-px flex-1 bg-border" />
         </div>
 
         {isSignup && (
           <Field>
-            <FieldLabel htmlFor="name">Nombre completo</FieldLabel>
+            <FieldLabel htmlFor="name">{t.auth.fullName}</FieldLabel>
             <Input
               id="name"
               type="text"
               autoComplete="name"
-              placeholder="Ana Torres"
+              placeholder={t.auth.fullNamePlaceholder}
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
@@ -175,12 +175,12 @@ export function AuthForm() {
         )}
 
         <Field data-invalid={!!error || undefined}>
-          <FieldLabel htmlFor="email">Correo de trabajo</FieldLabel>
+          <FieldLabel htmlFor="email">{t.auth.workEmail}</FieldLabel>
           <Input
             id="email"
             type="email"
             autoComplete="email"
-            placeholder="tu@agencia.com"
+            placeholder={t.auth.emailPlaceholder}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             aria-invalid={!!error || undefined}
@@ -189,7 +189,7 @@ export function AuthForm() {
         </Field>
 
         <Field data-invalid={!!error || undefined}>
-          <FieldLabel htmlFor="password">Contraseña</FieldLabel>
+          <FieldLabel htmlFor="password">{t.auth.password}</FieldLabel>
           <Input
             id="password"
             type="password"
@@ -201,18 +201,18 @@ export function AuthForm() {
             required
           />
           {isSignup && !error && (
-            <FieldDescription>Mínimo 6 caracteres.</FieldDescription>
+            <FieldDescription>{t.auth.passwordHint}</FieldDescription>
           )}
           <FieldError>{error}</FieldError>
         </Field>
 
         <Button type="submit" className="w-full" disabled={submitting || googleLoading}>
           {submitting && <Loader2 className="animate-spin" data-icon="inline-start" />}
-          {isSignup ? "Crear cuenta" : "Iniciar sesión"}
+          {isSignup ? t.auth.signUp : t.auth.signIn}
         </Button>
 
         <FieldDescription className="text-center">
-          {isSignup ? "¿Ya tienes cuenta?" : "¿Aún no tienes cuenta?"}{" "}
+          {isSignup ? t.auth.haveAccount : t.auth.noAccount}{" "}
           <button
             type="button"
             className="font-medium text-primary underline underline-offset-4"
@@ -221,7 +221,7 @@ export function AuthForm() {
               setError(null)
             }}
           >
-            {isSignup ? "Inicia sesión" : "Crea una gratis"}
+            {isSignup ? t.auth.goToSignIn : t.auth.goToSignUp}
           </button>
         </FieldDescription>
       </FieldGroup>

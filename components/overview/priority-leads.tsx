@@ -5,7 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ScoreBadge } from "@/components/shared/score-badge"
 import { PlatformMark } from "@/components/shared/platform-badge"
 import { leads } from "@/lib/mock-data"
-import { formatCurrency, relativeTime } from "@/lib/format"
+import { formatCurrency } from "@/lib/format"
+import { t } from "@/lib/i18n"
 
 export function PriorityLeads() {
   const priority = [...leads]
@@ -19,9 +20,9 @@ export function PriorityLeads() {
         <div className="flex flex-col gap-1">
           <CardTitle className="flex items-center gap-2 text-base">
             <Flame className="size-4 text-warning" />
-            Today&apos;s priorities
+            {t.overview.priorities}
           </CardTitle>
-          <CardDescription>Highest-scoring leads that need a touch</CardDescription>
+          <CardDescription>{t.overview.prioritiesDescription}</CardDescription>
         </div>
         <Button
           variant="ghost"
@@ -30,7 +31,7 @@ export function PriorityLeads() {
           className="gap-1 text-xs"
           render={<Link href="/leads" />}
         >
-          View all
+          {t.common.viewAll}
           <ArrowUpRight className="size-3.5" />
         </Button>
       </CardHeader>

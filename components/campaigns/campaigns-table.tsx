@@ -15,7 +15,8 @@ import {
 import { Search } from "lucide-react"
 import { PlatformMark } from "@/components/shared/platform-badge"
 import { formatCurrency, formatNumber } from "@/lib/format"
-import { PLATFORM_LABELS } from "@/lib/constants"
+import { CAMPAIGN_STATUS_LABELS, PLATFORM_LABELS } from "@/lib/constants"
+import { t } from "@/lib/i18n"
 import type { Campaign, CampaignStatus } from "@/types"
 
 const STATUS_VARIANT: Record<CampaignStatus, "default" | "secondary" | "outline"> = {
@@ -46,7 +47,7 @@ export function CampaignsTable({ campaigns }: { campaigns: Campaign[] }) {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search campaigns"
+            placeholder={t.campaigns.searchPlaceholder}
             className="pl-9"
           />
         </div>
@@ -55,13 +56,13 @@ export function CampaignsTable({ campaigns }: { campaigns: Campaign[] }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Campaign</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Spend</TableHead>
-                <TableHead className="text-right">Leads</TableHead>
-                <TableHead className="text-right">CPL</TableHead>
-                <TableHead className="text-right">Revenue</TableHead>
-                <TableHead className="text-right">ROAS</TableHead>
+                <TableHead>{t.campaigns.table.campaign}</TableHead>
+                <TableHead>{t.campaigns.table.status}</TableHead>
+                <TableHead className="text-right">{t.campaigns.table.spend}</TableHead>
+                <TableHead className="text-right">{t.campaigns.table.leads}</TableHead>
+                <TableHead className="text-right">{t.campaigns.table.cpl}</TableHead>
+                <TableHead className="text-right">{t.campaigns.table.revenue}</TableHead>
+                <TableHead className="text-right">{t.campaigns.table.roas}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -80,8 +81,8 @@ export function CampaignsTable({ campaigns }: { campaigns: Campaign[] }) {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={STATUS_VARIANT[c.status]} className="capitalize">
-                        {c.status}
+                      <Badge variant={STATUS_VARIANT[c.status]}>
+                        {CAMPAIGN_STATUS_LABELS[c.status]}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm tabular-nums">

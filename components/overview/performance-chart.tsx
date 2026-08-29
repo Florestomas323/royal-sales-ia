@@ -15,18 +15,19 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart'
 import { performanceTrend } from '@/lib/mock-data'
+import { t } from '@/lib/i18n'
 
 const chartConfig = {
-  leads: { label: 'Leads', color: 'var(--chart-1)' },
-  revenue: { label: 'Revenue', color: 'var(--chart-2)' },
+  leads: { label: t.analytics.leads, color: 'var(--chart-1)' },
+  revenue: { label: t.analytics.revenue, color: 'var(--chart-2)' },
 } satisfies ChartConfig
 
 export function PerformanceChart() {
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle>Performance trend</CardTitle>
-        <CardDescription>Leads and revenue over the last 14 days</CardDescription>
+        <CardTitle>{t.overview.performanceTrend}</CardTitle>
+        <CardDescription>{t.overview.performanceTrendDescription}</CardDescription>
       </CardHeader>
       <CardContent>
         <ChartContainer config={chartConfig} className="aspect-auto h-[260px] w-full">

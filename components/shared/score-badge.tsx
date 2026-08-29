@@ -1,12 +1,11 @@
 import { cn } from '@/lib/utils'
-import { scoreColor, STAGE_LABELS, temperatureColor } from '@/lib/constants'
+import {
+  scoreColor,
+  STAGE_LABELS,
+  TEMPERATURE_SHORT_LABELS,
+  temperatureColor,
+} from '@/lib/constants'
 import type { LeadTemperature, PipelineStage } from '@/types'
-
-const TEMP_LABEL: Record<LeadTemperature, string> = {
-  hot: 'HOT',
-  warm: 'WARM',
-  cold: 'COLD',
-}
 
 /** Circular score gauge used in the lead detail header. */
 export function ScoreRing({ score, size = 48 }: { score: number; size?: number }) {
@@ -64,7 +63,7 @@ export function TemperatureDot({
       <span className="size-2 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />
       {withLabel && (
         <span className="text-[10px] font-semibold tracking-wide" style={{ color }}>
-          {TEMP_LABEL[temperature]}
+          {TEMPERATURE_SHORT_LABELS[temperature]}
         </span>
       )}
     </span>
@@ -94,7 +93,7 @@ export function ScoreBadge({
           className="text-[10px] font-semibold tracking-wide"
           style={{ color }}
         >
-          {TEMP_LABEL[temperature]}
+          {TEMPERATURE_SHORT_LABELS[temperature]}
         </span>
       )}
     </span>

@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { kpis } from "@/lib/mock-data"
 import { formatKpi, percentChange } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { t } from "@/lib/i18n"
 
 export function KpiCards() {
   return (
@@ -30,7 +31,7 @@ export function KpiCards() {
                   <Arrow className="size-3" />
                   {Math.abs(change).toFixed(1)}%
                 </span>
-                <span className="text-muted-foreground">vs. previous</span>
+                <span className="text-muted-foreground">{t.common.vsPrevious}</span>
               </div>
             </CardContent>
           </Card>

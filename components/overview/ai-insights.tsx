@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { aiInsights } from "@/lib/mock-data"
 import type { InsightType } from "@/types"
 import { cn } from "@/lib/utils"
+import { t } from "@/lib/i18n"
 
 const typeConfig: Record<
   InsightType,
@@ -49,10 +50,8 @@ export function AiInsights() {
             <Sparkles className="size-4" />
           </span>
           <div className="flex flex-col">
-            <CardTitle className="text-base">Royal AI</CardTitle>
-            <span className="text-xs text-muted-foreground">
-              Insights refreshed a few minutes ago
-            </span>
+            <CardTitle className="text-base">{t.ai.name}</CardTitle>
+            <span className="text-xs text-muted-foreground">{t.ai.refreshed}</span>
           </div>
         </div>
         <Badge variant="secondary" className="gap-1">
@@ -60,7 +59,7 @@ export function AiInsights() {
             <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
             <span className="relative inline-flex size-1.5 rounded-full bg-success" />
           </span>
-          Live
+          {t.common.live}
         </Badge>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
@@ -88,7 +87,7 @@ export function AiInsights() {
                   </p>
                   {insight.priority === "high" && (
                     <Badge variant="outline" className="shrink-0 text-[10px] uppercase">
-                      Priority
+                      {t.common.priority}
                     </Badge>
                   )}
                 </div>

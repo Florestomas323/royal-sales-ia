@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { ScoreBadge } from '@/components/shared/score-badge'
 import { navSections } from './nav-config'
 import { leads } from '@/lib/mock-data'
+import { t } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 const navItems = navSections.flatMap((s) => s.items)
@@ -63,7 +64,7 @@ export function GlobalSearch() {
       >
         <span className="flex items-center gap-2">
           <Search data-icon="inline-start" />
-          <span className="hidden md:inline">Search…</span>
+          <span className="hidden md:inline">{t.common.searchEllipsis}</span>
         </span>
         <kbd className="hidden rounded border border-border bg-muted px-1.5 font-mono text-[10px] text-muted-foreground md:inline">
           ⌘K
@@ -75,9 +76,9 @@ export function GlobalSearch() {
           showCloseButton={false}
           className="overflow-hidden p-0 sm:max-w-lg"
         >
-          <DialogTitle className="sr-only">Global search</DialogTitle>
+          <DialogTitle className="sr-only">{t.search.title}</DialogTitle>
           <DialogDescription className="sr-only">
-            Search across pages and leads.
+            {t.search.description}
           </DialogDescription>
           <div className="flex items-center gap-2 border-b border-border px-3">
             <Search className="size-4 shrink-0 text-muted-foreground" />
@@ -85,7 +86,7 @@ export function GlobalSearch() {
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search pages, leads…"
+              placeholder={t.search.placeholder}
               className="h-12 border-0 bg-transparent px-0 text-base shadow-none focus-visible:ring-0"
             />
           </div>
@@ -93,7 +94,7 @@ export function GlobalSearch() {
             {pages.length > 0 && (
               <div className="mb-2">
                 <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                  Pages
+                  {t.search.pages}
                 </p>
                 {pages.map((p) => (
                   <button
@@ -112,7 +113,7 @@ export function GlobalSearch() {
             {leadResults.length > 0 && (
               <div>
                 <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                  Leads
+                  {t.search.leads}
                 </p>
                 {leadResults.map((l) => (
                   <button
@@ -133,12 +134,12 @@ export function GlobalSearch() {
             )}
             {pages.length === 0 && leadResults.length === 0 && (
               <p className="px-2 py-8 text-center text-sm text-muted-foreground">
-                No results for “{query}”.
+                {t.search.noResults(query)}
               </p>
             )}
           </div>
           <div className="flex items-center gap-1.5 border-t border-border px-3 py-2 text-xs text-muted-foreground">
-            <CornerDownLeft className="size-3" /> to open · Esc to close
+            <CornerDownLeft className="size-3" /> {t.search.hint}
           </div>
         </DialogContent>
       </Dialog>

@@ -7,24 +7,15 @@ import { Sparkles, TrendingUp, Users } from "lucide-react"
 import { AuthForm } from "@/components/auth/auth-form"
 import { BrandMark } from "@/components/shared/brand-mark"
 import { useAuth } from "@/lib/firebase/auth-context"
+import { t } from "@/lib/i18n"
 
-const HIGHLIGHTS = [
-  {
-    icon: TrendingUp,
-    title: "Pipeline inteligente",
-    body: "Prioriza leads con scoring por IA y cierra más rápido.",
-  },
-  {
-    icon: Users,
-    title: "Todo tu equipo",
-    body: "Media buyers, closers y clientes en un solo comando.",
-  },
-  {
-    icon: Sparkles,
-    title: "Asistente Royal AI",
-    body: "Recomendaciones accionables sobre cada lead y campaña.",
-  },
-]
+const HIGHLIGHT_ICONS = [TrendingUp, Users, Sparkles]
+
+const HIGHLIGHTS = t.auth.highlights.map((h, i) => ({
+  icon: HIGHLIGHT_ICONS[i],
+  title: h.title,
+  body: h.body,
+}))
 
 export default function LoginPage() {
   const { user, loading } = useAuth()
@@ -52,13 +43,15 @@ export default function LoginPage() {
           <BrandMark size={40} priority className="size-10 ring-1 ring-primary-foreground/20" />
           <div className="flex flex-col leading-tight">
             <span className="text-sm font-semibold tracking-tight">Royal Sales IA</span>
-            <span className="text-[11px] text-primary-foreground/70">Marketing & Sales OS</span>
+            <span className="text-[11px] text-primary-foreground/70">
+              {t.shell.brandTagline}
+            </span>
           </div>
         </div>
 
         <div className="relative flex flex-col gap-8">
           <h1 className="max-w-md text-3xl font-semibold leading-tight text-balance">
-            El sistema operativo de IA para equipos de marketing y ventas de alto rendimiento.
+            {t.auth.heroTitle}
           </h1>
           <ul className="flex flex-col gap-5">
             {HIGHLIGHTS.map((h) => (
@@ -76,7 +69,7 @@ export default function LoginPage() {
         </div>
 
         <p className="relative text-xs text-primary-foreground/60">
-          © {new Date().getFullYear()} Royal Sales IA. Todos los derechos reservados.
+          © {new Date().getFullYear()} Royal Sales IA. {t.auth.rights}
         </p>
       </div>
 

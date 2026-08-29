@@ -29,6 +29,7 @@ import {
 import { UserAvatar } from '@/components/shared/user-avatar'
 import { BrandMark } from '@/components/shared/brand-mark'
 import { navSections } from './nav-config'
+import { t } from '@/lib/i18n'
 import { currentUser, currentWorkspace } from '@/lib/mock-data'
 import { ROLE_LABELS } from '@/lib/constants'
 import { useAuth } from '@/lib/firebase/auth-context'
@@ -57,7 +58,7 @@ export function AppSidebar() {
               Royal Sales IA
             </span>
             <span className="text-[11px] text-sidebar-foreground/60">
-              Marketing & Sales OS
+              {t.shell.brandTagline}
             </span>
           </div>
         </div>
@@ -145,19 +146,19 @@ export function AppSidebar() {
                 <DropdownMenuGroup>
                   <DropdownMenuItem>
                     <Sparkles />
-                    Upgrade plan
+                    {t.shell.upgradePlan}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     render={<Link href="/settings" />}
                   >
                     <Settings />
-                    Workspace settings
+                    {t.shell.workspaceSettings}
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onClick={handleLogout}>
                   <LogOut />
-                  Cerrar sesión
+                  {t.shell.signOut}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

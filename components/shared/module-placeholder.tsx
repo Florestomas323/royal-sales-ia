@@ -9,10 +9,11 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { PageHeader } from "@/components/shared/page-header"
+import { t } from "@/lib/i18n"
 
 interface Feature {
-  title: string
-  description: string
+  readonly title: string
+  readonly description: string
 }
 
 interface ModulePlaceholderProps {
@@ -20,7 +21,7 @@ interface ModulePlaceholderProps {
   description: string
   icon: LucideIcon
   blurb: string
-  features: Feature[]
+  features: readonly Feature[]
 }
 
 export function ModulePlaceholder({
@@ -35,7 +36,7 @@ export function ModulePlaceholder({
       <PageHeader
         title={title}
         description={description}
-        actions={<Badge variant="secondary">Phase 2</Badge>}
+        actions={<Badge variant="secondary">{t.common.phase2}</Badge>}
       />
 
       <Empty className="border">
@@ -43,7 +44,7 @@ export function ModulePlaceholder({
           <EmptyMedia variant="icon" className="size-12 [&_svg:not([class*='size-'])]:size-6">
             <Icon />
           </EmptyMedia>
-          <EmptyTitle className="text-base">{title} is on the roadmap</EmptyTitle>
+          <EmptyTitle className="text-base">{t.modules.onRoadmap(title)}</EmptyTitle>
           <EmptyDescription>{blurb}</EmptyDescription>
         </EmptyHeader>
         <EmptyContent className="max-w-xl">

@@ -18,7 +18,7 @@ export const leads: Lead[] = [
     createdAt: minutesAgo(8),
     lastContactAt: null,
     nextFollowUpAt: inHours(1),
-    nextAction: 'Call within 10 minutes',
+    nextAction: 'Llamar en los próximos 10 minutos',
     attribution: {
       platform: 'meta',
       campaign: 'Healthy Cooking — Prospecting',
@@ -44,7 +44,7 @@ export const leads: Lead[] = [
     createdAt: hoursAgo(5),
     lastContactAt: hoursAgo(2),
     nextFollowUpAt: inHours(20),
-    nextAction: 'Send pricing on WhatsApp',
+    nextAction: 'Enviar precios por WhatsApp',
     attribution: {
       platform: 'tiktok',
       campaign: 'Healthy Cooking — Recipes UGC',
@@ -70,7 +70,7 @@ export const leads: Lead[] = [
     createdAt: daysAgo(1),
     lastContactAt: hoursAgo(6),
     nextFollowUpAt: inDays(1),
-    nextAction: 'Confirm appointment tomorrow 5pm',
+    nextAction: 'Confirmar la cita de mañana a las 5 p. m.',
     attribution: {
       platform: 'meta',
       campaign: 'FitLife — Transformation Challenge',
@@ -96,7 +96,7 @@ export const leads: Lead[] = [
     createdAt: minutesAgo(42),
     lastContactAt: null,
     nextFollowUpAt: inHours(3),
-    nextAction: 'Qualify budget',
+    nextAction: 'Calificar presupuesto',
     attribution: {
       platform: 'tiktok',
       campaign: 'Casa Bella — Lead Gen',
@@ -122,7 +122,7 @@ export const leads: Lead[] = [
     createdAt: daysAgo(2),
     lastContactAt: hoursAgo(20),
     nextFollowUpAt: inHours(4),
-    nextAction: 'Send product demo video',
+    nextAction: 'Enviar video demo del producto',
     attribution: {
       platform: 'meta',
       campaign: 'Healthy Cooking — Prospecting',
@@ -148,7 +148,7 @@ export const leads: Lead[] = [
     createdAt: hoursAgo(9),
     lastContactAt: null,
     nextFollowUpAt: inHours(2),
-    nextAction: 'First WhatsApp touch',
+    nextAction: 'Primer contacto por WhatsApp',
     attribution: {
       platform: 'meta',
       campaign: 'FitLife — Transformation Challenge',
@@ -174,7 +174,7 @@ export const leads: Lead[] = [
     createdAt: daysAgo(4),
     lastContactAt: daysAgo(1),
     nextFollowUpAt: null,
-    nextAction: 'Onboarding call',
+    nextAction: 'Llamada de onboarding',
     attribution: {
       platform: 'tiktok',
       campaign: 'Healthy Cooking — Recipes UGC',
@@ -200,7 +200,7 @@ export const leads: Lead[] = [
     createdAt: daysAgo(3),
     lastContactAt: daysAgo(1),
     nextFollowUpAt: inDays(2),
-    nextAction: 'Follow up on pricing objection',
+    nextAction: 'Dar seguimiento a la objeción de precio',
     attribution: {
       platform: 'meta',
       campaign: 'Healthy Cooking — Prospecting',
@@ -226,7 +226,7 @@ export const leads: Lead[] = [
     createdAt: daysAgo(2),
     lastContactAt: hoursAgo(30),
     nextFollowUpAt: inDays(1),
-    nextAction: 'Property viewing Saturday',
+    nextAction: 'Visita al inmueble el sábado',
     attribution: {
       platform: 'tiktok',
       campaign: 'Casa Bella — Lead Gen',
@@ -252,7 +252,7 @@ export const leads: Lead[] = [
     createdAt: minutesAgo(23),
     lastContactAt: null,
     nextFollowUpAt: inHours(1),
-    nextAction: 'Qualify interest level',
+    nextAction: 'Calificar nivel de interés',
     attribution: {
       platform: 'meta',
       campaign: 'FitLife — Transformation Challenge',
@@ -278,7 +278,7 @@ export const leads: Lead[] = [
     createdAt: hoursAgo(3),
     lastContactAt: hoursAgo(1),
     nextFollowUpAt: inHours(6),
-    nextAction: 'Schedule tasting session',
+    nextAction: 'Agendar sesión de degustación',
     attribution: {
       platform: 'meta',
       campaign: 'Healthy Cooking — Prospecting',
@@ -304,7 +304,7 @@ export const leads: Lead[] = [
     createdAt: daysAgo(1),
     lastContactAt: hoursAgo(10),
     nextFollowUpAt: inHours(8),
-    nextAction: 'Answer ingredient questions',
+    nextAction: 'Responder dudas sobre ingredientes',
     attribution: {
       platform: 'tiktok',
       campaign: 'Healthy Cooking — Recipes UGC',
@@ -330,7 +330,7 @@ export const leads: Lead[] = [
     createdAt: hoursAgo(14),
     lastContactAt: null,
     nextFollowUpAt: inHours(2),
-    nextAction: 'Call to confirm interest',
+    nextAction: 'Llamar para confirmar interés',
     attribution: {
       platform: 'google',
       campaign: 'Casa Bella — Open House',
@@ -356,7 +356,7 @@ export const leads: Lead[] = [
     createdAt: daysAgo(5),
     lastContactAt: daysAgo(2),
     nextFollowUpAt: null,
-    nextAction: 'Collect testimonial',
+    nextAction: 'Pedir testimonio',
     attribution: {
       platform: 'meta',
       campaign: 'Healthy Cooking — Prospecting',

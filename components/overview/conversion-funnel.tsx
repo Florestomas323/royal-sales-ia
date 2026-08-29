@@ -1,6 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { funnel } from "@/lib/mock-data"
 import { formatNumber } from "@/lib/format"
+import { t } from "@/lib/i18n"
 
 export function ConversionFunnel() {
   const max = funnel[0]?.count ?? 1
@@ -8,8 +9,8 @@ export function ConversionFunnel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Conversion funnel</CardTitle>
-        <CardDescription>Lead journey across the pipeline</CardDescription>
+        <CardTitle className="text-base">{t.overview.funnel}</CardTitle>
+        <CardDescription>{t.overview.funnelDescription}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3.5">
         {funnel.map((step, i) => {

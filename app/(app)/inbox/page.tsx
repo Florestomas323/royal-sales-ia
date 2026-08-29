@@ -1,22 +1,20 @@
 import type { Metadata } from "next"
 import { Inbox } from "lucide-react"
 import { ModulePlaceholder } from "@/components/shared/module-placeholder"
+import { t } from "@/lib/i18n"
 
-export const metadata: Metadata = { title: "Inbox" }
+export const metadata: Metadata = { title: t.nav.items.inbox }
 
 export default function InboxPage() {
+  const copy = t.modules.inbox
+
   return (
     <ModulePlaceholder
-      title="Unified Inbox"
-      description="Every WhatsApp, Instagram, and Messenger conversation in one thread."
+      title={copy.title}
+      description={copy.description}
       icon={Inbox}
-      blurb="The unified inbox will merge all messaging channels with AI-drafted replies so no lead waits more than a minute."
-      features={[
-        { title: "Omnichannel threads", description: "WhatsApp, Instagram DM, and Messenger unified per lead." },
-        { title: "AI reply drafts", description: "Suggested responses that match lead context and next best action." },
-        { title: "Fast assignment", description: "Route conversations to the right rep with SLA timers." },
-        { title: "Templates & snippets", description: "One-tap responses for common questions and booking links." },
-      ]}
+      blurb={copy.blurb}
+      features={copy.features}
     />
   )
 }

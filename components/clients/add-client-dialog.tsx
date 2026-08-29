@@ -25,12 +25,14 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { createClient } from "@/lib/firebase/collections"
+import { CLIENT_STATUS_LABELS } from "@/lib/constants"
+import { t } from "@/lib/i18n"
 import type { ClientStatus } from "@/types"
 
 const STATUS_OPTIONS: { value: ClientStatus; label: string }[] = [
-  { value: "onboarding", label: "Onboarding" },
-  { value: "active", label: "Activo" },
-  { value: "paused", label: "Pausado" },
+  { value: "onboarding", label: CLIENT_STATUS_LABELS.onboarding },
+  { value: "active", label: CLIENT_STATUS_LABELS.active },
+  { value: "paused", label: CLIENT_STATUS_LABELS.paused },
 ]
 
 export function AddClientDialog() {
@@ -48,11 +50,13 @@ export function AddClientDialog() {
     setSubmitting(true)
     try {
       await createClient({ name, industry, status })
-      toast.success("Cliente añadido", { description: `${name} se creó correctamente.` })
+      toast.success(t.clients.createdTitle, {
+        description: t.clients.createdDescription(name),
+      })
       setOpen(false)
       setStatus("onboarding")
     } catch {
-      toast.error("No se pudo crear el cliente. Inténtalo de nuevo.")
+      toast.error(t.clients.createError)
     } finally {
       setSubmitting(false)
     }
@@ -64,29 +68,36 @@ export function AddClientDialog() {
         render={
           <Button size="sm">
             <Plus data-icon="inline-start" />
-            Add client
+            {t.clients.addClient}
           </Button>
         }
       />
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Nuevo cliente</DialogTitle>
-          <DialogDescription>
-            Crea una cuenta para empezar a asignar campañas y leads. Se guarda en tiempo real.
-          </DialogDescription>
+          <DialogTitle>{t.clients.dialogTitle}</DialogTitle>
+          <DialogDescription>{t.clients.dialogDescription}</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="client-name">Nombre del cliente</FieldLabel>
-              <Input id="client-name" name="name" placeholder="e.g. Healthy Cooking Co." required />
+              <FieldLabel htmlFor="client-name">{t.clients.nameLabel}</FieldLabel>
+              <Input
+                id="client-name"
+                name="name"
+                placeholder={t.clients.namePlaceholder}
+                required
+              />
             </Field>
             <Field>
-              <FieldLabel htmlFor="client-industry">Industria</FieldLabel>
-              <Input id="client-industry" name="industry" placeholder="e.g. Food & Beverage" />
+              <FieldLabel htmlFor="client-industry">{t.clients.industryLabel}</FieldLabel>
+              <Input
+                id="client-industry"
+                name="industry"
+                placeholder={t.clients.industryPlaceholder}
+              />
             </Field>
             <Field>
-              <FieldLabel>Estado</FieldLabel>
+              <FieldLabel>{t.clients.statusLabel}</FieldLabel>
               <Select value={status} onValueChange={(v) => setStatus(v as ClientStatus)}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -102,9 +113,11 @@ export function AddClientDialog() {
             </Field>
           </FieldGroup>
           <DialogFooter className="mt-6">
-            <DialogClose render={<Button variant="outline" type="button" />}>Cancel</DialogClose>
+            <DialogClose render={<Button variant="outline" type="button" />}>
+              {t.common.cancel}
+            </DialogClose>
             <Button type="submit" disabled={submitting}>
-              {submitting ? "Creando…" : "Create client"}
+              {submitting ? t.common.creating : t.clients.create}
             </Button>
           </DialogFooter>
         </form>

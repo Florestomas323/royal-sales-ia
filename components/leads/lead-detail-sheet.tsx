@@ -22,6 +22,7 @@ import { LeadAiAssistant } from "@/components/leads/lead-ai-assistant"
 import { getActivities } from "@/lib/mock-data"
 import { useUsersMap } from "@/lib/firebase/collections"
 import { formatCurrency, formatRelativeTime } from "@/lib/format"
+import { t } from "@/lib/i18n"
 
 interface LeadDetailSheetProps {
   lead: Lead | null
@@ -54,7 +55,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
               <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <Target className="size-3.5" />
-                  {formatCurrency(lead.potentialValue)} potential
+                  {formatCurrency(lead.potentialValue)} {t.leads.detail.potential}
                 </span>
                 <span className="flex items-center gap-1">
                   <Clock className="size-3.5" />
@@ -66,15 +67,15 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
           <div className="flex flex-wrap gap-2">
             <Button size="sm" className="gap-1.5">
               <MessageCircle className="size-3.5" data-icon="inline-start" />
-              WhatsApp
+              {t.leads.detail.whatsapp}
             </Button>
             <Button size="sm" variant="outline" className="gap-1.5">
               <Phone className="size-3.5" data-icon="inline-start" />
-              Call
+              {t.leads.detail.call}
             </Button>
             <Button size="sm" variant="outline" className="gap-1.5">
               <CalendarPlus className="size-3.5" data-icon="inline-start" />
-              Book
+              {t.leads.detail.book}
             </Button>
           </div>
         </SheetHeader>
@@ -85,27 +86,36 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
 
             <Tabs defaultValue="details">
               <TabsList className="w-full">
-                <TabsTrigger value="details">Details</TabsTrigger>
-                <TabsTrigger value="timeline">Timeline</TabsTrigger>
-                <TabsTrigger value="attribution">Attribution</TabsTrigger>
+                <TabsTrigger value="details">{t.leads.detail.tabs.details}</TabsTrigger>
+                <TabsTrigger value="timeline">{t.leads.detail.tabs.timeline}</TabsTrigger>
+                <TabsTrigger value="attribution">
+                  {t.leads.detail.tabs.attribution}
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="details" className="pt-4">
                 <div className="flex flex-col gap-4">
-                  <InfoRow label="Stage" value={<StageBadge stage={lead.stage} />} />
-                  <InfoRow label="Phone" value={lead.phone} />
-                  <InfoRow label="Email" value={lead.email} />
                   <InfoRow
-                    label="Assigned to"
-                    value={rep?.name ?? "Unassigned"}
+                    label={t.leads.detail.stage}
+                    value={<StageBadge stage={lead.stage} />}
+                  />
+                  <InfoRow label={t.leads.detail.phone} value={lead.phone} />
+                  <InfoRow label={t.leads.detail.email} value={lead.email} />
+                  <InfoRow
+                    label={t.leads.detail.assignedTo}
+                    value={rep?.name ?? t.common.unassigned}
                   />
                   <InfoRow
-                    label="Next action"
+                    label={t.leads.detail.nextAction}
                     value={<span className="font-medium text-foreground">{lead.nextAction}</span>}
                   />
                   <InfoRow
-                    label="Last contact"
-                    value={lead.lastContactAt ? formatRelativeTime(lead.lastContactAt) : "Not contacted yet"}
+                    label={t.leads.detail.lastContact}
+                    value={
+                      lead.lastContactAt
+                        ? formatRelativeTime(lead.lastContactAt)
+                        : t.leads.detail.notContacted
+                    }
                   />
                 </div>
               </TabsContent>
@@ -117,13 +127,20 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
               <TabsContent value="attribution" className="pt-4">
                 <div className="flex flex-col gap-4">
                   <InfoRow
-                    label="Platform"
+                    label={t.leads.detail.platform}
                     value={<PlatformBadge platform={lead.attribution.platform} />}
                   />
-                  <InfoRow label="Campaign" value={lead.attribution.campaign} />
-                  <InfoRow label="Ad set" value={lead.attribution.adSet} />
-                  <InfoRow label="Ad" value={lead.attribution.ad} />
-                  <InfoRow label="Creative" value={<code className="rounded bg-muted px-1.5 py-0.5 text-xs">{lead.attribution.creative}</code>} />
+                  <InfoRow label={t.leads.detail.campaign} value={lead.attribution.campaign} />
+                  <InfoRow label={t.leads.detail.adSet} value={lead.attribution.adSet} />
+                  <InfoRow label={t.leads.detail.ad} value={lead.attribution.ad} />
+                  <InfoRow
+                    label={t.leads.detail.creative}
+                    value={
+                      <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                        {lead.attribution.creative}
+                      </code>
+                    }
+                  />
                 </div>
               </TabsContent>
             </Tabs>

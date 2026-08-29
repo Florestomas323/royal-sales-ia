@@ -12,6 +12,7 @@ import { ScoreBadge, TemperatureDot } from "@/components/shared/score-badge"
 import { LeadDetailSheet } from "@/components/leads/lead-detail-sheet"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
+import { t } from "@/lib/i18n"
 
 const STAGE_ACCENT: Record<PipelineStage, string> = {
   new_lead: "var(--chart-1)",
@@ -48,7 +49,7 @@ export function PipelineBoard({ leads }: { leads: Lead[] }) {
       await updateLeadStage(lead.id, stage)
       toast.success(`${lead.name} → ${STAGE_LABELS[stage]}`)
     } catch {
-      toast.error("No se pudo mover el lead. Inténtalo de nuevo.")
+      toast.error(t.pipeline.moveError)
     }
   }
 
@@ -96,7 +97,7 @@ export function PipelineBoard({ leads }: { leads: Lead[] }) {
               <div className="flex min-h-24 flex-1 flex-col gap-2 p-2">
                 {stageLeads.length === 0 ? (
                   <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed py-6 text-xs text-muted-foreground">
-                    Drop leads here
+                    {t.pipeline.dropHere}
                   </div>
                 ) : (
                   stageLeads.map((lead) => (

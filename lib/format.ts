@@ -25,18 +25,21 @@ export function formatRelativeTime(iso: string | null): string {
   if (!iso) return '—'
   const date = new Date(iso)
   const diffMs = Date.now() - date.getTime()
+  const past = diffMs >= 0
+  const ago = (amount: number, unit: string) =>
+    past ? `hace ${amount}${unit}` : `en ${amount}${unit}`
   const diffMin = Math.round(diffMs / 60000)
-  if (Math.abs(diffMin) < 1) return 'just now'
-  if (Math.abs(diffMin) < 60) return `${diffMin}m ago`
+  if (Math.abs(diffMin) < 1) return 'ahora mismo'
+  if (Math.abs(diffMin) < 60) return ago(Math.abs(diffMin), 'm')
   const diffHr = Math.round(diffMin / 60)
-  if (Math.abs(diffHr) < 24) return `${diffHr}h ago`
+  if (Math.abs(diffHr) < 24) return ago(Math.abs(diffHr), 'h')
   const diffDay = Math.round(diffHr / 24)
-  if (Math.abs(diffDay) < 7) return `${diffDay}d ago`
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  if (Math.abs(diffDay) < 7) return ago(Math.abs(diffDay), 'd')
+  return date.toLocaleDateString('es-419', { month: 'short', day: 'numeric' })
 }
 
 export function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('en-US', {
+  return new Date(iso).toLocaleString('es-419', {
     month: 'short',
     day: 'numeric',
     hour: 'numeric',

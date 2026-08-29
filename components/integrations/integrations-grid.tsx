@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
+import { t } from "@/lib/i18n"
 import type { Platform } from "@/types"
 
 const KNOWN_PLATFORMS: Platform[] = ["meta", "tiktok", "google", "whatsapp", "instagram", "facebook"]
@@ -25,7 +26,9 @@ export function IntegrationsGrid() {
         if (item.id !== id || item.status === "coming_soon") return item
         const next = item.status === "connected" ? "not_connected" : "connected"
         toast[next === "connected" ? "success" : "message"](
-          next === "connected" ? `${item.name} connected` : `${item.name} disconnected`,
+          next === "connected"
+            ? t.integrations.connectedToast(item.name)
+            : t.integrations.disconnectedToast(item.name),
         )
         return { ...item, status: next }
       }),
@@ -60,10 +63,10 @@ export function IntegrationsGrid() {
                 {connected && (
                   <Badge className="gap-1">
                     <Check className="size-3" />
-                    Connected
+                    {t.integrations.connected}
                   </Badge>
                 )}
-                {comingSoon && <Badge variant="outline">Soon</Badge>}
+                {comingSoon && <Badge variant="outline">{t.integrations.soon}</Badge>}
               </div>
             </CardHeader>
             <CardContent className="mt-3 flex flex-1 flex-col justify-between gap-4">
@@ -75,7 +78,11 @@ export function IntegrationsGrid() {
                 onClick={() => toggle(item.id)}
                 className="w-full"
               >
-                {comingSoon ? "Coming soon" : connected ? "Disconnect" : "Connect"}
+                {comingSoon
+                  ? t.integrations.comingSoon
+                  : connected
+                    ? t.integrations.disconnect
+                    : t.integrations.connect}
               </Button>
             </CardContent>
           </Card>

@@ -22,7 +22,13 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/
 import { ScoreBadge, StageBadge } from "@/components/shared/score-badge"
 import { PlatformMark } from "@/components/shared/platform-badge"
 import { LeadDetailSheet } from "@/components/leads/lead-detail-sheet"
-import { STAGE_LABELS, STAGE_ORDER, PLATFORM_LABELS } from "@/lib/constants"
+import {
+  STAGE_LABELS,
+  STAGE_ORDER,
+  PLATFORM_LABELS,
+  TEMPERATURE_LABELS,
+} from "@/lib/constants"
+import { t } from "@/lib/i18n"
 import { useUsersMap } from "@/lib/firebase/collections"
 import { formatCurrency, formatRelativeTime, initials } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -71,7 +77,7 @@ export function LeadsView({ leads }: { leads: Lead[] }) {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search name, email, phone or campaign..."
+            placeholder={t.leads.searchPlaceholder}
             className="h-9 w-full rounded-lg border border-input bg-background pr-3 pl-9 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:text-sm"
           />
         </div>
@@ -79,11 +85,13 @@ export function LeadsView({ leads }: { leads: Lead[] }) {
           <Select value={stage} onValueChange={(v) => setStage(v as PipelineStage | "all")}>
             <SelectTrigger size="sm" className="w-[130px]">
               <SelectValue>
-                {(value: string) => (value === "all" ? "All stages" : STAGE_LABELS[value as PipelineStage])}
+                {(value: string) =>
+                  value === "all" ? t.leads.allStages : STAGE_LABELS[value as PipelineStage]
+                }
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All stages</SelectItem>
+              <SelectItem value="all">{t.leads.allStages}</SelectItem>
               {STAGE_ORDER.map((s) => (
                 <SelectItem key={s} value={s}>
                   {STAGE_LABELS[s]}
@@ -94,11 +102,13 @@ export function LeadsView({ leads }: { leads: Lead[] }) {
           <Select value={platform} onValueChange={(v) => setPlatform(v as Platform | "all")}>
             <SelectTrigger size="sm" className="w-[130px]">
               <SelectValue>
-                {(value: string) => (value === "all" ? "All sources" : PLATFORM_LABELS[value as Platform])}
+                {(value: string) =>
+                  value === "all" ? t.leads.allSources : PLATFORM_LABELS[value as Platform]
+                }
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All sources</SelectItem>
+              <SelectItem value="all">{t.leads.allSources}</SelectItem>
               {platforms.map((p) => (
                 <SelectItem key={p} value={p}>
                   {PLATFORM_LABELS[p]}
@@ -110,14 +120,18 @@ export function LeadsView({ leads }: { leads: Lead[] }) {
             <SelectTrigger size="sm" className="w-[120px]">
               <SlidersHorizontal className="size-3.5" data-icon="inline-start" />
               <SelectValue>
-                {(value: string) => (value === "all" ? "All temps" : value.charAt(0).toUpperCase() + value.slice(1))}
+                {(value: string) =>
+                  value === "all"
+                    ? t.leads.allTemperatures
+                    : TEMPERATURE_LABELS[value as LeadTemperature]
+                }
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All temps</SelectItem>
-              <SelectItem value="hot">Hot</SelectItem>
-              <SelectItem value="warm">Warm</SelectItem>
-              <SelectItem value="cold">Cold</SelectItem>
+              <SelectItem value="all">{t.leads.allTemperatures}</SelectItem>
+              <SelectItem value="hot">{TEMPERATURE_LABELS.hot}</SelectItem>
+              <SelectItem value="warm">{TEMPERATURE_LABELS.warm}</SelectItem>
+              <SelectItem value="cold">{TEMPERATURE_LABELS.cold}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
@@ -126,9 +140,9 @@ export function LeadsView({ leads }: { leads: Lead[] }) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="score">Top score</SelectItem>
-              <SelectItem value="value">Highest value</SelectItem>
-              <SelectItem value="recent">Most recent</SelectItem>
+              <SelectItem value="score">{t.leads.sortByScore}</SelectItem>
+              <SelectItem value="value">{t.leads.sortByValue}</SelectItem>
+              <SelectItem value="recent">{t.leads.sortByRecent}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -136,7 +150,8 @@ export function LeadsView({ leads }: { leads: Lead[] }) {
 
       <div className="flex items-center justify-between px-1">
         <p className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">{filtered.length}</span> of {leads.length} leads
+          <span className="font-medium text-foreground">{filtered.length}</span>{" "}
+          {t.leads.count(filtered.length, leads.length)}
         </p>
       </div>
 
@@ -146,8 +161,8 @@ export function LeadsView({ leads }: { leads: Lead[] }) {
             <EmptyMedia variant="icon">
               <Inbox />
             </EmptyMedia>
-            <EmptyTitle>No leads match your filters</EmptyTitle>
-            <EmptyDescription>Try clearing a filter or adjusting your search.</EmptyDescription>
+            <EmptyTitle>{t.leads.emptyTitle}</EmptyTitle>
+            <EmptyDescription>{t.leads.emptyDescription}</EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
@@ -155,13 +170,17 @@ export function LeadsView({ leads }: { leads: Lead[] }) {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead>Lead</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Stage</TableHead>
-                <TableHead className="text-right">Score</TableHead>
-                <TableHead className="hidden text-right md:table-cell">Value</TableHead>
-                <TableHead className="hidden lg:table-cell">Owner</TableHead>
-                <TableHead className="hidden text-right sm:table-cell">Received</TableHead>
+                <TableHead>{t.leads.table.lead}</TableHead>
+                <TableHead>{t.leads.table.source}</TableHead>
+                <TableHead>{t.leads.table.stage}</TableHead>
+                <TableHead className="text-right">{t.leads.table.score}</TableHead>
+                <TableHead className="hidden text-right md:table-cell">
+                  {t.leads.table.value}
+                </TableHead>
+                <TableHead className="hidden lg:table-cell">{t.leads.table.owner}</TableHead>
+                <TableHead className="hidden text-right sm:table-cell">
+                  {t.leads.table.received}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

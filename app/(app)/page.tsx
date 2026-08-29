@@ -6,6 +6,7 @@ import { PerformanceChart } from "@/components/overview/performance-chart"
 import { PlatformPerformance } from "@/components/overview/platform-performance"
 import { PriorityLeads } from "@/components/overview/priority-leads"
 import { currentUser } from "@/lib/mock-data"
+import { t } from "@/lib/i18n"
 
 export default function OverviewPage() {
   const firstName = currentUser.name.split(" ")[0]
@@ -13,8 +14,8 @@ export default function OverviewPage() {
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
       <PageHeader
-        title={`Welcome back, ${firstName}`}
-        description="Here's what's happening across your campaigns and pipeline today."
+        title={t.overview.welcome(firstName)}
+        description={t.overview.description}
       />
 
       <KpiCards />
