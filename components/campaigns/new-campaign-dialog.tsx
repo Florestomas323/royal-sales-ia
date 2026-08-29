@@ -134,7 +134,7 @@ export function NewCampaignDialog() {
             </div>
             <Field>
               <FieldLabel>Cliente</FieldLabel>
-              <Select value={clientId} onValueChange={setClientId}>
+              <Select value={clientId} onValueChange={(v) => setClientId(v ?? "")}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Selecciona un cliente" />
                 </SelectTrigger>

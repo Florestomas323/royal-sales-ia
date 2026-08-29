@@ -116,7 +116,7 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
             </div>
             <Field>
               <FieldLabel>Campaign</FieldLabel>
-              <Select value={campaignId} onValueChange={setCampaignId}>
+              <Select value={campaignId} onValueChange={(v) => setCampaignId(v ?? "")}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select campaign" />
                 </SelectTrigger>
@@ -131,7 +131,7 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
             </Field>
             <Field>
               <FieldLabel>Assign to</FieldLabel>
-              <Select value={assignedToId} onValueChange={setAssignedToId}>
+              <Select value={assignedToId} onValueChange={(v) => setAssignedToId(v ?? "")}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select rep" />
                 </SelectTrigger>
