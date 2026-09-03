@@ -12,6 +12,7 @@ import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
   onAuthStateChanged,
+  sendEmailVerification,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut as fbSignOut,
@@ -56,6 +57,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await updateProfile(cred.user, { displayName: name })
           // Refresh local user so displayName is available immediately.
           setUser({ ...cred.user })
+        }
+        // Invitations can only be claimed with a verified email (see membership.ts).
+        try {
+          await sendEmailVerification(cred.user)
+        } catch (err) {
+          console.warn("[auth] could not send verification email:", err)
         }
       },
       async signInWithGoogle() {

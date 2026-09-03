@@ -4,140 +4,110 @@ import { useEffect, useMemo, useState } from "react"
 import {
   addDoc,
   collection,
-  getDocs,
-  limit,
   onSnapshot,
   query,
-  writeBatch,
-  doc,
+  where,
+  type Query,
+  type DocumentData,
 } from "firebase/firestore"
 import { db } from "./client"
-import { clients as demoClients } from "@/lib/mock-data/clients"
-import { users as demoUsers } from "@/lib/mock-data/workspace"
-import { campaigns as demoCampaigns } from "@/lib/mock-data/campaigns"
-import type { Campaign, Client, User } from "@/types"
+import { useWorkspace } from "./workspace-context"
+import type { Campaign, Client, LeadType, User } from "@/types"
 
 /* -------------------------------------------------------------------------- */
-/*  Generic idempotent seeder                                                  */
+/*  Generic workspace-scoped realtime hook                                    */
 /* -------------------------------------------------------------------------- */
-
-const seedGuards: Record<string, Promise<void> | null> = {}
 
 /**
- * Seeds a collection with a demo dataset the first time it runs against an
- * empty collection, preserving the original document ids so cross-references
- * (leads → clientId / assignedToId / campaignId) keep resolving.
+ * Subscribes to a collection filtered by the ACTIVE workspace.
  *
- * Idempotent: if any doc already exists it does nothing. Per-collection
- * in-memory guards prevent duplicate work within a session.
+ *  - Members: `where("workspaceId", "==", <their workspace>)` — always.
+ *  - super_admin with a workspace selected: same filter.
+ *  - super_admin in "all workspaces" mode: no filter (Rules allow it only for
+ *    super_admin; any other role would get permission-denied, which we surface).
+ *
+ * No automatic seeding happens here anymore (see seed.ts / admin-tools.ts).
  */
-export function seedCollectionIfEmpty<T extends { id: string }>(
+function useWorkspaceCollection<T extends { id: string }>(
   name: string,
-  rows: T[],
-): Promise<void> {
-  if (seedGuards[name]) return seedGuards[name] as Promise<void>
-
-  const run = (async () => {
-    const col = collection(db, name)
-    const existing = await getDocs(query(col, limit(1)))
-    if (!existing.empty) return
-
-    const batch = writeBatch(db)
-    for (const row of rows) {
-      batch.set(doc(col, row.id), row)
-    }
-    await batch.commit()
-  })()
-
-  seedGuards[name] = run
-  run.catch(() => {
-    seedGuards[name] = null // allow retry on failure
-  })
-  return run
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Generic realtime hook                                                      */
-/* -------------------------------------------------------------------------- */
-
-function useCollection<T extends { id: string }>(
-  name: string,
-  seedRows: T[],
   sortBy: (a: T, b: T) => number,
 ) {
+  const { workspaceId, isSuperAdmin, status } = useWorkspace()
   const [data, setData] = useState<T[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
 
   useEffect(() => {
-    let unsub: (() => void) | undefined
-    let active = true
-
-    seedCollectionIfEmpty(name, seedRows)
-      .catch(() => {
-        // Seeding failure is non-fatal; the subscription can still run.
-      })
-      .finally(() => {
-        if (!active) return
-        unsub = onSnapshot(
-          collection(db, name),
-          (snap) => {
-            const rows = snap.docs.map((d) => ({ ...(d.data() as T), id: d.id }))
-            rows.sort(sortBy)
-            setData(rows)
-            setLoading(false)
-          },
-          (err) => {
-            setError(err)
-            setLoading(false)
-          },
-        )
-      })
-
-    return () => {
-      active = false
-      unsub?.()
+    if (status !== "ready") return
+    // A member without workspace can never query; avoid an unfiltered read.
+    if (!workspaceId && !isSuperAdmin) {
+      setData([])
+      setLoading(false)
+      return
     }
+
+    setLoading(true)
+    setError(null)
+
+    const col = collection(db, name)
+    const q: Query<DocumentData> = workspaceId
+      ? query(col, where("workspaceId", "==", workspaceId))
+      : query(col)
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const rows = snap.docs.map((d) => ({ ...(d.data() as T), id: d.id }))
+        rows.sort(sortBy)
+        setData(rows)
+        setLoading(false)
+      },
+      (err) => {
+        console.error(`[firestore] ${name} subscription failed:`, err)
+        setError(err)
+        setLoading(false)
+      },
+    )
+    return () => unsub()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name])
+  }, [name, workspaceId, isSuperAdmin, status])
 
   return { data, loading, error }
 }
+
+const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name)
+
+const PALETTE = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+]
+const pick = (arr: readonly string[]) => arr[Math.floor(Math.random() * arr.length)]
 
 /* -------------------------------------------------------------------------- */
 /*  Clients                                                                    */
 /* -------------------------------------------------------------------------- */
 
-const byName = (a: { name: string }, b: { name: string }) =>
-  a.name.localeCompare(b.name)
-
 export function useClients() {
-  const { data, loading, error } = useCollection<Client>(
-    "clients",
-    demoClients,
-    byName,
-  )
+  const { data, loading, error } = useWorkspaceCollection<Client>("clients", byName)
   return { clients: data, loading, error }
 }
 
 export interface NewClientInput {
+  workspaceId: string
   name: string
   industry: string
   status?: Client["status"]
 }
 
 export async function createClient(input: NewClientInput) {
-  const palette = [
-    "var(--chart-1)",
-    "var(--chart-2)",
-    "var(--chart-3)",
-    "var(--chart-4)",
-    "var(--chart-5)",
-  ]
   const client: Omit<Client, "id"> = {
+    workspaceId: input.workspaceId,
     name: input.name,
     industry: input.industry || "—",
-    logoColor: palette[Math.floor(Math.random() * palette.length)],
+    logoColor: pick(PALETTE),
     status: input.status ?? "onboarding",
     adSpend: 0,
     leads: 0,
@@ -154,48 +124,40 @@ export async function createClient(input: NewClientInput) {
 /* -------------------------------------------------------------------------- */
 
 export function useUsers() {
-  const { data, loading, error } = useCollection<User>(
-    "users",
-    demoUsers,
-    byName,
-  )
+  const { data, loading, error } = useWorkspaceCollection<User>("users", byName)
   return { users: data, loading, error }
 }
 
-/**
- * A lookup map of users by id, merged over the demo defaults so rep names
- * always resolve immediately (even before the live snapshot arrives).
- */
+/** Lookup map of users by id for the active workspace. */
 export function useUsersMap(): Record<string, User> {
   const { users } = useUsers()
   return useMemo(() => {
     const map: Record<string, User> = {}
-    for (const u of demoUsers) map[u.id] = u
     for (const u of users) map[u.id] = u
     return map
   }, [users])
 }
 
 export interface NewUserInput {
+  workspaceId: string
   name: string
   email: string
   role: User["role"]
 }
 
+/**
+ * Creates an INVITED team profile. The person links their Firebase Auth
+ * account the first time they sign in with this email (see membership.ts).
+ * `super_admin` cannot be granted from here (Rules reject it).
+ */
 export async function createUser(input: NewUserInput) {
-  const palette = [
-    "var(--chart-1)",
-    "var(--chart-2)",
-    "var(--chart-3)",
-    "var(--chart-4)",
-    "var(--chart-5)",
-    "var(--warning)",
-  ]
   const user: Omit<User, "id"> = {
+    workspaceId: input.workspaceId,
+    authUid: null,
     name: input.name,
-    email: input.email,
+    email: input.email.trim().toLowerCase(),
     role: input.role,
-    avatarColor: palette[Math.floor(Math.random() * palette.length)],
+    avatarColor: pick([...PALETTE, "var(--warning)"]),
     status: "invited",
     assignedLeads: 0,
     appointments: 0,
@@ -210,23 +172,23 @@ export async function createUser(input: NewUserInput) {
 /* -------------------------------------------------------------------------- */
 
 export function useCampaigns() {
-  const { data, loading, error } = useCollection<Campaign>(
-    "campaigns",
-    demoCampaigns,
-    byName,
-  )
+  const { data, loading, error } = useWorkspaceCollection<Campaign>("campaigns", byName)
   return { campaigns: data, loading, error }
 }
 
 export interface NewCampaignInput {
+  workspaceId: string
   name: string
   platform: Campaign["platform"]
   clientId: string
   status?: Campaign["status"]
+  campaignType?: LeadType
 }
 
 export async function createCampaign(input: NewCampaignInput) {
   const campaign: Omit<Campaign, "id"> = {
+    workspaceId: input.workspaceId,
+    campaignType: input.campaignType ?? "sales",
     name: input.name,
     platform: input.platform,
     status: input.status ?? "learning",
