@@ -2,7 +2,13 @@ import { NextResponse } from "next/server"
 import { getMetaAppSecret, getWebhookVerifyToken, isMissingEnvError } from "@/lib/meta/env"
 import { verifyMetaSignature } from "@/lib/meta/signature"
 import { maskId, parseMetaWebhook } from "@/lib/meta/types"
-import { createLogOnlyProcessor, handleLeadgenEvent } from "@/lib/meta/processor"
+import {
+  createFirestoreProcessor,
+  createLogOnlyProcessor,
+  handleLeadgenEvent,
+  type MetaLeadProcessor,
+} from "@/lib/meta/processor"
+import { getAdminDb, isAdminNotConfigured } from "@/lib/firebase/admin"
 
 /**
  * Meta Webhooks endpoint — object "page", field "leadgen".
@@ -18,7 +24,28 @@ import { createLogOnlyProcessor, handleLeadgenEvent } from "@/lib/meta/processor
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-const processor = createLogOnlyProcessor()
+/**
+ * Persistent processor when Firebase Admin is configured; otherwise a log-only
+ * fallback so Meta still gets a 200 (and the misconfiguration is logged once).
+ */
+let processor: MetaLeadProcessor | null = null
+let warnedNoAdmin = false
+function getProcessor(): MetaLeadProcessor {
+  if (processor) return processor
+  try {
+    processor = createFirestoreProcessor(getAdminDb())
+  } catch (err) {
+    if (!warnedNoAdmin) {
+      warnedNoAdmin = true
+      console.error(
+        "[meta/webhook] persistence disabled:",
+        isAdminNotConfigured(err) ? err.message : "Firebase Admin init failed",
+      )
+    }
+    processor = createLogOnlyProcessor()
+  }
+  return processor
+}
 
 /** Reads one secret; on misconfiguration logs the variable NAME (never the value). */
 function readSecret(read: () => string): string | null {
@@ -98,13 +125,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ received: true, ignored: true })
   }
 
-  const summary = { resolved: 0, unresolved: 0, duplicate: 0 }
+  const active = getProcessor()
+  const summary = { resolved: 0, unresolved: 0, duplicate: 0, error: 0 }
   for (const event of parsed.leadgen) {
-    const outcome = await handleLeadgenEvent(event, processor)
+    const outcome = await handleLeadgenEvent(event, active)
     summary[outcome.status]++
     console.info(
-      `[meta/webhook] leadgen leadgen_id=${maskId(event.leadgenId)} form=${maskId(event.formId)} page=${maskId(event.pageId)} ad=${maskId(event.adId)} → ${outcome.status}${
-        outcome.status === "unresolved" ? ` (${outcome.reason})` : ""
+      `[meta/webhook] leadgen leadgen_id=${maskId(event.leadgenId)} form=${maskId(event.formId)} page=${maskId(event.pageId)} ad=${maskId(event.adId)} campaign=${maskId(event.campaignId)} → ${outcome.status}${
+        outcome.status === "unresolved" || outcome.status === "error" ? ` (${outcome.reason})` : ""
       }`,
     )
   }
