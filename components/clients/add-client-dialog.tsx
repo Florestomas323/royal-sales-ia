@@ -25,6 +25,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { createClient } from "@/lib/firebase/collections"
+import { useWorkspace } from "@/lib/firebase/workspace-context"
+import { describeError } from "@/lib/firebase/errors"
 import { CLIENT_STATUS_LABELS } from "@/lib/constants"
 import { t } from "@/lib/i18n"
 import type { ClientStatus } from "@/types"
@@ -36,6 +38,7 @@ const STATUS_OPTIONS: { value: ClientStatus; label: string }[] = [
 ]
 
 export function AddClientDialog() {
+  const { workspaceId } = useWorkspace()
   const [open, setOpen] = React.useState(false)
   const [status, setStatus] = React.useState<ClientStatus>("onboarding")
   const [submitting, setSubmitting] = React.useState(false)
@@ -46,17 +49,21 @@ export function AddClientDialog() {
     const name = (form.get("name") as string)?.trim()
     const industry = (form.get("industry") as string)?.trim()
     if (!name) return
+    if (!workspaceId) {
+      toast.error(t.common.selectWorkspaceFirst)
+      return
+    }
 
     setSubmitting(true)
     try {
-      await createClient({ name, industry, status })
+      await createClient({ workspaceId, name, industry, status })
       toast.success(t.clients.createdTitle, {
         description: t.clients.createdDescription(name),
       })
       setOpen(false)
       setStatus("onboarding")
-    } catch {
-      toast.error(t.clients.createError)
+    } catch (err) {
+      toast.error(t.clients.createError, { description: describeError(err).message })
     } finally {
       setSubmitting(false)
     }
@@ -116,7 +123,7 @@ export function AddClientDialog() {
             <DialogClose render={<Button variant="outline" type="button" />}>
               {t.common.cancel}
             </DialogClose>
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" disabled={submitting || !workspaceId}>
               {submitting ? t.common.creating : t.clients.create}
             </Button>
           </DialogFooter>

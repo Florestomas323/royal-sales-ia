@@ -9,6 +9,8 @@ import type { ClientStatus } from "@/types"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import { DataErrorState } from "@/components/shared/data-error-state"
+import { DemoRowsNotice } from "@/components/shared/demo-data-badge"
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
   active: "default",
@@ -17,7 +19,7 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
 }
 
 export function ClientsLive() {
-  const { clients, loading } = useClients()
+  const { clients, loading, error } = useClients()
 
   if (loading) {
     return (
@@ -47,6 +49,10 @@ export function ClientsLive() {
     )
   }
 
+  if (error) {
+    return <DataErrorState error={error} />
+  }
+
   if (clients.length === 0) {
     return (
       <Card className="border-dashed">
@@ -60,6 +66,8 @@ export function ClientsLive() {
   }
 
   return (
+    <div className="flex flex-col gap-3">
+    <DemoRowsNotice rows={clients} />
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {clients.map((client) => {
         const roas = client.adSpend > 0 ? client.revenue / client.adSpend : 0
@@ -115,6 +123,7 @@ export function ClientsLive() {
           </Card>
         )
       })}
+    </div>
     </div>
   )
 }
