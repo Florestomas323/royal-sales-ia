@@ -1,9 +1,13 @@
 import type { Lead } from '@/types'
 import { daysAgo, hoursAgo, inDays, inHours, minutesAgo } from './time'
+import { DEMO_WORKSPACE_ID } from './workspace'
 
 export const leads: Lead[] = [
   {
     id: 'l1',
+    workspaceId: DEMO_WORKSPACE_ID,
+    leadType: 'sales',
+    isDemo: true,
     name: 'María González',
     phone: '+34 612 445 782',
     email: 'maria.gonzalez@email.com',
@@ -30,6 +34,9 @@ export const leads: Lead[] = [
   },
   {
     id: 'l2',
+    workspaceId: DEMO_WORKSPACE_ID,
+    leadType: 'sales',
+    isDemo: true,
     name: 'Roberto Sánchez',
     phone: '+34 645 118 903',
     email: 'roberto.s@email.com',
@@ -56,6 +63,9 @@ export const leads: Lead[] = [
   },
   {
     id: 'l3',
+    workspaceId: DEMO_WORKSPACE_ID,
+    leadType: 'sales',
+    isDemo: true,
     name: 'Lucía Martín',
     phone: '+34 699 552 014',
     email: 'lucia.martin@email.com',
@@ -82,6 +92,9 @@ export const leads: Lead[] = [
   },
   {
     id: 'l4',
+    workspaceId: DEMO_WORKSPACE_ID,
+    leadType: 'sales',
+    isDemo: true,
     name: 'Andrés Vega',
     phone: '+34 611 908 342',
     email: 'andres.vega@email.com',
@@ -108,6 +121,9 @@ export const leads: Lead[] = [
   },
   {
     id: 'l5',
+    workspaceId: DEMO_WORKSPACE_ID,
+    leadType: 'sales',
+    isDemo: true,
     name: 'Carmen Ortega',
     phone: '+34 622 774 561',
     email: 'carmen.ortega@email.com',
@@ -134,6 +150,9 @@ export const leads: Lead[] = [
   },
   {
     id: 'l6',
+    workspaceId: DEMO_WORKSPACE_ID,
+    leadType: 'sales',
+    isDemo: true,
     name: 'Pablo Herrera',
     phone: '+34 655 231 887',
     email: 'pablo.herrera@email.com',
@@ -160,6 +179,9 @@ export const leads: Lead[] = [
   },
   {
     id: 'l7',
+    workspaceId: DEMO_WORKSPACE_ID,
+    leadType: 'sales',
+    isDemo: true,
     name: 'Elena Ramírez',
     phone: '+34 633 490 125',
     email: 'elena.ramirez@email.com',
@@ -186,6 +208,9 @@ export const leads: Lead[] = [
   },
   {
     id: 'l8',
+    workspaceId: DEMO_WORKSPACE_ID,
+    leadType: 'sales',
+    isDemo: true,
     name: 'Javier Moreno',
     phone: '+34 677 812 340',
     email: 'javier.moreno@email.com',
@@ -212,6 +237,9 @@ export const leads: Lead[] = [
   },
   {
     id: 'l9',
+    workspaceId: DEMO_WORKSPACE_ID,
+    leadType: 'sales',
+    isDemo: true,
     name: 'Sofía Navarro',
     phone: '+34 688 445 019',
     email: 'sofia.navarro@email.com',
@@ -238,6 +266,9 @@ export const leads: Lead[] = [
   },
   {
     id: 'l10',
+    workspaceId: DEMO_WORKSPACE_ID,
+    leadType: 'sales',
+    isDemo: true,
     name: 'Miguel Castro',
     phone: '+34 699 003 771',
     email: 'miguel.castro@email.com',
@@ -264,6 +295,9 @@ export const leads: Lead[] = [
   },
   {
     id: 'l11',
+    workspaceId: DEMO_WORKSPACE_ID,
+    leadType: 'sales',
+    isDemo: true,
     name: 'Isabel Ruiz',
     phone: '+34 611 552 908',
     email: 'isabel.ruiz@email.com',
@@ -290,6 +324,9 @@ export const leads: Lead[] = [
   },
   {
     id: 'l12',
+    workspaceId: DEMO_WORKSPACE_ID,
+    leadType: 'sales',
+    isDemo: true,
     name: 'Tomás Gil',
     phone: '+34 655 900 214',
     email: 'tomas.gil@email.com',
@@ -316,6 +353,9 @@ export const leads: Lead[] = [
   },
   {
     id: 'l13',
+    workspaceId: DEMO_WORKSPACE_ID,
+    leadType: 'sales',
+    isDemo: true,
     name: 'Natalia Prieto',
     phone: '+34 633 118 552',
     email: 'natalia.prieto@email.com',
@@ -342,6 +382,9 @@ export const leads: Lead[] = [
   },
   {
     id: 'l14',
+    workspaceId: DEMO_WORKSPACE_ID,
+    leadType: 'sales',
+    isDemo: true,
     name: 'David Campos',
     phone: '+34 688 774 100',
     email: 'david.campos@email.com',

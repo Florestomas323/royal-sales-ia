@@ -1,8 +1,12 @@
 import type { Campaign, PlatformMetrics } from '@/types'
+import { DEMO_WORKSPACE_ID } from './workspace'
 
 export const campaigns: Campaign[] = [
   {
     id: 'cmp1',
+    workspaceId: DEMO_WORKSPACE_ID,
+    campaignType: 'sales',
+    isDemo: true,
     name: 'Healthy Cooking — Prospecting',
     platform: 'meta',
     status: 'active',
@@ -17,6 +21,9 @@ export const campaigns: Campaign[] = [
   },
   {
     id: 'cmp2',
+    workspaceId: DEMO_WORKSPACE_ID,
+    campaignType: 'sales',
+    isDemo: true,
     name: 'Healthy Cooking — Recipes UGC',
     platform: 'tiktok',
     status: 'learning',
@@ -31,6 +38,9 @@ export const campaigns: Campaign[] = [
   },
   {
     id: 'cmp3',
+    workspaceId: DEMO_WORKSPACE_ID,
+    campaignType: 'sales',
+    isDemo: true,
     name: 'FitLife — Transformation Challenge',
     platform: 'meta',
     status: 'active',
@@ -45,6 +55,9 @@ export const campaigns: Campaign[] = [
   },
   {
     id: 'cmp4',
+    workspaceId: DEMO_WORKSPACE_ID,
+    campaignType: 'sales',
+    isDemo: true,
     name: 'FitLife — Retargeting Warm',
     platform: 'meta',
     status: 'paused',
@@ -59,6 +72,9 @@ export const campaigns: Campaign[] = [
   },
   {
     id: 'cmp5',
+    workspaceId: DEMO_WORKSPACE_ID,
+    campaignType: 'sales',
+    isDemo: true,
     name: 'Casa Bella — Lead Gen',
     platform: 'tiktok',
     status: 'active',
@@ -73,6 +89,9 @@ export const campaigns: Campaign[] = [
   },
   {
     id: 'cmp6',
+    workspaceId: DEMO_WORKSPACE_ID,
+    campaignType: 'sales',
+    isDemo: true,
     name: 'Casa Bella — Open House',
     platform: 'google',
     status: 'learning',

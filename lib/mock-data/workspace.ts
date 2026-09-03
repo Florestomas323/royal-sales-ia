@@ -1,8 +1,25 @@
 import type { User, Workspace } from '@/types'
 
+/** Workspace id used by every demo record. Seeds re-map it to the target workspace. */
+export const DEMO_WORKSPACE_ID = 'ws-demo'
+
 export const workspaces: Workspace[] = [
-  { id: 'ws1', name: 'Royal Agency', plan: 'Scale', logoColor: 'var(--chart-1)' },
-  { id: 'ws2', name: 'Nova Growth Co.', plan: 'Growth', logoColor: 'var(--chart-4)' },
+  {
+    id: DEMO_WORKSPACE_ID,
+    name: 'Royal Agency (demo)',
+    plan: 'Scale',
+    logoColor: 'var(--chart-1)',
+    status: 'active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+  },
+  {
+    id: 'ws2',
+    name: 'Nova Growth Co. (demo)',
+    plan: 'Growth',
+    logoColor: 'var(--chart-4)',
+    status: 'active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+  },
 ]
 
 export const currentWorkspace = workspaces[0]
@@ -10,6 +27,9 @@ export const currentWorkspace = workspaces[0]
 export const users: User[] = [
   {
     id: 'u1',
+    workspaceId: DEMO_WORKSPACE_ID,
+    authUid: null,
+    isDemo: true,
     name: 'Carlos Mendez',
     email: 'carlos@royalagency.com',
     role: 'super_admin',
@@ -21,6 +41,9 @@ export const users: User[] = [
   },
   {
     id: 'u2',
+    workspaceId: DEMO_WORKSPACE_ID,
+    authUid: null,
+    isDemo: true,
     name: 'María López',
     email: 'maria@royalagency.com',
     role: 'manager',
@@ -32,6 +55,9 @@ export const users: User[] = [
   },
   {
     id: 'u3',
+    workspaceId: DEMO_WORKSPACE_ID,
+    authUid: null,
+    isDemo: true,
     name: 'Diego Torres',
     email: 'diego@royalagency.com',
     role: 'sales_rep',
@@ -43,6 +69,9 @@ export const users: User[] = [
   },
   {
     id: 'u4',
+    workspaceId: DEMO_WORKSPACE_ID,
+    authUid: null,
+    isDemo: true,
     name: 'Ana Ruiz',
     email: 'ana@royalagency.com',
     role: 'sales_rep',
@@ -54,6 +83,9 @@ export const users: User[] = [
   },
   {
     id: 'u5',
+    workspaceId: DEMO_WORKSPACE_ID,
+    authUid: null,
+    isDemo: true,
     name: 'Javier Soto',
     email: 'javier@royalagency.com',
     role: 'sales_rep',
@@ -65,6 +97,9 @@ export const users: User[] = [
   },
   {
     id: 'u6',
+    workspaceId: DEMO_WORKSPACE_ID,
+    authUid: null,
+    isDemo: true,
     name: 'Lucía Fernández',
     email: 'lucia@royalagency.com',
     role: 'viewer',

@@ -1,8 +1,11 @@
 import type { Client } from '@/types'
+import { DEMO_WORKSPACE_ID } from './workspace'
 
 export const clients: Client[] = [
   {
     id: 'c1',
+    workspaceId: DEMO_WORKSPACE_ID,
+    isDemo: true,
     name: 'Healthy Cooking Co.',
     industry: 'Food & Beverage',
     logoColor: 'var(--chart-2)',
@@ -15,6 +18,8 @@ export const clients: Client[] = [
   },
   {
     id: 'c2',
+    workspaceId: DEMO_WORKSPACE_ID,
+    isDemo: true,
     name: 'FitLife Studios',
     industry: 'Health & Fitness',
     logoColor: 'var(--chart-1)',
@@ -27,6 +32,8 @@ export const clients: Client[] = [
   },
   {
     id: 'c3',
+    workspaceId: DEMO_WORKSPACE_ID,
+    isDemo: true,
     name: 'Casa Bella Real Estate',
     industry: 'Real Estate',
     logoColor: 'var(--chart-4)',
