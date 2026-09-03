@@ -92,6 +92,22 @@ export type PipelineStage = SalesStage | RecruitingStage
 
 export type CampaignStatus = 'active' | 'paused' | 'learning' | 'ended'
 
+/**
+ * Whether Royal Sales IA can offer an integration at all (catalog-level).
+ *   available   → the connector exists (or is being built) and can be managed
+ *   coming_soon → on the roadmap, no UI action yet
+ *   unavailable → not planned for this workspace/region
+ */
+export type IntegrationAvailability = 'available' | 'coming_soon' | 'unavailable'
+
+/**
+ * State of a REAL connection for a workspace. `connected` must only ever be
+ * derived from a persisted connection document written by the server-side
+ * OAuth flow — never from local UI state.
+ */
+export type ConnectionStatus = 'not_connected' | 'connected' | 'expired' | 'error'
+
+/** @deprecated Use IntegrationAvailability / ConnectionStatus. Kept for older readers. */
 export type IntegrationStatus = 'connected' | 'not_connected' | 'coming_soon'
 
 export type UserRole =
@@ -183,9 +199,78 @@ export interface WorkspaceIntegration {
   id: string
   workspaceId: string
   provider: IntegrationProvider
-  status: IntegrationStatus
+  status: ConnectionStatus
   externalAccountId?: string
   connectedAt?: string
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Meta — Fase 1 (preparación). Ver META.md. Nada de esto se persiste aún.   */
+/* -------------------------------------------------------------------------- */
+
+export interface MetaAssetRef {
+  id: string
+  name: string
+}
+
+export interface MetaLeadFormRef extends MetaAssetRef {
+  pageId: string
+  status: 'active' | 'inactive'
+}
+
+/**
+ * Connection of ONE workspace to Meta. Future document
+ * `integrations/{workspaceId}_meta` (rules to be added with the OAuth phase).
+ *
+ * SECURITY: this document never holds an access token. Tokens live server-side
+ * (Secret Manager) and are referenced by `secretRef`; the client only sees
+ * status and asset names.
+ */
+export interface MetaConnection {
+  id: string
+  workspaceId: string
+  provider: 'meta_ads'
+  status: ConnectionStatus
+  /** Meta user / Business that granted access. */
+  account: MetaAssetRef | null
+  adAccount: MetaAssetRef | null
+  page: MetaAssetRef | null
+  leadForms: MetaLeadFormRef[]
+  /** Whether the Lead Ads webhook subscription is active for the page. */
+  leadAdsActive: boolean
+  lastSyncAt: string | null
+  connectedAt: string | null
+  /** users.id of the person who connected it (audit). */
+  connectedByUserId: string | null
+  /** Pointer to the server-side secret. NEVER the token itself. */
+  secretRef: string | null
+  lastError: string | null
+}
+
+/**
+ * OWNERSHIP RULE — "1 campaña = 1 workspace".
+ * A Facebook Page can be shared by several distribuidores, so the owner of a
+ * lead is NEVER derived from the page. It is derived from the Meta campaign
+ * (or the form bound to it) that generated the lead:
+ *
+ *   Meta campaign id → MetaCampaignLink.workspaceId + objective
+ *                     → lead created in that workspace, as sales|recruiting
+ *
+ * Future global collection `meta_campaign_links` keyed by `metaCampaignId`,
+ * managed by super_admin, readable by the owning workspace.
+ */
+export interface MetaCampaignLink {
+  /** Meta campaign id (document id). */
+  metaCampaignId: string
+  workspaceId: string
+  /** Where its leads land: Prospectos / Ventas or Prospectos / Reclutamiento. */
+  objective: LeadType
+  /** Local campaign this maps to, if already created in Royal Sales IA. */
+  campaignId: string | null
+  pageId: string | null
+  /** Lead Ads form ids attached to this campaign (form → campaign → workspace). */
+  formIds: string[]
+  createdAt: string
 }
 
 /**
