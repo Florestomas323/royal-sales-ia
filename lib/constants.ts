@@ -2,11 +2,17 @@ import type {
   CampaignStatus,
   ClientStatus,
   LeadTemperature,
+  LeadType,
   MemberStatus,
   PipelineStage,
   Platform,
   UserRole,
 } from '@/types'
+
+export const LEAD_TYPE_LABELS: Record<LeadType, string> = {
+  sales: 'Ventas',
+  recruiting: 'Reclutamiento',
+}
 
 export const STAGE_ORDER: PipelineStage[] = [
   'new_lead',
@@ -43,6 +49,8 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
   instagram: 'Instagram',
   facebook: 'Facebook',
   whatsapp: 'WhatsApp',
+  youtube: 'YouTube',
+  indeed: 'Indeed',
   referral: 'Referido',
   organic: 'Orgánico',
 }
@@ -55,6 +63,8 @@ export const PLATFORM_MARK: Record<Platform, string> = {
   instagram: 'IG',
   facebook: 'f',
   whatsapp: 'W',
+  youtube: 'YT',
+  indeed: 'IN',
   referral: 'R',
   organic: 'O',
 }
@@ -66,6 +76,8 @@ export const PLATFORM_COLOR: Record<Platform, string> = {
   instagram: 'var(--chart-5)',
   facebook: 'var(--chart-1)',
   whatsapp: 'var(--chart-2)',
+  youtube: 'var(--destructive)',
+  indeed: 'var(--chart-3)',
   referral: 'var(--chart-4)',
   organic: 'var(--muted-foreground)',
 }

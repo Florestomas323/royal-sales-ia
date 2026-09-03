@@ -40,6 +40,63 @@ export const t = {
     unassigned: 'Sin asignar',
     by: 'por',
     vsPrevious: 'vs. periodo anterior',
+    retry: 'Reintentar',
+    demoData: 'Datos de demostración',
+    demoDataHint: 'Esta vista muestra datos ilustrativos; aún no está conectada a Firestore.',
+    containsDemoRows: 'Esta lista incluye registros demo marcados como tal.',
+    selectWorkspaceFirst: 'Selecciona un workspace para poder crear registros.',
+  },
+
+  tenancy: {
+    workspace: 'Workspace',
+    allWorkspaces: 'Todos los workspaces',
+    switchWorkspace: 'Cambiar de workspace',
+    superAdminGlobal: 'Vista global',
+    noMembershipTitle: 'Tu cuenta aún no tiene workspace',
+    noMembershipBody: (email: string) =>
+      `Iniciaste sesión como ${email}, pero ningún administrador te ha invitado a un workspace. Pídele a tu distribuidor o al super admin que te agregue al equipo con este mismo correo.`,
+    unverifiedTitle: 'Verifica tu correo para continuar',
+    unverifiedBody: (email: string) =>
+      `Encontramos una invitación para ${email}. Por seguridad, necesitas confirmar tu correo antes de entrar al workspace. Revisa tu bandeja de entrada (y spam).`,
+    resendVerification: 'Reenviar correo de verificación',
+    alreadyVerified: 'Ya lo verifiqué',
+    verificationSent: 'Te enviamos un nuevo correo de verificación.',
+    errorTitle: 'No pudimos cargar tu workspace',
+    errorBody: 'Ocurrió un error al resolver tu acceso. Intenta de nuevo o cierra sesión.',
+    dataErrorTitle: 'No se pudieron cargar los datos',
+    onlyAssignedLeads: 'Como vendedor solo ves los prospectos asignados a ti.',
+    readOnly: 'Tu rol es de solo lectura.',
+  },
+
+  superAdmin: {
+    tab: 'Super admin',
+    title: 'Herramientas de super admin',
+    description:
+      'Operaciones globales sobre todos los workspaces. Cada acción escribe directamente en Firestore.',
+    workspacesTitle: 'Workspaces',
+    workspacesDescription: 'Cada distribuidor es un workspace con datos completamente aislados.',
+    newWorkspace: 'Nuevo workspace',
+    workspaceName: 'Nombre del workspace',
+    workspaceNamePlaceholder: 'Distribuidora Andrés Characo',
+    ownerEmail: 'Correo del administrador (opcional)',
+    createWorkspace: 'Crear workspace',
+    workspaceCreated: 'Workspace creado',
+    migrationTitle: 'Migración: documentos sin workspaceId',
+    migrationDescription:
+      'Asigna los documentos antiguos (creados antes del modelo multi-tenant) al workspace seleccionado. No borra ni sobrescribe nada que ya tenga workspaceId.',
+    migrationScan: 'Escanear',
+    migrationRun: (n: number) => `Asignar ${n} documentos al workspace activo`,
+    migrationNothing: 'No hay documentos pendientes de migrar.',
+    migrationDone: (n: number) => `${n} documentos migrados.`,
+    migrationNeedsWorkspace: 'Selecciona un workspace concreto (no "Todos") para migrar.',
+    seedTitle: 'Datos demo (solo desarrollo)',
+    seedDescription:
+      'Siembra el dataset de demostración en el workspace activo. Deshabilitado en producción salvo que NEXT_PUBLIC_ENABLE_DEMO_SEED=true.',
+    seedRun: 'Sembrar datos demo',
+    seedDisabled: 'La siembra de datos demo está deshabilitada en este entorno.',
+    seedDone: 'Datos demo sembrados en el workspace activo.',
+    seedExists: 'El workspace ya tiene datos; no se sembró nada.',
+    pending: (label: string, n: number) => `${label}: ${n} sin workspaceId`,
   },
 
   nav: {
@@ -285,6 +342,9 @@ export const t = {
       received: 'Recibido',
     },
     detail: {
+      receivedTitle: 'Prospecto recibido',
+      receivedDescription: (campaign: string) => `Entró al workspace desde ${campaign} y espera su primer contacto.`,
+      systemActor: 'Sistema',
       potential: 'de valor potencial',
       whatsapp: 'WhatsApp',
       call: 'Llamar',
