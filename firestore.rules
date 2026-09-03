@@ -85,6 +85,11 @@ service cloud.firestore {
       return r in ['super_admin', 'client_admin', 'manager', 'sales_rep', 'viewer'];
     }
 
+    /** Ventas / Reclutamiento. Never used for access decisions — only validated. */
+    function validLeadType(v) {
+      return v in ['sales', 'recruiting'];
+    }
+
     /** Field `f` is not being modified by this write. */
     function unchanged(f) {
       return request.resource.data[f] == resource.data[f];
@@ -186,7 +191,9 @@ service cloud.firestore {
     // --------------------------------------------------------------- campaigns
     match /campaigns/{campaignId} {
       allow read: if isSuperAdmin() || isWsMember(resource.data.workspaceId);
-      allow create: if isSuperAdmin() || isWsAdmin(request.resource.data.workspaceId);
+      // `objective` (clientes / candidatos) is required on new campaigns.
+      allow create: if validLeadType(request.resource.data.objective)
+        && (isSuperAdmin() || isWsAdmin(request.resource.data.workspaceId));
       allow update: if isSuperAdmin()
         || (isWsAdmin(resource.data.workspaceId) && unchanged('workspaceId'));
       allow delete: if isSuperAdmin() || isWsClientAdmin(resource.data.workspaceId);
@@ -201,10 +208,14 @@ service cloud.firestore {
         || (inWorkspace(resource.data.workspaceId) && role() in ['client_admin', 'manager', 'viewer'])
         || (isWsRep(resource.data.workspaceId) && resource.data.assignedToId == myUserId());
 
-      allow create: if isSuperAdmin()
+      // New leads must declare their type (Phase 2). Access is still decided
+      // exclusively by workspaceId / role / assignedToId.
+      allow create: if validLeadType(request.resource.data.leadType) && (
+        isSuperAdmin()
         || isWsAdmin(request.resource.data.workspaceId)
         || (isWsRep(request.resource.data.workspaceId)
-            && request.resource.data.assignedToId == myUserId());
+            && request.resource.data.assignedToId == myUserId())
+      );
 
       allow update: if isSuperAdmin()
         || (isWsAdmin(resource.data.workspaceId) && unchanged('workspaceId'))

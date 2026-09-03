@@ -144,6 +144,74 @@ User (team) ───┴── assignedTo ──▶ Lead      └── Sale (de
 - `firestore.rules` (versionado) es la autoridad: `super_admin` global; `client_admin`/`manager` dentro de su workspace; `sales_rep` solo sus leads; `viewer` solo lectura. Cualquier colección no declarada está cerrada.
 - Documentos legacy sin `workspaceId` se migran desde **Configuración → Super admin** (no destructivo).
 
+## 5b. Ventas y Reclutamiento (Fase 2)
+
+Un mismo CRM, dos tipos de prospecto claramente separados. El tipo vive en
+`Lead.leadType` (`"sales" | "recruiting"`) y es un **filtro de Firestore**, no
+un filtro en memoria: la lista y los embudos consultan `where("leadType", "==", …)`.
+`leadType` nunca interviene en autorización — el aislamiento sigue siendo
+exclusivamente por `workspaceId` (+ `assignedToId` para `sales_rep`).
+
+### Decisión de compatibilidad
+Los prospectos creados antes de esta fase pueden no tener `leadType`. Se
+tratan como **ventas** (`lib/leads.ts → leadTypeOf`): todos los registros
+previos eran prospectos comerciales y no existe ningún campo que permita
+inferir otra cosa. El valor solo se escribe en Firestore desde
+**Configuración → Super admin → Normalización Fase 2** (idempotente, por
+workspace, no toca ningún otro campo). Mientras no se normalicen, esos leads
+aparecen en "Todos" pero no en la pestaña "Ventas" ni en el embudo de ventas.
+
+### Pipelines
+| | Ventas (`SalesStage`) | Reclutamiento (`RecruitingStage`) |
+| --- | --- | --- |
+| Etapas | `new_lead` Nuevo · `contact` Contactar · `contacted` Contactado · `interested` Interesado · `appointment` Demostración agendada · `follow_up` Seguimiento · `sale` Venta · `not_interested` No interesado | `rec_new` Nuevo candidato · `rec_contact` Contactar · `rec_contacted` Contactado · `rec_qualified` Calificado · `rec_interview` Entrevista · `rec_orientation` Orientación · `rec_follow_up` Seguimiento · `rec_hired` Incorporado · `rec_disqualified` No calificado |
+| Ganado / perdido | `sale` / `not_interested` | `rec_hired` / `rec_disqualified` |
+
+Las siete claves originales de ventas se conservan (solo cambian etiquetas), por
+lo que **ningún lead existente necesita migración de etapa**. Si un lead tiene
+una etapa del otro embudo (p. ej. tras cambiar de tipo), se muestra en la
+primera columna sin escribir nada (`displayStage`); al cambiar el tipo desde la
+ficha, la etapa se reinicia a la inicial del nuevo embudo.
+
+### Fuentes
+`Platform` cubre Meta, Facebook, Instagram, TikTok, Google, YouTube, Indeed,
+WhatsApp, Sitio web, Landing page, Referido, Manual, Otro (+ `organic` legacy).
+`SOURCES_BY_LEAD_TYPE` define qué se ofrece por tipo: **Indeed solo para
+reclutamiento**.
+
+### Atribución (modelo preparado, sin APIs)
+`Lead.attribution` guarda: `platform, campaign, adSet, ad, creative` y, cuando
+existen, `externalCampaignId, externalAdSetId, externalAdId,
+externalCreativeId, clickId, utmSource, utmMedium, utmCampaign, utmContent,
+utmTerm, landingPage, referrer`. Nunca se inventan ids: los conectores futuros
+(Meta primero) los rellenarán.
+
+### Campañas
+`Campaign.objective: "sales" | "recruiting"` (Clientes / Candidatos).
+`campaignType` (Fase 1) se sigue escribiendo por compatibilidad y se lee vía
+`campaignObjective()`. El futuro Campaign Builder está tipado en
+`CampaignDraft` (objetivo, canal, ubicación, presupuesto, destino, creativo).
+
+### Indeed — dónde se conectará
+- **Fuente:** `Platform: "indeed"` (solo reclutamiento) + `IntegrationProvider: "indeed"`.
+- **Candidatos:** `Lead.recruiting` (`jobTitle, city, state, employmentPreference,
+  hasVehicle, interviewDate, orientationDate, hiredAt, indeedJobId, indeedCandidateId`).
+  Un candidato de Indeed se identifica por `source === "indeed"` y/o
+  `recruiting.indeedCandidateId`.
+- **Campañas / Sponsored Jobs:** `Campaign` con `platform: "indeed"`,
+  `objective: "recruiting"`, `externalId` = id del job.
+- **Métricas:** `computeRecruitingMetrics(leads, spend)` ya expone costo por
+  candidato / entrevista / incorporación; devuelven `null` hasta que exista
+  inversión real por canal.
+- **Pendiente para la fase Indeed:** OAuth Employer, Job Sync, Candidate Sync
+  (webhook → `leads` con `leadType: "recruiting"`, `source: "indeed"`), credenciales
+  solo en servidor, colección `integrations` con reglas propias.
+
+### Actividades (preparado)
+`Activity` (`lib/types`) admite `call, whatsapp, email, note, stage_change,
+appointment, demo, interview, orientation, hired, sale`. Aún no se persiste;
+cuando exista la colección `activities` llevará `workspaceId` y reglas propias.
+
 ## 6. Flujo de negocio (visión futura)
 
 El pipeline extremo a extremo que la arquitectura debe soportar:

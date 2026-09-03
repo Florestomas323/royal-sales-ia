@@ -147,19 +147,19 @@ vacías (no hay error) para los miembros, y el super admin ve todo.
 
 | Componente | Usa | Módulo |
 | --- | --- | --- |
-| `components/overview/kpi-cards.tsx` | `kpis` | Command Center |
 | `components/overview/ai-insights.tsx` | `aiInsights` | Command Center |
 | `components/overview/conversion-funnel.tsx` | `funnel` | Command Center / Analytics |
 | `components/overview/platform-performance.tsx` | `platformMetrics` | Command Center / Analytics |
 | `components/overview/performance-chart.tsx` | `performanceTrend` | Command Center / Analytics |
-| `components/overview/priority-leads.tsx` | `leads` | Command Center |
 | `components/analytics/revenue-chart.tsx` | `performanceTrend` | Analytics |
 | `components/integrations/integrations-grid.tsx` | `integrations` | Integraciones |
 | `components/shell/notifications-menu.tsx` | `notifications` | Shell (campana) |
 | `components/shell/top-bar.tsx` | `periods` | Shell (selector de periodo; solo etiquetas) |
 
 Ya **no** usan mock: sidebar, búsqueda global, ficha de lead (timeline),
-settings (workspace/perfil), overview header.
+settings (workspace/perfil), overview header, KPIs del Command Center y
+"Prioridades de hoy" (Fase 2). Los widgets que siguen siendo mock van envueltos
+en `MockWidget`, que les pone la insignia "Datos de demostración".
 
 ---
 
@@ -173,6 +173,8 @@ settings (workspace/perfil), overview header.
 | clients | todo | CRUD | crear/editar | leer | leer |
 | campaigns | todo | CRUD | crear/editar | leer | leer |
 | leads | todo | CRUD | CRUD | **solo los asignados** | leer |
+
+`leads.create` exige `leadType ∈ {sales, recruiting}` y `campaigns.create` exige `objective ∈ {sales, recruiting}` (Fase 2). Son validaciones de forma: **no** participan en ninguna decisión de acceso.
 | cualquier otra | — | — | — | — | — (cerrada) |
 
 Invariantes que las reglas garantizan aunque el cliente esté manipulado:
@@ -193,6 +195,11 @@ Invariantes que las reglas garantizan aunque el cliente esté manipulado:
 | --- | --- |
 | `leads` | `workspaceId` ASC, `createdAt` DESC |
 | `leads` | `workspaceId` ASC, `assignedToId` ASC, `createdAt` DESC |
+| `leads` | `workspaceId` ASC, `leadType` ASC, `createdAt` DESC |
+| `leads` | `workspaceId` ASC, `leadType` ASC, `assignedToId` ASC, `createdAt` DESC |
+| `leads` | `leadType` ASC, `createdAt` DESC — solo para el super admin en "Todos los workspaces" |
+
+Los conteos por tipo (`getCountFromServer`) usan solo igualdades y no requieren índice compuesto.
 
 Las demás consultas usan una sola igualdad (`workspaceId ==`) y ordenan en
 memoria, por lo que no necesitan índice compuesto. Si una consulta falla con

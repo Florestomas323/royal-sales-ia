@@ -58,6 +58,7 @@ Cada decisión técnica debe acercar el producto a soportar este flujo de extrem
 - Firestore realtime para: **Leads**, **Pipeline** (con drag & drop persistente), **Clients**, **Team**, **Campaigns** — todos filtrados por `workspaceId` desde Firestore.
 - **Multi-tenancy**: `workspaces`, `memberships/{authUid}`, `workspaceId` en todas las colecciones, `WorkspaceProvider` (`useWorkspace()`), selector de workspace para super admin, Security Rules versionadas en `firestore.rules`. Ver `MULTITENANT.md`.
 - Seed de datos demo **solo explícito** (Configuración → Super admin) y solo fuera de producción.
+- **Ventas + Reclutamiento** (Fase 2): `Lead.leadType`, dos pipelines independientes (`PIPELINES` en `lib/constants.ts`), filtro Todos/Ventas/Reclutamiento con conteos reales, fuentes por tipo (Indeed solo reclutamiento), `Campaign.objective`, atribución y campos de candidato preparados. KPIs y prioridades del Command Center leen Firestore real. Ver `ARCHITECTURE.md §5b`.
 - Marca completa: icono de app, favicon, apple-touch-icon, manifiesto PWA, imagen Open Graph.
 - Config de Firebase por variables de entorno (`NEXT_PUBLIC_FIREBASE_*`) con fallback de desarrollo.
 
@@ -97,7 +98,9 @@ Solo dejar la arquitectura preparada para incorporarlos después. Los secretos d
 | Workspace activo / rol / usuario | `lib/firebase/workspace-context.tsx` (`useWorkspace`, `useCan`) |
 | Identidad (membership ↔ perfil) | `lib/firebase/membership.ts` |
 | Workspaces | `lib/firebase/workspaces.ts` |
-| Datos de Leads | `lib/firebase/leads.ts` |
+| Datos de Leads | `lib/firebase/leads.ts` (`useLeads(leadType)`, `useLeadTypeCounts`) |
+| Helpers puros de leads (tipo, etapa, fuentes) | `lib/leads.ts` |
+| Métricas de ventas / reclutamiento | `lib/metrics.ts` |
 | Datos de Clients/Team/Campaigns | `lib/firebase/collections.ts` |
 | Seed de datos demo (explícito) | `lib/firebase/seed.ts` |
 | Migración / herramientas super admin | `lib/firebase/admin-tools.ts`, `components/settings/super-admin-tools.tsx` |
