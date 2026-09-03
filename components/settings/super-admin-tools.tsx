@@ -21,8 +21,11 @@ import { createWorkspace } from "@/lib/firebase/workspaces"
 import {
   MIGRATABLE_COLLECTIONS,
   migrateLegacyDocuments,
+  runPhase2Normalization,
   scanLegacyDocuments,
+  scanPhase2Normalization,
   type MigrationScan,
+  type NormalizationScan,
 } from "@/lib/firebase/admin-tools"
 import { isDemoSeedEnabled, seedDemoWorkspace } from "@/lib/firebase/seed"
 import { describeError } from "@/lib/firebase/errors"
@@ -44,6 +47,7 @@ export function SuperAdminTools() {
     <div className="flex flex-col gap-6">
       <WorkspacesCard workspaces={workspaces} />
       <MigrationCard workspaceId={workspaceId} workspaceName={currentWorkspace?.name ?? null} />
+      <NormalizationCard workspaceId={workspaceId} />
       <SeedCard workspaceId={workspaceId} workspaceName={currentWorkspace?.name ?? null} />
     </div>
   )
@@ -190,6 +194,71 @@ function MigrationCard({ workspaceId, workspaceName }: { workspaceId: string | n
           title={workspaceName ?? undefined}
         >
           {t.superAdmin.migrationRun(scan?.total ?? 0)}
+        </Button>
+      </CardFooter>
+    </Card>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+
+function NormalizationCard({ workspaceId }: { workspaceId: string | null }) {
+  const [scan, setScan] = React.useState<NormalizationScan | null>(null)
+  const [busy, setBusy] = React.useState(false)
+
+  async function handleScan() {
+    if (!workspaceId) return
+    setBusy(true)
+    try {
+      const result = await scanPhase2Normalization(workspaceId)
+      setScan(result)
+      if (result.total === 0) toast.info(t.superAdmin.normalizeNothing)
+    } catch (err) {
+      toast.error(describeError(err).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRun() {
+    if (!scan || !workspaceId) return
+    setBusy(true)
+    try {
+      const n = await runPhase2Normalization(scan, workspaceId)
+      toast.success(t.superAdmin.normalizeDone(n))
+      setScan(null)
+    } catch (err) {
+      toast.error(describeError(err).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <DatabaseZap className="size-4" />
+          {t.superAdmin.normalizeTitle}
+        </CardTitle>
+        <CardDescription>{t.superAdmin.normalizeDescription}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {scan && (
+          <p className="rounded-lg border p-3 text-sm">
+            {t.superAdmin.normalizePending(scan.leads.length, scan.campaigns.length)}
+          </p>
+        )}
+        {!workspaceId && (
+          <p className="text-sm text-muted-foreground">{t.superAdmin.migrationNeedsWorkspace}</p>
+        )}
+      </CardContent>
+      <CardFooter className="justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={handleScan} disabled={busy || !workspaceId}>
+          {t.superAdmin.normalizeScan}
+        </Button>
+        <Button size="sm" onClick={handleRun} disabled={busy || !scan || scan.total === 0 || !workspaceId}>
+          {t.superAdmin.normalizeRun(scan?.total ?? 0)}
         </Button>
       </CardFooter>
     </Card>
