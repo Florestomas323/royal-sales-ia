@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/table"
 import { Search } from "lucide-react"
 import { PlatformMark } from "@/components/shared/platform-badge"
+import { CAMPAIGN_OBJECTIVE_LABELS } from "@/lib/constants"
+import { campaignObjective } from "@/lib/leads"
 import { formatCurrency, formatNumber } from "@/lib/format"
 import { CAMPAIGN_STATUS_LABELS, PLATFORM_LABELS } from "@/lib/constants"
 import { t } from "@/lib/i18n"
@@ -57,6 +59,7 @@ export function CampaignsTable({ campaigns }: { campaigns: Campaign[] }) {
             <TableHeader>
               <TableRow>
                 <TableHead>{t.campaigns.table.campaign}</TableHead>
+                <TableHead className="hidden sm:table-cell">{t.campaigns.table.objective}</TableHead>
                 <TableHead>{t.campaigns.table.status}</TableHead>
                 <TableHead className="text-right">{t.campaigns.table.spend}</TableHead>
                 <TableHead className="text-right">{t.campaigns.table.leads}</TableHead>
@@ -79,6 +82,9 @@ export function CampaignsTable({ campaigns }: { campaigns: Campaign[] }) {
                           </span>
                         </div>
                       </div>
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell">
+                      <Badge variant="outline">{CAMPAIGN_OBJECTIVE_LABELS[campaignObjective(c)]}</Badge>
                     </TableCell>
                     <TableCell>
                       <Badge variant={STATUS_VARIANT[c.status]}>

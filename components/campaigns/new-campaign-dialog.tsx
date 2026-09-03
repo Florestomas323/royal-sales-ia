@@ -27,11 +27,15 @@ import {
 import { createCampaign, useClients } from "@/lib/firebase/collections"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
-import { CAMPAIGN_STATUS_LABELS, PLATFORM_LABELS } from "@/lib/constants"
+import { CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_STATUS_LABELS, LEAD_TYPES, PLATFORM_LABELS } from "@/lib/constants"
+import { FieldDescription } from "@/components/ui/field"
 import { t } from "@/lib/i18n"
-import type { Campaign, Platform } from "@/types"
+import type { Campaign, LeadType, Platform } from "@/types"
 
-const PLATFORM_OPTIONS: Platform[] = ["meta", "google", "tiktok", "instagram", "facebook"]
+const PLATFORM_OPTIONS: Record<LeadType, Platform[]> = {
+  sales: ["meta", "facebook", "instagram", "tiktok", "google", "youtube", "whatsapp", "web", "landing_page"],
+  recruiting: ["indeed", "meta", "facebook", "instagram", "tiktok", "google", "youtube", "web", "landing_page"],
+}
 
 const STATUS_OPTIONS: { value: Campaign["status"]; label: string }[] = [
   { value: "learning", label: CAMPAIGN_STATUS_LABELS.learning },
@@ -43,10 +47,16 @@ export function NewCampaignDialog() {
   const { clients } = useClients()
   const { workspaceId } = useWorkspace()
   const [open, setOpen] = React.useState(false)
+  const [objective, setObjective] = React.useState<LeadType>("sales")
   const [platform, setPlatform] = React.useState<Platform>("meta")
   const [clientId, setClientId] = React.useState("")
   const [status, setStatus] = React.useState<Campaign["status"]>("learning")
   const [submitting, setSubmitting] = React.useState(false)
+
+  // Keep the platform valid for the objective (Indeed is recruiting-only).
+  React.useEffect(() => {
+    if (!PLATFORM_OPTIONS[objective].includes(platform)) setPlatform("meta")
+  }, [objective, platform])
 
   // Default to the first client once the live list loads.
   React.useEffect(() => {
@@ -65,11 +75,12 @@ export function NewCampaignDialog() {
 
     setSubmitting(true)
     try {
-      await createCampaign({ workspaceId, name, platform, clientId, status })
+      await createCampaign({ workspaceId, name, platform, clientId, status, objective })
       toast.success(t.campaigns.createdTitle, {
         description: t.campaigns.createdDescription(name),
       })
       setOpen(false)
+      setObjective("sales")
       setPlatform("meta")
       setStatus("learning")
     } catch (err) {
@@ -105,6 +116,22 @@ export function NewCampaignDialog() {
                 required
               />
             </Field>
+            <Field>
+              <FieldLabel>{t.campaigns.objectiveLabel}</FieldLabel>
+              <Select value={objective} onValueChange={(v) => setObjective((v ?? "sales") as LeadType)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LEAD_TYPES.map((o) => (
+                    <SelectItem key={o} value={o}>
+                      {CAMPAIGN_OBJECTIVE_LABELS[o]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FieldDescription>{t.campaigns.objectiveHint}</FieldDescription>
+            </Field>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field>
                 <FieldLabel>{t.campaigns.platformLabel}</FieldLabel>
@@ -113,7 +140,7 @@ export function NewCampaignDialog() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {PLATFORM_OPTIONS.map((p) => (
+                    {PLATFORM_OPTIONS[objective].map((p) => (
                       <SelectItem key={p} value={p}>
                         {PLATFORM_LABELS[p]}
                       </SelectItem>
