@@ -141,29 +141,64 @@ Si falta `META_APP_SECRET` o `META_WEBHOOK_VERIFY_TOKEN`, el endpoint responde
 Logs: solo `field`, ids enmascarados (`123456…`) y el resultado. Nunca tokens,
 secretos, teléfonos, correos ni el payload completo.
 
-### Lo que falta para persistir (bloqueado a propósito)
+### Persistencia server-side (Fase 1b — implementada)
 
-El repositorio **no tiene Firebase Admin SDK** ni service account. Escribir en
-Firestore desde este endpoint con el SDK de cliente sería una petición sin
-usuario autenticado: las reglas la rechazarían y sería el modelo de seguridad
-equivocado. Por eso el procesador actual es `createLogOnlyProcessor()`:
+`app/api/meta/webhook/route.ts` usa `createFirestoreProcessor(getAdminDb())`
+(`lib/meta/processor.ts`, `lib/firebase/admin.ts`). Si `FIREBASE_SERVICE_ACCOUNT_JSON`
+no está configurada, cae a `createLogOnlyProcessor()` (sin persistencia), lo
+registra una vez en logs y sigue respondiendo `200` a Meta.
 
-- idempotencia solo en memoria del proceso (protege reintentos inmediatos en
-  una instancia caliente; **no es durable** entre instancias/deploys);
-- `resolveOwner()` devuelve siempre `null` → todo leadgen termina `unresolved`;
-- no se crea ningún prospecto.
+#### Variable adicional (Vercel → Environment Variables, server only)
 
-Para la fase siguiente hace falta, en este orden:
+| Variable | Contenido |
+| --- | --- |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | El JSON completo de una clave de service account del proyecto Firebase, en **una sola línea**. Firebase Console → Configuración del proyecto → Cuentas de servicio → Generar nueva clave privada. |
 
-1. Dependencia `firebase-admin`.
-2. Service account del proyecto Firebase (JSON) en Vercel como
-   `FIREBASE_SERVICE_ACCOUNT_JSON` (server only).
-3. `lib/firebase/admin.ts` con inicialización única.
-4. `createFirestoreProcessor(adminDb)` sobre colecciones **server-only**
-   (cerradas a clientes por el `match /{document=**}` actual, sin cambiar reglas):
-   - `processedMetaLeads/{leadgenId}` — idempotencia durable
-   - `metaCampaignLinks/{id}` — `{ workspaceId, metaCampaignId, metaAdId,
-     metaAdsetId, metaFormId, metaPageId, campaignId, campaignObjective,
-     assignedToId?, createdAt, updatedAt }`
-   - `metaWebhookEvents/{autoId}` — eventos `unresolved` para revisión del super admin
-5. Descarga del lead (`GET /{leadgen_id}`) con page access token → requiere OAuth.
+Nunca `NEXT_PUBLIC_`. Nunca en el repo. Firebase Admin **ignora las Security
+Rules**, por eso este módulo solo puede importarse desde código de servidor.
+
+#### Colecciones (exclusivamente server-side)
+
+Las tres están cerradas al frontend por el `match /{document=**} { allow read, write: if false; }`
+existente. **No se cambió ninguna regla**; Admin escribe sin pasar por ellas.
+
+| Colección | Clave | Contenido | Propósito |
+| --- | --- | --- | --- |
+| `processedMetaLeads` | `{leadgenId}` | `leadgenId, pageId, formId, adId, adgroupId, campaignId, receivedAt, status (received→resolved\|unresolved\|error), workspaceId, objective, reason` | **Idempotencia**. El `claim` es una transacción read-then-create: dos entregas concurrentes del mismo `leadgen_id` nunca se procesan las dos |
+| `metaWebhookEvents` | auto | `kind, leadgenId, pageId, formId, adId, adgroupId, campaignId, createdTime, receivedAt, outcome, reason, workspaceId, objective` | Diagnóstico. Sin secretos, sin headers, sin PII |
+| `metaCampaignLinks` | `{metaCampaignId}` | `metaCampaignId, workspaceId, objective (sales\|recruiting), active, campaignId, pageId, formIds, createdAt, updatedAt` | **Propiedad**. Doc id = id de campaña de Meta → único por construcción; una campaña activa solo puede tener un workspace |
+
+#### Resolución del propietario (`resolveOwner`)
+
+```
+event.campaignId
+  ├─ null        → unresolved (missing_campaign_id)   ← el webhook estándar NO trae campaign_id
+  ├─ sin link    → unresolved (no_link)
+  ├─ link.active !== true → unresolved (no_link)
+  └─ link activo → resolved { workspaceId, objective, campaignId }
+```
+
+`pageId`, `formId`, `adId` y `adgroupId` se guardan como metadata pero **jamás
+participan** en la resolución. Nunca hay workspace por defecto.
+
+**Consecuencia hoy:** como el payload leadgen de Meta no incluye `campaign_id`,
+todos los eventos quedan `unresolved (missing_campaign_id)` hasta la siguiente
+fase, en la que se obtendrá el `campaign_id` a partir de `ad_id` vía Graph API
+(`/{ad_id}?fields=campaign_id`) con un token de servidor. Ningún documento se
+crea en `leads` todavía.
+
+#### Cómo se crea un link (manual, por ahora)
+
+Solo el super admin, desde la consola de Firebase, en `metaCampaignLinks`:
+documento con **ID = id de la campaña de Meta** y campos
+`{ metaCampaignId, workspaceId, objective, active: true, campaignId: null, pageId: null, formIds: [], createdAt, updatedAt }`.
+La UI de administración de links llegará con la fase OAuth.
+
+### Pendiente para la fase siguiente
+
+1. OAuth de Meta en servidor → token de página/sistema en Secret Manager (`MetaConnection.secretRef`).
+2. `ad_id → campaign_id` vía Graph API para poder resolver el propietario.
+3. Descarga del lead (`GET /{leadgen_id}`) y creación en `leads` con `workspaceId` + `leadType = objective` + atribución (`externalCampaignId`, `externalAdSetId`, `externalAdId`).
+4. UI de super admin para `metaCampaignLinks` y cola de eventos `unresolved`.
+5. Reconciliación periódica (Meta pierde webhooks).
+6. Quitar el log diagnóstico del GET cuando la suscripción esté estable.
