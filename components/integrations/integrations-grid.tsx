@@ -1,93 +1,110 @@
 "use client"
 
-import { useState } from "react"
-import { Check, Plug } from "lucide-react"
-import { integrations as seed, type IntegrationCard } from "@/lib/mock-data/integrations"
+import Link from "next/link"
+import { Check } from "lucide-react"
+import { INTEGRATIONS, type IntegrationDefinition } from "@/lib/integrations/catalog"
+import { useMetaConnection } from "@/lib/integrations/meta"
+import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { PlatformMark } from "@/components/shared/platform-badge"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { toast } from "sonner"
 import { t } from "@/lib/i18n"
-import type { Platform } from "@/types"
+import type { ConnectionStatus } from "@/types"
 
-const KNOWN_PLATFORMS: Platform[] = ["meta", "tiktok", "google", "whatsapp", "instagram", "facebook"]
-
-function isPlatform(id: string): id is Platform {
-  return (KNOWN_PLATFORMS as string[]).includes(id)
-}
-
+/**
+ * Catalog of integrations with the REAL connection status of the active
+ * workspace. Nothing here can flip a card to "Conectado": that state only
+ * comes from a persisted connection written by the server-side OAuth flow.
+ */
 export function IntegrationsGrid() {
-  const [items, setItems] = useState<IntegrationCard[]>(seed)
+  const { workspaceId } = useWorkspace()
+  const meta = useMetaConnection(workspaceId)
 
-  function toggle(id: string) {
-    setItems((prev) =>
-      prev.map((item) => {
-        if (item.id !== id || item.status === "coming_soon") return item
-        const next = item.status === "connected" ? "not_connected" : "connected"
-        toast[next === "connected" ? "success" : "message"](
-          next === "connected"
-            ? t.integrations.connectedToast(item.name)
-            : t.integrations.disconnectedToast(item.name),
-        )
-        return { ...item, status: next }
-      }),
-    )
+  function statusFor(def: IntegrationDefinition): ConnectionStatus | null {
+    if (def.availability !== "available") return null
+    if (def.provider === "meta_ads") return meta.status
+    return "not_connected"
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {items.map((item) => {
-        const connected = item.status === "connected"
-        const comingSoon = item.status === "coming_soon"
-        return (
-          <Card key={item.id} className="gap-0">
-            <CardHeader className="gap-0">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  {isPlatform(item.id) ? (
-                    <PlatformMark platform={item.id} className="size-10 rounded-lg" />
-                  ) : (
-                    <div
-                      className="flex size-10 items-center justify-center rounded-lg text-white"
-                      style={{ backgroundColor: item.accent }}
-                    >
-                      <Plug className="size-5" />
+    <div className="flex flex-col gap-4">
+      {!workspaceId && (
+        <p className="text-sm text-muted-foreground">{t.integrations.selectWorkspace}</p>
+      )}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {INTEGRATIONS.map((def) => {
+          const status = statusFor(def)
+          const connected = status === "connected"
+          const available = def.availability === "available"
+          return (
+            <Card key={def.provider} className="gap-0">
+              <CardHeader className="gap-0">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <PlatformMark platform={def.platform} className="size-10 rounded-lg" />
+                    <div>
+                      <p className="font-medium leading-tight">{def.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {t.integrations.categories[def.category]}
+                      </p>
                     </div>
-                  )}
-                  <div>
-                    <p className="font-medium leading-tight">{item.name}</p>
-                    <p className="text-xs text-muted-foreground">{item.category}</p>
                   </div>
+                  <StatusBadge availability={def.availability} status={status} />
                 </div>
-                {connected && (
-                  <Badge className="gap-1">
-                    <Check className="size-3" />
-                    {t.integrations.connected}
-                  </Badge>
+              </CardHeader>
+              <CardContent className="mt-3 flex flex-1 flex-col justify-between gap-4">
+                <p className="text-sm text-pretty text-muted-foreground">{def.description}</p>
+                {available && def.manageHref ? (
+                  <Button
+                    variant={connected ? "outline" : "default"}
+                    size="sm"
+                    className="w-full"
+                    disabled={!workspaceId}
+                    nativeButton={false}
+                    render={<Link href={def.manageHref} />}
+                  >
+                    {connected ? t.integrations.manage : t.integrations.connect(def.name.split(" ")[0])}
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" className="w-full" disabled>
+                    {def.availability === "unavailable"
+                      ? t.integrations.unavailable
+                      : t.integrations.comingSoon}
+                  </Button>
                 )}
-                {comingSoon && <Badge variant="outline">{t.integrations.soon}</Badge>}
-              </div>
-            </CardHeader>
-            <CardContent className="mt-3 flex flex-1 flex-col justify-between gap-4">
-              <p className="text-sm text-pretty text-muted-foreground">{item.description}</p>
-              <Button
-                variant={connected ? "outline" : "default"}
-                size="sm"
-                disabled={comingSoon}
-                onClick={() => toggle(item.id)}
-                className="w-full"
-              >
-                {comingSoon
-                  ? t.integrations.comingSoon
-                  : connected
-                    ? t.integrations.disconnect
-                    : t.integrations.connect}
-              </Button>
-            </CardContent>
-          </Card>
-        )
-      })}
+              </CardContent>
+            </Card>
+          )
+        })}
+      </div>
     </div>
   )
+}
+
+function StatusBadge({
+  availability,
+  status,
+}: {
+  availability: IntegrationDefinition["availability"]
+  status: ConnectionStatus | null
+}) {
+  if (availability === "coming_soon") {
+    return <Badge variant="outline">{t.integrations.status.coming_soon}</Badge>
+  }
+  if (availability === "unavailable") {
+    return <Badge variant="outline">{t.integrations.status.unavailable}</Badge>
+  }
+  if (status === "connected") {
+    return (
+      <Badge className="gap-1">
+        <Check className="size-3" />
+        {t.integrations.status.connected}
+      </Badge>
+    )
+  }
+  if (status === "expired" || status === "error") {
+    return <Badge variant="destructive">{t.integrations.status[status]}</Badge>
+  }
+  return <Badge variant="secondary">{t.integrations.status.not_connected}</Badge>
 }
