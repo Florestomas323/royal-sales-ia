@@ -539,17 +539,66 @@ export const t = {
     title: 'Integraciones',
     description:
       'Conecta plataformas de anuncios y canales de mensajería para alimentar tu motor de prospectos.',
-    connected: 'Conectado',
-    connect: 'Conectar',
-    disconnect: 'Desconectar',
-    soon: 'Pronto',
+    status: {
+      connected: 'Conectado',
+      not_connected: 'No conectado',
+      expired: 'Conexión expirada',
+      error: 'Error de conexión',
+      coming_soon: 'Próximamente',
+      unavailable: 'No disponible',
+    },
+    connect: (name: string) => `Conectar ${name}`,
+    manage: 'Administrar',
     comingSoon: 'Próximamente',
-    connectedToast: (name: string) => `${name} se conectó`,
-    disconnectedToast: (name: string) => `${name} se desconectó`,
+    unavailable: 'No disponible',
+    selectWorkspace: 'Selecciona un workspace concreto para administrar sus integraciones.',
     categories: {
       advertising: 'Publicidad',
       messaging: 'Mensajería',
       social: 'Redes sociales',
+      recruiting: 'Reclutamiento',
+    },
+    meta: {
+      title: 'Administrar Meta',
+      description:
+        'Estado de la conexión de este workspace con Meta: cuenta, activos, Lead Ads y sincronización.',
+      back: 'Integraciones',
+      pending: 'Pendiente de conexión',
+      workspaceLabel: 'Workspace',
+      sections: {
+        status: 'Estado',
+        account: 'Cuenta',
+        accountHint: 'Usuario o negocio de Meta que autorizará el acceso.',
+        assets: 'Activos',
+        adAccount: 'Cuenta publicitaria',
+        page: 'Página de Facebook',
+        leadForms: 'Formularios de Lead Ads',
+        leadAds: 'Estado de Lead Ads',
+        leadAdsActive: 'Activo',
+        leadAdsInactive: 'Inactivo',
+        sync: 'Sincronización',
+        lastSync: 'Última sincronización',
+        never: 'Nunca',
+        actions: 'Acciones',
+      },
+      actions: {
+        connect: 'Conectar Meta',
+        reconnect: 'Reconectar',
+        disconnect: 'Desconectar',
+        connectUnavailable:
+          'La conexión real se habilitará en la siguiente fase, cuando la app de Meta esté verificada y exista el backend para guardar los tokens de forma segura.',
+        adminOnly: 'Solo un administrador del workspace o el super admin puede conectar Meta.',
+      },
+      prerequisites: {
+        title: 'Requisitos antes de conectar',
+        description:
+          'Estos pasos se hacen fuera de Royal Sales IA. Ninguno está completado todavía.',
+      },
+      ownership: {
+        title: 'Cómo se asignan los prospectos',
+        body:
+          'Una página de Facebook puede compartirse entre varios distribuidores. Por eso cada prospecto se asigna al workspace que paga la campaña que lo generó, nunca a la página. Una campaña pertenece a un solo workspace y su objetivo decide si el prospecto entra a Ventas o a Reclutamiento.',
+      },
     },
   },
 
