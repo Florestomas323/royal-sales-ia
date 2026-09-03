@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { ScoreBadge } from '@/components/shared/score-badge'
 import { navSections } from './nav-config'
-import { leads } from '@/lib/mock-data'
+import { useLeads } from '@/lib/firebase/leads'
 import { t } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
@@ -24,6 +24,7 @@ export function GlobalSearch() {
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState('')
   const router = useRouter()
+  const { leads } = useLeads()
 
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -118,7 +119,7 @@ export function GlobalSearch() {
                 {leadResults.map((l) => (
                   <button
                     key={l.id}
-                    onClick={() => go(`/leads/${l.id}`)}
+                    onClick={() => go('/leads')}
                     className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
                   >
                     <span className="flex flex-col items-start">

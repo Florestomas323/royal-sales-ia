@@ -27,25 +27,34 @@ import {
 import { PLATFORM_LABELS } from '@/lib/constants'
 import { createLead } from '@/lib/firebase/leads'
 import { useCampaigns, useUsers } from '@/lib/firebase/collections'
+import { useWorkspace } from '@/lib/firebase/workspace-context'
+import { describeError } from '@/lib/firebase/errors'
 import { t } from '@/lib/i18n'
 
 export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
   const { campaigns } = useCampaigns()
   const { users } = useUsers()
+  const { workspaceId, role, membership } = useWorkspace()
   const [open, setOpen] = React.useState(false)
   const [campaignId, setCampaignId] = React.useState('')
   const [assignedToId, setAssignedToId] = React.useState('')
   const [submitting, setSubmitting] = React.useState(false)
 
   const activeReps = users.filter((u) => u.status === 'active')
+  const isRep = role === 'sales_rep'
 
   // Default selections once live data arrives.
   React.useEffect(() => {
     if (!campaignId && campaigns.length > 0) setCampaignId(campaigns[0].id)
   }, [campaigns, campaignId])
   React.useEffect(() => {
+    // A sales rep can only create leads assigned to themselves (Rules enforce it).
+    if (isRep && membership?.userId) {
+      if (assignedToId !== membership.userId) setAssignedToId(membership.userId)
+      return
+    }
     if (!assignedToId && activeReps.length > 0) setAssignedToId(activeReps[0].id)
-  }, [activeReps, assignedToId])
+  }, [activeReps, assignedToId, isRep, membership])
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -54,10 +63,16 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
     const phone = (form.get('phone') as string)?.trim()
     const email = (form.get('email') as string)?.trim()
     const campaign = campaigns.find((c) => c.id === campaignId)
+    if (!workspaceId) {
+      toast.error(t.common.selectWorkspaceFirst)
+      return
+    }
 
     setSubmitting(true)
     try {
       await createLead({
+        workspaceId,
+        leadType: campaign?.campaignType ?? 'sales',
         name,
         phone,
         email,
@@ -71,8 +86,8 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
         description: t.leads.createdDescription(name),
       })
       setOpen(false)
-    } catch {
-      toast.error(t.leads.createError)
+    } catch (err) {
+      toast.error(t.leads.createError, { description: describeError(err).message })
     } finally {
       setSubmitting(false)
     }
@@ -140,7 +155,7 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
             </Field>
             <Field>
               <FieldLabel>{t.leads.assignTo}</FieldLabel>
-              <Select value={assignedToId} onValueChange={(v) => setAssignedToId(v ?? "")}>
+              <Select value={assignedToId} onValueChange={(v) => setAssignedToId(v ?? "")} disabled={isRep}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder={t.leads.assignPlaceholder} />
                 </SelectTrigger>
@@ -158,7 +173,7 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
             <DialogClose render={<Button variant="outline" type="button" />}>
               {t.common.cancel}
             </DialogClose>
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" disabled={submitting || !workspaceId}>
               {submitting ? t.common.creating : t.leads.create}
             </Button>
           </DialogFooter>

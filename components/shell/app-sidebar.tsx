@@ -30,18 +30,20 @@ import { UserAvatar } from '@/components/shared/user-avatar'
 import { BrandMark } from '@/components/shared/brand-mark'
 import { navSections } from './nav-config'
 import { t } from '@/lib/i18n'
-import { currentUser, currentWorkspace } from '@/lib/mock-data'
 import { ROLE_LABELS } from '@/lib/constants'
 import { useAuth } from '@/lib/firebase/auth-context'
+import { useWorkspace } from '@/lib/firebase/workspace-context'
+import { WorkspaceSwitcher } from './workspace-switcher'
 
 export function AppSidebar() {
   const pathname = usePathname()
   const router = useRouter()
-  const { user, signOut } = useAuth()
+  const { signOut } = useAuth()
+  const { currentUser, currentWorkspace, isSuperAdmin } = useWorkspace()
 
-  // Prefer the signed-in Firebase identity, fall back to demo profile.
-  const displayName = user?.displayName || currentUser.name
-  const displayEmail = user?.email || currentUser.email
+  const displayName = currentUser.name
+  const displayEmail = currentUser.email
+  const workspaceLabel = currentWorkspace?.name ?? (isSuperAdmin ? t.tenancy.superAdminGlobal : t.tenancy.workspace)
 
   async function handleLogout() {
     await signOut()
@@ -62,6 +64,7 @@ export function AppSidebar() {
             </span>
           </div>
         </div>
+        <WorkspaceSwitcher />
       </SidebarHeader>
 
       <SidebarContent>
@@ -118,7 +121,7 @@ export function AppSidebar() {
                     {displayName}
                   </span>
                   <span className="truncate text-[11px] text-sidebar-foreground/60">
-                    {currentWorkspace.name} · {ROLE_LABELS[currentUser.role]}
+                    {workspaceLabel} · {ROLE_LABELS[currentUser.role]}
                   </span>
                 </div>
                 <ChevronsUpDown className="ml-auto size-4 text-sidebar-foreground/60 group-data-[collapsible=icon]:hidden" />
