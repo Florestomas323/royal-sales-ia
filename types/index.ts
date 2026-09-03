@@ -7,17 +7,34 @@
  * UI never has to change — only the data source does.
  */
 
+/**
+ * Origin of a lead / channel of a campaign.
+ *  - Ad platforms: meta, facebook, instagram, tiktok, google, youtube, indeed
+ *  - Messaging:    whatsapp
+ *  - Owned:        web, landing_page
+ *  - Offline:      referral, manual, other
+ *  - Legacy:       organic (kept for existing documents; not offered in forms)
+ *
+ * `indeed` is a RECRUITING-only source (see SOURCES_BY_LEAD_TYPE in constants).
+ */
 export type Platform =
   | 'meta'
+  | 'facebook'
+  | 'instagram'
   | 'tiktok'
   | 'google'
-  | 'instagram'
-  | 'facebook'
-  | 'whatsapp'
   | 'youtube'
   | 'indeed'
+  | 'whatsapp'
+  | 'web'
+  | 'landing_page'
   | 'referral'
+  | 'manual'
+  | 'other'
   | 'organic'
+
+/** Alias used where the meaning is "where the lead came from". */
+export type LeadSource = Platform
 
 /**
  * Business line a lead (or campaign) belongs to.
@@ -42,7 +59,14 @@ export type IntegrationProvider =
 
 export type LeadTemperature = 'hot' | 'warm' | 'cold'
 
-export type PipelineStage =
+/**
+ * Sales pipeline. Keys are stable identifiers stored in Firestore; the
+ * original seven values are preserved so existing leads need no migration.
+ *   new_lead → Nuevo · contact → Contactar · contacted → Contactado
+ *   interested → Interesado · appointment → Demostración agendada
+ *   follow_up → Seguimiento · sale → Venta · not_interested → No interesado
+ */
+export type SalesStage =
   | 'new_lead'
   | 'contact'
   | 'contacted'
@@ -50,6 +74,21 @@ export type PipelineStage =
   | 'appointment'
   | 'follow_up'
   | 'sale'
+  | 'not_interested'
+
+/** Recruiting pipeline (independent from sales). Prefixed to avoid collisions. */
+export type RecruitingStage =
+  | 'rec_new'
+  | 'rec_contact'
+  | 'rec_contacted'
+  | 'rec_qualified'
+  | 'rec_interview'
+  | 'rec_orientation'
+  | 'rec_follow_up'
+  | 'rec_hired'
+  | 'rec_disqualified'
+
+export type PipelineStage = SalesStage | RecruitingStage
 
 export type CampaignStatus = 'active' | 'paused' | 'learning' | 'ended'
 
@@ -78,6 +117,10 @@ export type ActivityType =
   | 'note'
   | 'stage_change'
   | 'sale'
+  | 'demo'
+  | 'interview'
+  | 'orientation'
+  | 'hired'
 
 export type Period = 'today' | '7d' | '30d' | 'custom'
 
@@ -113,6 +156,24 @@ export interface Membership {
   userId: string
   email: string
   createdAt: string
+}
+
+/**
+ * Shape of the future Campaign Builder wizard (prep only — no UI yet).
+ * Kept here so nothing in the data model contradicts it later.
+ */
+export type CampaignChannel = 'meta' | 'tiktok' | 'google' | 'indeed'
+export type CampaignDestination = 'whatsapp' | 'form' | 'web' | 'landing_page'
+export type CampaignCreativeType = 'image' | 'reel' | 'video' | 'carousel'
+
+export interface CampaignDraft {
+  workspaceId: string
+  objective: LeadType
+  channel: CampaignChannel
+  location?: { city?: string; state?: string; radiusKm?: number }
+  budget?: { daily?: number; total?: number; currency: string }
+  destination?: CampaignDestination
+  creative?: { type: CampaignCreativeType; assetUrl?: string }
 }
 
 /**
@@ -168,6 +229,10 @@ export interface Client {
   isDemo?: boolean
 }
 
+/**
+ * Attribution snapshot stored ON the lead at creation time.
+ * Only what is known is written; external ids are never invented.
+ */
 export interface Attribution {
   platform: Platform
   campaign: string
@@ -179,7 +244,33 @@ export interface Attribution {
   externalAdSetId?: string
   externalAdId?: string
   externalCreativeId?: string
+  /** fbclid / ttclid / gclid when captured. */
   clickId?: string
+  utmSource?: string
+  utmMedium?: string
+  utmCampaign?: string
+  utmContent?: string
+  utmTerm?: string
+  landingPage?: string
+  referrer?: string
+}
+
+/**
+ * Optional candidate data for `leadType === "recruiting"`.
+ * Dates are ISO strings (the whole model uses ISO strings, not Timestamps).
+ * `indeed*` ids are only filled by the future Indeed Candidate Sync.
+ */
+export interface RecruitingProfile {
+  jobTitle?: string
+  city?: string
+  state?: string
+  employmentPreference?: string
+  hasVehicle?: boolean
+  interviewDate?: string
+  orientationDate?: string
+  hiredAt?: string
+  indeedJobId?: string
+  indeedCandidateId?: string
 }
 
 export interface Lead {
@@ -203,13 +294,18 @@ export interface Lead {
   nextAction: string
   attribution: Attribution
   clientId: string
+  /** Present only for recruiting leads. */
+  recruiting?: RecruitingProfile
   isDemo?: boolean
 }
 
 export interface Campaign {
   id: string
   workspaceId: string
-  campaignType: LeadType
+  /** What the campaign is looking for: customers (sales) or candidates (recruiting). */
+  objective: LeadType
+  /** @deprecated Phase 1 name of `objective`. Still written for compatibility; read via `campaignObjective()`. */
+  campaignType?: LeadType
   name: string
   platform: Platform
   status: CampaignStatus
@@ -245,9 +341,17 @@ export interface Appointment {
   status: 'scheduled' | 'completed' | 'no_show'
 }
 
+/**
+ * Activity / history entry. Not persisted yet (future collection `activities`,
+ * one document per event, always with `workspaceId`). The lead timeline
+ * currently derives a single "received" entry from the lead itself.
+ */
 export interface Activity {
   id: string
   leadId: string
+  workspaceId?: string
+  /** users.id of the person who performed it; absent for system events. */
+  userId?: string
   type: ActivityType
   title: string
   description: string
