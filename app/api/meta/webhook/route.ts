@@ -38,11 +38,28 @@ export async function GET(request: Request) {
   if (!verifyToken) return notConfigured()
 
   const { searchParams } = new URL(request.url)
-  const mode = searchParams.get("hub.mode")?.trim()
-  const token = searchParams.get("hub.verify_token")?.trim()
+  const rawMode = searchParams.get("hub.mode")
+  const rawToken = searchParams.get("hub.verify_token")
   const challenge = searchParams.get("hub.challenge")
 
-  if (mode === "subscribe" && token !== undefined && token === verifyToken && challenge !== null) {
+  const mode = rawMode?.trim()
+  const token = rawToken?.trim()
+  const matches = token !== undefined && token === verifyToken
+
+  // TEMPORARY diagnostic logging (remove once the subscription is verified).
+  // Only shapes and lengths — never the token values, never the app secret.
+  console.info(
+    "[meta/webhook][GET] " +
+      `mode=${mode ?? "—"} ` +
+      `hasVerifyToken=${rawToken !== null} ` +
+      `receivedLen=${token?.length ?? 0} ` +
+      `expectedLen=${verifyToken.length} ` +
+      `matches=${matches} ` +
+      `hasChallenge=${challenge !== null} ` +
+      `params=[${[...searchParams.keys()].join(",")}]`,
+  )
+
+  if (mode === "subscribe" && matches && challenge !== null) {
     // Meta expects the raw challenge string as the body.
     return new NextResponse(challenge, {
       status: 200,
