@@ -5,9 +5,11 @@ import { PipelineBoard } from "@/components/pipeline/pipeline-board"
 import { useLeads } from "@/lib/firebase/leads"
 import { Skeleton } from "@/components/ui/skeleton"
 import { STAGE_ORDER } from "@/lib/constants"
+import { DataErrorState } from "@/components/shared/data-error-state"
+import { DemoRowsNotice } from "@/components/shared/demo-data-badge"
 
 export function PipelineLive() {
-  const { leads, loading } = useLeads()
+  const { leads, loading, error } = useLeads()
 
   if (loading) {
     return (
@@ -28,6 +30,8 @@ export function PipelineLive() {
 
   return (
     <>
+      {error && <DataErrorState error={error} />}
+      <DemoRowsNotice rows={leads} />
       <PipelineSummary leads={leads} />
       <PipelineBoard leads={leads} />
     </>
