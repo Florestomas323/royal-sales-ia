@@ -178,7 +178,7 @@ Los valores `NEXT_PUBLIC_FIREBASE_*` son **config web pública** (seguros de exp
 | Campaigns | `/campaigns` | **Firestore (realtime)** |
 | Command Center (Overview) | `/` | Mock (`lib/mock-data`) |
 | Analytics | `/analytics` | Mock |
-| Integrations | `/integrations` | Mock |
+| Integrations | `/integrations`, `/integrations/meta` | Real (estados); conexión Meta pendiente — ver `META.md` |
 | Settings | `/settings` | Mock / local |
 | AI Media Buyer | `/media-buyer` | Roadmap (placeholder visual) |
 | Content Lab | `/content-lab` | Roadmap |

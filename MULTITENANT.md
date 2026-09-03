@@ -152,7 +152,6 @@ vacías (no hay error) para los miembros, y el super admin ve todo.
 | `components/overview/platform-performance.tsx` | `platformMetrics` | Command Center / Analytics |
 | `components/overview/performance-chart.tsx` | `performanceTrend` | Command Center / Analytics |
 | `components/analytics/revenue-chart.tsx` | `performanceTrend` | Analytics |
-| `components/integrations/integrations-grid.tsx` | `integrations` | Integraciones |
 | `components/shell/notifications-menu.tsx` | `notifications` | Shell (campana) |
 | `components/shell/top-bar.tsx` | `periods` | Shell (selector de periodo; solo etiquetas) |
 
