@@ -274,8 +274,20 @@ export interface MetaCampaignLink {
   updatedAt: string
 }
 
-/** Server-side idempotency record: `processedMetaLeads/{leadgenId}`. */
-export type ProcessedMetaLeadStatus = 'received' | 'resolved' | 'unresolved' | 'error'
+/**
+ * Server-side idempotency record: `processedMetaLeads/{leadgenId}`.
+ *
+ * Status machine:
+ *   received   → claimed by an invocation, processing in progress
+ *   resolved   → owner found (terminal; never reprocessed)
+ *   unresolved → permanent for this payload (missing ids, ad not found…)
+ *                or link-related (no_link / link_inactive), which becomes
+ *                reprocessable once a link is created
+ *   retryable  → temporary failure (Graph timeout, auth, rate limit…);
+ *                a redelivery of the same leadgen_id may reprocess it
+ *   error      → unexpected exception while processing (reprocessable)
+ */
+export type ProcessedMetaLeadStatus = 'received' | 'resolved' | 'unresolved' | 'retryable' | 'error'
 
 export interface ProcessedMetaLead {
   leadgenId: string
@@ -283,12 +295,19 @@ export interface ProcessedMetaLead {
   formId: string | null
   adId: string | null
   adgroupId: string | null
+  /** Meta campaign id: from the payload or resolved via Graph API. */
   campaignId: string | null
+  adsetId: string | null
+  resolvedVia: 'payload' | 'graph' | null
   receivedAt: string
+  updatedAt: string
+  attempts: number
   status: ProcessedMetaLeadStatus
   /** Set only when status === 'resolved'. */
   workspaceId: string | null
   objective: LeadType | null
+  /** Local campaign id from the link, if any. */
+  localCampaignId: string | null
   reason: string | null
 }
 
@@ -301,10 +320,13 @@ export interface MetaWebhookEvent {
   adId: string | null
   adgroupId: string | null
   campaignId: string | null
+  adsetId: string | null
   createdTime: number | null
   receivedAt: string
-  outcome: 'resolved' | 'unresolved' | 'duplicate' | 'error'
+  outcome: 'resolved' | 'unresolved' | 'retryable' | 'duplicate' | 'error'
   reason: string | null
+  resolvedVia: 'payload' | 'graph' | null
+  attempt: number
   workspaceId: string | null
   objective: LeadType | null
 }
