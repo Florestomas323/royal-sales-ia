@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getMetaServerEnv, isMissingEnvError } from "@/lib/meta/env"
+import { getMetaAppSecret, getWebhookVerifyToken, isMissingEnvError } from "@/lib/meta/env"
 import { verifyMetaSignature } from "@/lib/meta/signature"
 import { maskId, parseMetaWebhook } from "@/lib/meta/types"
 import { createLogOnlyProcessor, handleLeadgenEvent } from "@/lib/meta/processor"
@@ -20,26 +20,29 @@ export const dynamic = "force-dynamic"
 
 const processor = createLogOnlyProcessor()
 
-function envOr503() {
+/** Reads one secret; on misconfiguration logs the variable NAME (never the value). */
+function readSecret(read: () => string): string | null {
   try {
-    return { env: getMetaServerEnv(), response: null }
+    return read()
   } catch (err) {
-    // Misconfiguration must be visible in server logs, never as a 200.
     console.error("[meta/webhook]", isMissingEnvError(err) ? err.message : "env error")
-    return { env: null, response: new NextResponse("Webhook not configured", { status: 503 }) }
+    return null
   }
 }
 
+const notConfigured = () => new NextResponse("Webhook not configured", { status: 503 })
+
 export async function GET(request: Request) {
-  const { env, response } = envOr503()
-  if (!env) return response
+  // GET only needs the verify token; META_APP_SECRET is not required here.
+  const verifyToken = readSecret(getWebhookVerifyToken)
+  if (!verifyToken) return notConfigured()
 
   const { searchParams } = new URL(request.url)
-  const mode = searchParams.get("hub.mode")
-  const token = searchParams.get("hub.verify_token")
+  const mode = searchParams.get("hub.mode")?.trim()
+  const token = searchParams.get("hub.verify_token")?.trim()
   const challenge = searchParams.get("hub.challenge")
 
-  if (mode === "subscribe" && token === env.webhookVerifyToken && challenge !== null) {
+  if (mode === "subscribe" && token !== undefined && token === verifyToken && challenge !== null) {
     // Meta expects the raw challenge string as the body.
     return new NextResponse(challenge, {
       status: 200,
@@ -50,14 +53,14 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const { env, response } = envOr503()
-  if (!env) return response
+  const appSecret = readSecret(getMetaAppSecret)
+  if (!appSecret) return notConfigured()
 
   // Raw body first: the signature is computed over the exact bytes.
   const rawBody = await request.text()
   const signature = request.headers.get("x-hub-signature-256")
 
-  if (!verifyMetaSignature(rawBody, signature, env.appSecret)) {
+  if (!verifyMetaSignature(rawBody, signature, appSecret)) {
     console.warn("[meta/webhook] invalid signature")
     return new NextResponse("Unauthorized", { status: 401 })
   }
