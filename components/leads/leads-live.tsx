@@ -3,9 +3,11 @@
 import { LeadsView } from "@/components/leads/leads-view"
 import { useLeads } from "@/lib/firebase/leads"
 import { Skeleton } from "@/components/ui/skeleton"
+import { DataErrorState } from "@/components/shared/data-error-state"
+import { DemoRowsNotice } from "@/components/shared/demo-data-badge"
 
 export function LeadsLive() {
-  const { leads, loading } = useLeads()
+  const { leads, loading, error } = useLeads()
 
   if (loading) {
     return (
@@ -27,5 +29,11 @@ export function LeadsLive() {
     )
   }
 
-  return <LeadsView leads={leads} />
+  return (
+    <div className="flex flex-col gap-3">
+      {error && <DataErrorState error={error} />}
+      <DemoRowsNotice rows={leads} />
+      <LeadsView leads={leads} />
+    </div>
+  )
 }

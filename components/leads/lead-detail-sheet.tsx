@@ -1,7 +1,7 @@
 "use client"
 
 import { Phone, Mail, MessageCircle, CalendarPlus, Target, Clock } from "lucide-react"
-import type { Lead } from "@/types"
+import type { Activity, Lead } from "@/types"
 import {
   Sheet,
   SheetContent,
@@ -19,7 +19,6 @@ import { StageBadge } from "@/components/shared/score-badge"
 import { TemperatureDot } from "@/components/shared/score-badge"
 import { LeadTimeline } from "@/components/leads/lead-timeline"
 import { LeadAiAssistant } from "@/components/leads/lead-ai-assistant"
-import { getActivities } from "@/lib/mock-data"
 import { useUsersMap } from "@/lib/firebase/collections"
 import { formatCurrency, formatRelativeTime } from "@/lib/format"
 import { t } from "@/lib/i18n"
@@ -34,7 +33,20 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
   const usersMap = useUsersMap()
   if (!lead) return null
   const rep = usersMap[lead.assignedToId]
-  const activities = getActivities(lead.id)
+  // Activities are not persisted yet (roadmap). Until then the timeline only
+  // shows the real creation event derived from the lead itself — never mock
+  // conversations mixed with real data.
+  const activities: Activity[] = [
+    {
+      id: `${lead.id}-received`,
+      leadId: lead.id,
+      type: "lead_received",
+      title: t.leads.detail.receivedTitle,
+      description: t.leads.detail.receivedDescription(lead.campaignName),
+      actor: t.leads.detail.systemActor,
+      timestamp: lead.createdAt,
+    },
+  ]
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
