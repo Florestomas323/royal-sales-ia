@@ -25,6 +25,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { createCampaign, useClients } from "@/lib/firebase/collections"
+import { useWorkspace } from "@/lib/firebase/workspace-context"
+import { describeError } from "@/lib/firebase/errors"
 import { CAMPAIGN_STATUS_LABELS, PLATFORM_LABELS } from "@/lib/constants"
 import { t } from "@/lib/i18n"
 import type { Campaign, Platform } from "@/types"
@@ -39,6 +41,7 @@ const STATUS_OPTIONS: { value: Campaign["status"]; label: string }[] = [
 
 export function NewCampaignDialog() {
   const { clients } = useClients()
+  const { workspaceId } = useWorkspace()
   const [open, setOpen] = React.useState(false)
   const [platform, setPlatform] = React.useState<Platform>("meta")
   const [clientId, setClientId] = React.useState("")
@@ -55,18 +58,22 @@ export function NewCampaignDialog() {
     const form = new FormData(e.currentTarget)
     const name = (form.get("name") as string)?.trim()
     if (!name || !clientId) return
+    if (!workspaceId) {
+      toast.error(t.common.selectWorkspaceFirst)
+      return
+    }
 
     setSubmitting(true)
     try {
-      await createCampaign({ name, platform, clientId, status })
+      await createCampaign({ workspaceId, name, platform, clientId, status })
       toast.success(t.campaigns.createdTitle, {
         description: t.campaigns.createdDescription(name),
       })
       setOpen(false)
       setPlatform("meta")
       setStatus("learning")
-    } catch {
-      toast.error(t.campaigns.createError)
+    } catch (err) {
+      toast.error(t.campaigns.createError, { description: describeError(err).message })
     } finally {
       setSubmitting(false)
     }
@@ -153,7 +160,7 @@ export function NewCampaignDialog() {
             <DialogClose render={<Button variant="outline" type="button" />}>
               {t.common.cancel}
             </DialogClose>
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" disabled={submitting || !workspaceId}>
               {submitting ? t.common.creating : t.campaigns.create}
             </Button>
           </DialogFooter>

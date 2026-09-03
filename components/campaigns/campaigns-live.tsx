@@ -6,9 +6,11 @@ import { CampaignsTable } from "@/components/campaigns/campaigns-table"
 import { useCampaigns } from "@/lib/firebase/collections"
 import { formatCurrency, formatNumber } from "@/lib/format"
 import { t } from "@/lib/i18n"
+import { DataErrorState } from "@/components/shared/data-error-state"
+import { DemoRowsNotice } from "@/components/shared/demo-data-badge"
 
 export function CampaignsLive() {
-  const { campaigns, loading } = useCampaigns()
+  const { campaigns, loading, error } = useCampaigns()
 
   const totalSpend = campaigns.reduce((s, c) => s + c.spend, 0)
   const totalLeads = campaigns.reduce((s, c) => s + c.leads, 0)
@@ -55,6 +57,8 @@ export function CampaignsLive() {
 
   return (
     <div className="flex flex-col gap-6">
+      {error && <DataErrorState error={error} />}
+      <DemoRowsNotice rows={campaigns} />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {stats.map((s) => (
           <Card key={s.label}>
