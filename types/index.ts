@@ -107,9 +107,6 @@ export type IntegrationAvailability = 'available' | 'coming_soon' | 'unavailable
  */
 export type ConnectionStatus = 'not_connected' | 'connected' | 'expired' | 'error'
 
-/** @deprecated Use IntegrationAvailability / ConnectionStatus. Kept for older readers. */
-export type IntegrationStatus = 'connected' | 'not_connected' | 'coming_soon'
-
 export type UserRole =
   | 'super_admin'
   | 'client_admin'
