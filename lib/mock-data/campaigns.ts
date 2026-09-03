@@ -5,6 +5,7 @@ export const campaigns: Campaign[] = [
   {
     id: 'cmp1',
     workspaceId: DEMO_WORKSPACE_ID,
+    objective: 'sales',
     campaignType: 'sales',
     isDemo: true,
     name: 'Healthy Cooking — Prospecting',
@@ -22,6 +23,7 @@ export const campaigns: Campaign[] = [
   {
     id: 'cmp2',
     workspaceId: DEMO_WORKSPACE_ID,
+    objective: 'sales',
     campaignType: 'sales',
     isDemo: true,
     name: 'Healthy Cooking — Recipes UGC',
@@ -39,6 +41,7 @@ export const campaigns: Campaign[] = [
   {
     id: 'cmp3',
     workspaceId: DEMO_WORKSPACE_ID,
+    objective: 'sales',
     campaignType: 'sales',
     isDemo: true,
     name: 'FitLife — Transformation Challenge',
@@ -56,6 +59,7 @@ export const campaigns: Campaign[] = [
   {
     id: 'cmp4',
     workspaceId: DEMO_WORKSPACE_ID,
+    objective: 'sales',
     campaignType: 'sales',
     isDemo: true,
     name: 'FitLife — Retargeting Warm',
@@ -73,6 +77,7 @@ export const campaigns: Campaign[] = [
   {
     id: 'cmp5',
     workspaceId: DEMO_WORKSPACE_ID,
+    objective: 'sales',
     campaignType: 'sales',
     isDemo: true,
     name: 'Casa Bella — Lead Gen',
@@ -90,6 +95,7 @@ export const campaigns: Campaign[] = [
   {
     id: 'cmp6',
     workspaceId: DEMO_WORKSPACE_ID,
+    objective: 'sales',
     campaignType: 'sales',
     isDemo: true,
     name: 'Casa Bella — Open House',
