@@ -182,13 +182,17 @@ export interface NewCampaignInput {
   platform: Campaign["platform"]
   clientId: string
   status?: Campaign["status"]
-  campaignType?: LeadType
+  /** Clientes (sales) o Candidatos (recruiting). */
+  objective?: LeadType
 }
 
 export async function createCampaign(input: NewCampaignInput) {
+  const objective: LeadType = input.objective ?? "sales"
   const campaign: Omit<Campaign, "id"> = {
     workspaceId: input.workspaceId,
-    campaignType: input.campaignType ?? "sales",
+    objective,
+    // Phase 1 field, kept in sync for older readers.
+    campaignType: objective,
     name: input.name,
     platform: input.platform,
     status: input.status ?? "learning",

@@ -1,4 +1,4 @@
-import { collection, getDocs, writeBatch, doc, type DocumentData } from "firebase/firestore"
+import { collection, getDocs, query, where, writeBatch, doc, type DocumentData } from "firebase/firestore"
 import { db } from "./client"
 
 /**
@@ -83,4 +83,86 @@ export async function migrateLegacyDocuments(
   }
   if (inBatch > 0) await batch.commit()
   return migrated
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Phase 2 normalization: leadType on leads, objective on campaigns          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Idempotent, workspace-scoped, additive:
+ *   - leads without `leadType`            → leadType = "sales"
+ *     (decision documented in ARCHITECTURE.md §"Ventas y Reclutamiento":
+ *      every pre-Phase-2 record was a commercial prospect)
+ *   - campaigns without `objective`        → objective = campaignType ?? "sales"
+ * Nothing else on the documents is touched. Runs on the ACTIVE workspace only
+ * (super admin tools), so it never reads across tenants.
+ */
+export interface NormalizationScan {
+  leads: string[]
+  campaigns: string[]
+  total: number
+}
+
+export async function scanPhase2Normalization(workspaceId: string): Promise<NormalizationScan> {
+  const [leadsSnap, campaignsSnap] = await Promise.all([
+    getDocs(query(collection(db, "leads"), where("workspaceId", "==", workspaceId))),
+    getDocs(query(collection(db, "campaigns"), where("workspaceId", "==", workspaceId))),
+  ])
+  const leads = leadsSnap.docs
+    .filter((d) => {
+      const v = d.data().leadType
+      return v !== "sales" && v !== "recruiting"
+    })
+    .map((d) => d.id)
+  const campaigns = campaignsSnap.docs
+    .filter((d) => {
+      const v = d.data().objective
+      return v !== "sales" && v !== "recruiting"
+    })
+    .map((d) => d.id)
+  return { leads, campaigns, total: leads.length + campaigns.length }
+}
+
+export async function runPhase2Normalization(
+  scan: NormalizationScan,
+  workspaceId: string,
+): Promise<number> {
+  let done = 0
+  let batch = writeBatch(db)
+  let inBatch = 0
+  const flush = async () => {
+    if (inBatch === 0) return
+    await batch.commit()
+    batch = writeBatch(db)
+    inBatch = 0
+  }
+
+  const campaignsSnap = await getDocs(
+    query(collection(db, "campaigns"), where("workspaceId", "==", workspaceId)),
+  )
+  const wantedCampaigns = new Set(scan.campaigns)
+  for (const d of campaignsSnap.docs) {
+    if (!wantedCampaigns.has(d.id)) continue
+    const data = d.data()
+    if (data.objective === "sales" || data.objective === "recruiting") continue
+    const objective = data.campaignType === "recruiting" ? "recruiting" : "sales"
+    batch.update(doc(db, "campaigns", d.id), { objective })
+    done++
+    if (++inBatch >= 400) await flush()
+  }
+
+  const wantedLeads = new Set(scan.leads)
+  const leadsSnap = await getDocs(query(collection(db, "leads"), where("workspaceId", "==", workspaceId)))
+  for (const d of leadsSnap.docs) {
+    if (!wantedLeads.has(d.id)) continue
+    const v = d.data().leadType
+    if (v === "sales" || v === "recruiting") continue
+    batch.update(doc(db, "leads", d.id), { leadType: "sales" })
+    done++
+    if (++inBatch >= 400) await flush()
+  }
+
+  await flush()
+  return done
 }
