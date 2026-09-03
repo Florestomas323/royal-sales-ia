@@ -4,6 +4,7 @@ import {
   STAGE_LABELS,
   TEMPERATURE_SHORT_LABELS,
   temperatureColor,
+  STAGE_TONE,
 } from '@/lib/constants'
 import type { LeadTemperature, PipelineStage } from '@/types'
 
@@ -98,16 +99,6 @@ export function ScoreBadge({
       )}
     </span>
   )
-}
-
-const STAGE_TONE: Record<PipelineStage, string> = {
-  new_lead: 'var(--chart-1)',
-  contact: 'var(--chart-1)',
-  contacted: 'var(--chart-4)',
-  interested: 'var(--warning)',
-  appointment: 'var(--chart-3)',
-  follow_up: 'var(--warning)',
-  sale: 'var(--success)',
 }
 
 export function StageBadge({
