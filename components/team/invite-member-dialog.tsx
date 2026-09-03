@@ -25,13 +25,19 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { createUser } from "@/lib/firebase/collections"
+import { useWorkspace } from "@/lib/firebase/workspace-context"
+import { describeError } from "@/lib/firebase/errors"
 import { ROLE_LABELS } from "@/lib/constants"
 import { t } from "@/lib/i18n"
 import type { UserRole } from "@/types"
 
-const ROLE_OPTIONS = Object.entries(ROLE_LABELS) as [UserRole, string][]
+// super_admin is never assignable from the UI (bootstrapped manually, see MULTITENANT.md).
+const ROLE_OPTIONS = (Object.entries(ROLE_LABELS) as [UserRole, string][]).filter(
+  ([value]) => value !== "super_admin",
+)
 
 export function InviteMemberDialog() {
+  const { workspaceId } = useWorkspace()
   const [open, setOpen] = React.useState(false)
   const [role, setRole] = React.useState<UserRole>("sales_rep")
   const [submitting, setSubmitting] = React.useState(false)
@@ -42,17 +48,21 @@ export function InviteMemberDialog() {
     const name = (form.get("name") as string)?.trim()
     const email = (form.get("email") as string)?.trim()
     if (!name || !email) return
+    if (!workspaceId) {
+      toast.error(t.common.selectWorkspaceFirst)
+      return
+    }
 
     setSubmitting(true)
     try {
-      await createUser({ name, email, role })
+      await createUser({ workspaceId, name, email, role })
       toast.success(t.team.invitedTitle, {
         description: t.team.invitedDescription(name, ROLE_LABELS[role]),
       })
       setOpen(false)
       setRole("sales_rep")
-    } catch {
-      toast.error(t.team.inviteError)
+    } catch (err) {
+      toast.error(t.team.inviteError, { description: describeError(err).message })
     } finally {
       setSubmitting(false)
     }
@@ -114,7 +124,7 @@ export function InviteMemberDialog() {
             <DialogClose render={<Button variant="outline" type="button" />}>
               {t.common.cancel}
             </DialogClose>
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" disabled={submitting || !workspaceId}>
               {submitting ? t.common.sending : t.team.send}
             </Button>
           </DialogFooter>

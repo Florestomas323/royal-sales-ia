@@ -8,6 +8,8 @@ import type { MemberStatus } from "@/types"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import { DataErrorState } from "@/components/shared/data-error-state"
+import { DemoRowsNotice } from "@/components/shared/demo-data-badge"
 import {
   Table,
   TableBody,
@@ -32,7 +34,7 @@ const ROLE_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
 }
 
 export function TeamLive() {
-  const { users, loading } = useUsers()
+  const { users, loading, error } = useUsers()
 
   const active = users.filter((u) => u.status === "active")
   const totalLeads = users.reduce((s, u) => s + u.assignedLeads, 0)
@@ -78,6 +80,8 @@ export function TeamLive() {
 
   return (
     <div className="flex flex-col gap-6">
+      {error && <DataErrorState error={error} />}
+      <DemoRowsNotice rows={users} />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {stats.map((s) => (
           <Card key={s.label} className="gap-0 py-4">
