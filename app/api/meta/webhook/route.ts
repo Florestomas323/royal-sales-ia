@@ -9,6 +9,7 @@ import {
   type MetaLeadProcessor,
 } from "@/lib/meta/processor"
 import { getAdminDb, isAdminNotConfigured } from "@/lib/firebase/admin"
+import { lookupCampaignIdForAd } from "@/lib/meta/graph"
 
 /**
  * Meta Webhooks endpoint — object "page", field "leadgen".
@@ -126,14 +127,18 @@ export async function POST(request: Request) {
   }
 
   const active = getProcessor()
-  const summary = { resolved: 0, unresolved: 0, duplicate: 0, error: 0 }
+  const summary = { resolved: 0, unresolved: 0, retryable: 0, duplicate: 0, error: 0 }
   for (const event of parsed.leadgen) {
-    const outcome = await handleLeadgenEvent(event, active)
+    const outcome = await handleLeadgenEvent(event, active, lookupCampaignIdForAd)
     summary[outcome.status]++
+    const detail =
+      outcome.status === "resolved"
+        ? ` campaign=${maskId(outcome.owner.metaCampaignId)} via=${outcome.via} workspace=${maskId(outcome.owner.workspaceId)} objective=${outcome.owner.objective}`
+        : outcome.status === "duplicate"
+          ? ""
+          : ` (${outcome.reason})`
     console.info(
-      `[meta/webhook] leadgen leadgen_id=${maskId(event.leadgenId)} form=${maskId(event.formId)} page=${maskId(event.pageId)} ad=${maskId(event.adId)} campaign=${maskId(event.campaignId)} → ${outcome.status}${
-        outcome.status === "unresolved" || outcome.status === "error" ? ` (${outcome.reason})` : ""
-      }`,
+      `[meta/webhook] leadgen leadgen_id=${maskId(event.leadgenId)} ad=${maskId(event.adId)} page=${maskId(event.pageId)} → ${outcome.status}${detail}`,
     )
   }
   if (parsed.ignoredChanges > 0) {
