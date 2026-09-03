@@ -1,0 +1,225 @@
+rules_version = '2';
+
+// =============================================================================
+// Royal Sales IA — Firestore Security Rules (multi-tenant)
+// -----------------------------------------------------------------------------
+// Identity model (see lib/firebase/membership.ts and MULTITENANT.md):
+//   memberships/{authUid}  → { workspaceId, role, userId, email }
+//   users/{userId}         → team profile (may exist before the person signs up)
+//
+// Isolation is ALWAYS by `workspaceId`. A document without `workspaceId`
+// (legacy) is only readable by super_admin, who migrates it from the app.
+//
+// Roles:
+//   super_admin  → global read/write on everything
+//   client_admin → full access inside their workspace
+//   manager      → full access inside their workspace, except: cannot create
+//                  or delete workspaces, cannot change roles to super_admin
+//   sales_rep    → reads/writes ONLY leads assigned to them; reads campaigns,
+//                  clients and team of their workspace
+//   viewer       → read-only inside their workspace (no writes)
+//
+// Publish with: Firebase Console → Firestore → Rules → paste → Publish
+// (or `firebase deploy --only firestore:rules` if you use the CLI).
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ------------------------------------------------------------------ helpers
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function membershipPath() {
+      return /databases/$(database)/documents/memberships/$(request.auth.uid);
+    }
+
+    function hasMembership() {
+      return signedIn() && exists(membershipPath());
+    }
+
+    function me() {
+      return get(membershipPath()).data;
+    }
+
+    function role() {
+      return me().role;
+    }
+
+    function myWorkspace() {
+      return me().workspaceId;
+    }
+
+    /** users.id of the caller's team profile. */
+    function myUserId() {
+      return me().userId;
+    }
+
+    function isSuperAdmin() {
+      return hasMembership() && role() == 'super_admin';
+    }
+
+    /** Caller belongs to workspace `ws` (super admin excluded on purpose). */
+    function inWorkspace(ws) {
+      return hasMembership() && ws is string && myWorkspace() == ws;
+    }
+
+    function isWsAdmin(ws) {
+      return inWorkspace(ws) && role() in ['client_admin', 'manager'];
+    }
+
+    function isWsClientAdmin(ws) {
+      return inWorkspace(ws) && role() == 'client_admin';
+    }
+
+    function isWsMember(ws) {
+      return inWorkspace(ws) && role() in ['client_admin', 'manager', 'sales_rep', 'viewer'];
+    }
+
+    function isWsRep(ws) {
+      return inWorkspace(ws) && role() == 'sales_rep';
+    }
+
+    function validRole(r) {
+      return r in ['super_admin', 'client_admin', 'manager', 'sales_rep', 'viewer'];
+    }
+
+    /** Field `f` is not being modified by this write. */
+    function unchanged(f) {
+      return request.resource.data[f] == resource.data[f];
+    }
+
+    function onlyChanges(fields) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    }
+
+    // -------------------------------------------------------------- workspaces
+    match /workspaces/{wsId} {
+      allow read: if isSuperAdmin() || isWsMember(wsId);
+      allow create, delete: if isSuperAdmin();
+      allow update: if isSuperAdmin()
+        || (isWsClientAdmin(wsId) && onlyChanges(['name', 'logoColor', 'ownerEmail', 'updatedAt']));
+    }
+
+    // ------------------------------------------------------------- memberships
+    // Doc id == Firebase Auth UID.
+    match /memberships/{uid} {
+      allow get: if signedIn() && (
+        uid == request.auth.uid
+        || isSuperAdmin()
+        || isWsAdmin(resource.data.workspaceId)
+      );
+      allow list: if isSuperAdmin() || isWsAdmin(resource.data.workspaceId);
+
+      // Super admin can grant any membership.
+      // Anyone else can only CLAIM their own invitation: the values written
+      // must match an unclaimed `users` profile with their (verified) email.
+      allow create: if isSuperAdmin() || (
+        uid == request.auth.uid
+        && request.auth.token.email_verified == true
+        && request.resource.data.keys().hasAll(['workspaceId', 'role', 'userId', 'email', 'createdAt'])
+        && request.resource.data.email == request.auth.token.email.lower()
+        && request.resource.data.role != 'super_admin'
+        && validRole(request.resource.data.role)
+        && exists(/databases/$(database)/documents/users/$(request.resource.data.userId))
+        && get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.authUid == null
+        && get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.email == request.auth.token.email.lower()
+        && get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.workspaceId == request.resource.data.workspaceId
+        && get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.role == request.resource.data.role
+      );
+
+      allow update: if isSuperAdmin() || (
+        isWsClientAdmin(resource.data.workspaceId)
+        && unchanged('workspaceId') && unchanged('userId') && unchanged('email')
+        && request.resource.data.role != 'super_admin'
+        && validRole(request.resource.data.role)
+      );
+      allow delete: if isSuperAdmin() || isWsClientAdmin(resource.data.workspaceId);
+    }
+
+    // ------------------------------------------------------------------- users
+    // Team profiles. Legacy docs (no workspaceId) → super admin only.
+    match /users/{userId} {
+      allow read: if isSuperAdmin()
+        || isWsMember(resource.data.workspaceId)
+        // Needed for the invitation lookup before a membership exists.
+        || (signedIn() && resource.data.email == request.auth.token.email.lower());
+
+      allow create: if isSuperAdmin() || (
+        isWsAdmin(request.resource.data.workspaceId)
+        && request.resource.data.role != 'super_admin'
+        && validRole(request.resource.data.role)
+        && request.resource.data.authUid == null
+      );
+
+      allow update: if isSuperAdmin()
+        // Workspace admins manage their team, but cannot move a profile to
+        // another workspace nor escalate anyone to super_admin.
+        || (isWsAdmin(resource.data.workspaceId)
+            && unchanged('workspaceId')
+            && request.resource.data.role != 'super_admin'
+            && validRole(request.resource.data.role))
+        // A member may edit their own display fields.
+        || (hasMembership() && resource.data.authUid == request.auth.uid
+            && onlyChanges(['name', 'avatarColor', 'updatedAt']))
+        // Claiming an invitation: only authUid/status/updatedAt change.
+        || (signedIn()
+            && request.auth.token.email_verified == true
+            && resource.data.authUid == null
+            && resource.data.email == request.auth.token.email.lower()
+            && request.resource.data.authUid == request.auth.uid
+            && onlyChanges(['authUid', 'status', 'updatedAt']));
+
+      allow delete: if isSuperAdmin() || isWsClientAdmin(resource.data.workspaceId);
+    }
+
+    // ----------------------------------------------------------------- clients
+    match /clients/{clientId} {
+      allow read: if isSuperAdmin() || isWsMember(resource.data.workspaceId);
+      allow create: if isSuperAdmin() || isWsAdmin(request.resource.data.workspaceId);
+      allow update: if isSuperAdmin()
+        || (isWsAdmin(resource.data.workspaceId) && unchanged('workspaceId'));
+      allow delete: if isSuperAdmin() || isWsClientAdmin(resource.data.workspaceId);
+    }
+
+    // --------------------------------------------------------------- campaigns
+    match /campaigns/{campaignId} {
+      allow read: if isSuperAdmin() || isWsMember(resource.data.workspaceId);
+      allow create: if isSuperAdmin() || isWsAdmin(request.resource.data.workspaceId);
+      allow update: if isSuperAdmin()
+        || (isWsAdmin(resource.data.workspaceId) && unchanged('workspaceId'));
+      allow delete: if isSuperAdmin() || isWsClientAdmin(resource.data.workspaceId);
+    }
+
+    // ------------------------------------------------------------------- leads
+    match /leads/{leadId} {
+      // Admins/managers/viewers read the whole workspace; reps only their own.
+      // (The client query for reps includes `assignedToId == myUserId`, so the
+      // list is permitted; an unfiltered query from a rep is denied.)
+      allow read: if isSuperAdmin()
+        || (inWorkspace(resource.data.workspaceId) && role() in ['client_admin', 'manager', 'viewer'])
+        || (isWsRep(resource.data.workspaceId) && resource.data.assignedToId == myUserId());
+
+      allow create: if isSuperAdmin()
+        || isWsAdmin(request.resource.data.workspaceId)
+        || (isWsRep(request.resource.data.workspaceId)
+            && request.resource.data.assignedToId == myUserId());
+
+      allow update: if isSuperAdmin()
+        || (isWsAdmin(resource.data.workspaceId) && unchanged('workspaceId'))
+        || (isWsRep(resource.data.workspaceId)
+            && resource.data.assignedToId == myUserId()
+            && unchanged('workspaceId') && unchanged('assignedToId'));
+
+      allow delete: if isSuperAdmin() || isWsAdmin(resource.data.workspaceId);
+    }
+
+    // ----------------------------------------------------- everything else
+    // Any collection not listed above is closed. Add explicit rules when a new
+    // collection is introduced (appointments, activities, integrations, …).
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
