@@ -22,8 +22,9 @@ import {
   FieldLabel,
   FieldTitle,
 } from "@/components/ui/field"
-import { currentUser, currentWorkspace } from "@/lib/mock-data"
 import { UserAvatar } from "@/components/shared/user-avatar"
+import { SuperAdminTools } from "@/components/settings/super-admin-tools"
+import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { t } from "@/lib/i18n"
 
 function saved() {
@@ -33,14 +34,25 @@ function saved() {
 const notifications = t.settings.notifications.items
 
 export function SettingsPanel() {
+  const { currentUser, currentWorkspace, isSuperAdmin } = useWorkspace()
+  const workspaceName = currentWorkspace?.name ?? ""
+  const workspacePlan = currentWorkspace?.plan ?? "—"
+
   return (
-    <Tabs defaultValue="workspace" className="gap-6">
+    <Tabs defaultValue={isSuperAdmin ? "super_admin" : "workspace"} className="gap-6">
       <TabsList>
+        {isSuperAdmin && <TabsTrigger value="super_admin">{t.superAdmin.tab}</TabsTrigger>}
         <TabsTrigger value="workspace">{t.settings.tabs.workspace}</TabsTrigger>
         <TabsTrigger value="profile">{t.settings.tabs.profile}</TabsTrigger>
         <TabsTrigger value="notifications">{t.settings.tabs.notifications}</TabsTrigger>
         <TabsTrigger value="billing">{t.settings.tabs.billing}</TabsTrigger>
       </TabsList>
+
+      {isSuperAdmin && (
+        <TabsContent value="super_admin">
+          <SuperAdminTools />
+        </TabsContent>
+      )}
 
       <TabsContent value="workspace">
         <Card>
@@ -55,7 +67,7 @@ export function SettingsPanel() {
                   <FieldLabel htmlFor="ws-name">{t.settings.workspace.nameLabel}</FieldLabel>
                   <FieldDescription>{t.settings.workspace.nameDescription}</FieldDescription>
                 </FieldContent>
-                <Input id="ws-name" defaultValue={currentWorkspace.name} className="sm:max-w-xs" />
+                <Input id="ws-name" key={workspaceName} defaultValue={workspaceName} className="sm:max-w-xs" />
               </Field>
               <Field orientation="responsive">
                 <FieldContent>
@@ -63,7 +75,7 @@ export function SettingsPanel() {
                   <FieldDescription>{t.settings.workspace.planDescription}</FieldDescription>
                 </FieldContent>
                 <div className="flex items-center">
-                  <Badge variant="secondary" className="capitalize">{currentWorkspace.plan}</Badge>
+                  <Badge variant="secondary" className="capitalize">{workspacePlan}</Badge>
                 </div>
               </Field>
               <Field orientation="responsive">
@@ -101,13 +113,13 @@ export function SettingsPanel() {
                 <FieldContent>
                   <FieldLabel htmlFor="name">{t.settings.profile.nameLabel}</FieldLabel>
                 </FieldContent>
-                <Input id="name" defaultValue={currentUser.name} className="sm:max-w-xs" />
+                <Input id="name" key={currentUser.name} defaultValue={currentUser.name} className="sm:max-w-xs" />
               </Field>
               <Field orientation="responsive">
                 <FieldContent>
                   <FieldLabel htmlFor="email">{t.settings.profile.emailLabel}</FieldLabel>
                 </FieldContent>
-                <Input id="email" type="email" defaultValue={currentUser.email} className="sm:max-w-xs" />
+                <Input id="email" type="email" key={currentUser.email} defaultValue={currentUser.email} className="sm:max-w-xs" />
               </Field>
             </FieldGroup>
           </CardContent>
@@ -149,7 +161,7 @@ export function SettingsPanel() {
             <div className="flex items-center justify-between rounded-lg border p-4">
               <div className="flex flex-col gap-0.5">
                 <span className="text-sm font-medium capitalize">
-                  {t.settings.billing.plan(currentWorkspace.plan)}
+                  {t.settings.billing.plan(workspacePlan)}
                 </span>
                 <span className="text-xs text-muted-foreground">
                   {t.settings.billing.billedAnnually}
