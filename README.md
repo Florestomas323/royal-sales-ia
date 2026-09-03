@@ -142,6 +142,8 @@ cp .env.example .env.local
 | `META_APP_SECRET` | **Server only.** Firma de webhooks de Meta. |
 | `META_WEBHOOK_VERIFY_TOKEN` | **Server only.** Token de verificación del webhook; el mismo valor se pega en Meta for Developers. |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | **Server only.** JSON de service account (una línea) para Firebase Admin en el webhook de Meta. |
+| `META_ACCESS_TOKEN` | **Server only.** Token con `ads_read` para resolver `ad_id → campaign_id`. |
+| `META_GRAPH_API_VERSION` | Opcional. Versión de Graph API (por defecto `v26.0`). |
 
 Los valores `NEXT_PUBLIC_FIREBASE_*` son **config web pública** (seguros de exponer en el cliente). La seguridad real la imponen Firebase Auth + Firestore Security Rules, no el ocultamiento de estas claves.
 

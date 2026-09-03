@@ -168,24 +168,62 @@ existente. **No se cambió ninguna regla**; Admin escribe sin pasar por ellas.
 | `metaWebhookEvents` | auto | `kind, leadgenId, pageId, formId, adId, adgroupId, campaignId, createdTime, receivedAt, outcome, reason, workspaceId, objective` | Diagnóstico. Sin secretos, sin headers, sin PII |
 | `metaCampaignLinks` | `{metaCampaignId}` | `metaCampaignId, workspaceId, objective (sales\|recruiting), active, campaignId, pageId, formIds, createdAt, updatedAt` | **Propiedad**. Doc id = id de campaña de Meta → único por construcción; una campaña activa solo puede tener un workspace |
 
-#### Resolución del propietario (`resolveOwner`)
+#### Resolución del propietario (Fase 1c — implementada)
 
 ```
-event.campaignId
-  ├─ null        → unresolved (missing_campaign_id)   ← el webhook estándar NO trae campaign_id
-  ├─ sin link    → unresolved (no_link)
-  ├─ link.active !== true → unresolved (no_link)
-  └─ link activo → resolved { workspaceId, objective, campaignId }
+leadgen webhook
+  → leadgen_id            (sin él: unresolved missing_leadgen_id, no se reclama)
+  → claim transaccional   processedMetaLeads/{leadgenId}
+  → campaign_id
+       ├─ viene en el payload            → se usa (via = payload)
+       ├─ no viene y NO hay ad_id        → unresolved missing_ad_id
+       └─ no viene y hay ad_id           → Graph API GET /{version}/{ad_id}?fields=campaign_id,adset_id
+              ├─ ok                      → campaign_id (via = graph)
+              ├─ ad inexistente (100/33) → unresolved ad_not_found        (permanente)
+              ├─ sin campaign_id         → unresolved no_campaign_id      (permanente)
+              └─ timeout / red / 5xx / 429 / token inválido / sin token
+                                         → RETRYABLE graph_*             (reprocesable)
+  → metaCampaignLinks/{campaign_id}
+       ├─ no existe                      → unresolved no_link             (reprocesable cuando se cree)
+       ├─ active !== true                → unresolved link_inactive       (reprocesable)
+       ├─ sin workspaceId/objective válidos → unresolved link_invalid
+       └─ activo                         → RESOLVED { workspaceId, objective, metaCampaignId, campaignId }
 ```
 
-`pageId`, `formId`, `adId` y `adgroupId` se guardan como metadata pero **jamás
-participan** en la resolución. Nunca hay workspace por defecto.
+`page_id`, `form_id`, `ad_id` y `adgroup_id` se guardan como metadata y
+**jamás** deciden el workspace. No hay workspace por defecto. **Todavía no se
+crea ningún documento en `leads`**: `resolved` solo deja constancia de a quién
+pertenecería el lead.
 
-**Consecuencia hoy:** como el payload leadgen de Meta no incluye `campaign_id`,
-todos los eventos quedan `unresolved (missing_campaign_id)` hasta la siguiente
-fase, en la que se obtendrá el `campaign_id` a partir de `ad_id` vía Graph API
-(`/{ad_id}?fields=campaign_id`) con un token de servidor. Ningún documento se
-crea en `leads` todavía.
+Cliente Graph: `lib/meta/graph.ts`. El token va en el header `Authorization: Bearer`
+(nunca en la URL, nunca en logs), timeout de 8 s, respuesta tipada
+(`GraphCampaignLookup`) que distingue fallos permanentes de temporales.
+
+#### Idempotencia y reintentos
+
+`claim()` es una transacción read-then-write sobre `processedMetaLeads/{leadgenId}`:
+
+| Estado existente | Nueva entrega del mismo `leadgen_id` |
+| --- | --- |
+| no existe | se crea `received` (attempt 1) y se procesa |
+| `resolved` | **duplicate** — terminal, nunca se reprocesa |
+| `unresolved` con `missing_ad_id`, `ad_not_found`, `no_campaign_id`, `link_invalid` | duplicate — el mismo payload daría el mismo resultado |
+| `unresolved` con `no_link` / `link_inactive` | se **reprocesa** (attempt +1) — el link puede haberse creado/activado |
+| `retryable` (graph_*) o `error` | se **reprocesa** (attempt +1) |
+| `received` con más de 5 min sin actualizar | se retoma — claim huérfano de una invocación caída |
+
+Dos entregas concurrentes: una obtiene el claim, la otra recibe `duplicate`.
+Un fallo temporal de Graph nunca bloquea el lead para siempre; un éxito nunca
+se repite. Hoy el reproceso ocurre solo si Meta reenvía el webhook; la fase
+siguiente añadirá reproceso manual desde la UI de super admin.
+
+#### Variables server-side (Vercel)
+
+| Variable | Uso |
+| --- | --- |
+| `META_ACCESS_TOKEN` | Token con `ads_read` para `ad_id → campaign_id`. Emitido a mano por ahora. Sin él, los eventos con `ad_id` quedan `retryable graph_not_configured` |
+| `META_GRAPH_API_VERSION` | Opcional, p. ej. `v26.0` (valor por defecto) |
+| `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN`, `FIREBASE_SERVICE_ACCOUNT_JSON` | Sin cambios |
 
 #### Cómo se crea un link (manual, por ahora)
 
@@ -196,9 +234,8 @@ La UI de administración de links llegará con la fase OAuth.
 
 ### Pendiente para la fase siguiente
 
-1. OAuth de Meta en servidor → token de página/sistema en Secret Manager (`MetaConnection.secretRef`).
-2. `ad_id → campaign_id` vía Graph API para poder resolver el propietario.
-3. Descarga del lead (`GET /{leadgen_id}`) y creación en `leads` con `workspaceId` + `leadType = objective` + atribución (`externalCampaignId`, `externalAdSetId`, `externalAdId`).
-4. UI de super admin para `metaCampaignLinks` y cola de eventos `unresolved`.
-5. Reconciliación periódica (Meta pierde webhooks).
-6. Quitar el log diagnóstico del GET cuando la suscripción esté estable.
+1. Descarga del lead (`GET /{leadgen_id}?fields=field_data,...`) con token de **página** y creación en `leads` con `workspaceId` + `leadType = objective` + atribución (`externalCampaignId`, `externalAdSetId`, `externalAdId`). Solo para `resolved`.
+2. OAuth de Meta en servidor → tokens gestionados (`MetaConnection.secretRef`) en lugar de `META_ACCESS_TOKEN` manual.
+3. UI de super admin para `metaCampaignLinks` + cola de `unresolved` / `retryable` con botón de reproceso.
+4. Reconciliación periódica (Meta pierde webhooks).
+5. Quitar el log diagnóstico del GET cuando la suscripción esté estable.
