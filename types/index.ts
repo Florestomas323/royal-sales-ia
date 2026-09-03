@@ -257,17 +257,56 @@ export interface MetaConnection {
  * managed by super_admin, readable by the owning workspace.
  */
 export interface MetaCampaignLink {
-  /** Meta campaign id (document id). */
+  /** Meta campaign id. It is ALSO the document id → unique by construction. */
   metaCampaignId: string
   workspaceId: string
   /** Where its leads land: Prospectos / Ventas or Prospectos / Reclutamiento. */
   objective: LeadType
+  /** Inactive links never resolve an owner (a campaign can be re-assigned by deactivating and creating another). */
+  active: boolean
   /** Local campaign this maps to, if already created in Royal Sales IA. */
   campaignId: string | null
+  /** Informational only — never used for ownership. */
   pageId: string | null
-  /** Lead Ads form ids attached to this campaign (form → campaign → workspace). */
+  /** Informational only — never used for ownership. */
   formIds: string[]
   createdAt: string
+  updatedAt: string
+}
+
+/** Server-side idempotency record: `processedMetaLeads/{leadgenId}`. */
+export type ProcessedMetaLeadStatus = 'received' | 'resolved' | 'unresolved' | 'error'
+
+export interface ProcessedMetaLead {
+  leadgenId: string
+  pageId: string | null
+  formId: string | null
+  adId: string | null
+  adgroupId: string | null
+  campaignId: string | null
+  receivedAt: string
+  status: ProcessedMetaLeadStatus
+  /** Set only when status === 'resolved'. */
+  workspaceId: string | null
+  objective: LeadType | null
+  reason: string | null
+}
+
+/** Server-side diagnostic log: `metaWebhookEvents/{autoId}`. Never contains secrets or PII. */
+export interface MetaWebhookEvent {
+  kind: 'leadgen'
+  leadgenId: string | null
+  pageId: string | null
+  formId: string | null
+  adId: string | null
+  adgroupId: string | null
+  campaignId: string | null
+  createdTime: number | null
+  receivedAt: string
+  outcome: 'resolved' | 'unresolved' | 'duplicate' | 'error'
+  reason: string | null
+  workspaceId: string | null
+  objective: LeadType | null
 }
 
 /**
