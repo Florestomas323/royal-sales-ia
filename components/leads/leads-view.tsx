@@ -1,8 +1,8 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Search, SlidersHorizontal, ArrowUpDown, Inbox } from "lucide-react"
-import type { Lead, PipelineStage, Platform, LeadTemperature } from "@/types"
+import type { Lead, LeadType, PipelineStage, Platform, LeadTemperature } from "@/types"
 import {
   Table,
   TableBody,
@@ -21,13 +21,15 @@ import {
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { ScoreBadge, StageBadge } from "@/components/shared/score-badge"
 import { PlatformMark } from "@/components/shared/platform-badge"
+import { LeadTypeBadge } from "@/components/shared/lead-type-badge"
 import { LeadDetailSheet } from "@/components/leads/lead-detail-sheet"
 import {
   STAGE_LABELS,
-  STAGE_ORDER,
+  PIPELINES,
   PLATFORM_LABELS,
   TEMPERATURE_LABELS,
 } from "@/lib/constants"
+import { leadTypeOf } from "@/lib/leads"
 import { t } from "@/lib/i18n"
 import { useUsersMap } from "@/lib/firebase/collections"
 import { formatCurrency, formatRelativeTime, initials } from "@/lib/format"
@@ -35,8 +37,19 @@ import { cn } from "@/lib/utils"
 
 type SortKey = "score" | "value" | "recent"
 
-export function LeadsView({ leads }: { leads: Lead[] }) {
+export function LeadsView({
+  leads,
+  leadType = "all",
+}: {
+  leads: Lead[]
+  /** Active type filter; drives which stages are offered and whether the Tipo column shows. */
+  leadType?: LeadType | "all"
+}) {
   const usersMap = useUsersMap()
+  const stageOptions: PipelineStage[] =
+    leadType === "all"
+      ? [...PIPELINES.sales.stages, ...PIPELINES.recruiting.stages]
+      : PIPELINES[leadType].stages
   const [query, setQuery] = useState("")
   const [stage, setStage] = useState<PipelineStage | "all">("all")
   const [platform, setPlatform] = useState<Platform | "all">("all")
@@ -44,6 +57,11 @@ export function LeadsView({ leads }: { leads: Lead[] }) {
   const [sort, setSort] = useState<SortKey>("score")
   const [selected, setSelected] = useState<Lead | null>(null)
   const [open, setOpen] = useState(false)
+
+  // Stage filter must belong to the visible pipeline(s).
+  useEffect(() => {
+    if (stage !== "all" && !stageOptions.includes(stage)) setStage("all")
+  }, [stageOptions, stage])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -92,7 +110,7 @@ export function LeadsView({ leads }: { leads: Lead[] }) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{t.leads.allStages}</SelectItem>
-              {STAGE_ORDER.map((s) => (
+              {stageOptions.map((s) => (
                 <SelectItem key={s} value={s}>
                   {STAGE_LABELS[s]}
                 </SelectItem>
@@ -171,6 +189,9 @@ export function LeadsView({ leads }: { leads: Lead[] }) {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>{t.leads.table.lead}</TableHead>
+                {leadType === "all" && (
+                  <TableHead className="hidden sm:table-cell">{t.leads.table.type}</TableHead>
+                )}
                 <TableHead>{t.leads.table.source}</TableHead>
                 <TableHead>{t.leads.table.stage}</TableHead>
                 <TableHead className="text-right">{t.leads.table.score}</TableHead>
@@ -198,6 +219,11 @@ export function LeadsView({ leads }: { leads: Lead[] }) {
                         <span className="text-xs text-muted-foreground">{lead.phone}</span>
                       </div>
                     </TableCell>
+                    {leadType === "all" && (
+                      <TableCell className="hidden sm:table-cell">
+                        <LeadTypeBadge type={leadTypeOf(lead)} />
+                      </TableCell>
+                    )}
                     <TableCell>
                       <span className="flex items-center gap-2">
                         <PlatformMark platform={lead.source} />
@@ -213,7 +239,9 @@ export function LeadsView({ leads }: { leads: Lead[] }) {
                       <ScoreBadge score={lead.score} temperature={lead.temperature} className="justify-end" />
                     </TableCell>
                     <TableCell className="hidden text-right font-medium tabular-nums md:table-cell">
-                      {formatCurrency(lead.potentialValue)}
+                      {leadTypeOf(lead) === "sales"
+                        ? formatCurrency(lead.potentialValue)
+                        : t.leads.detail.notAvailable}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
                       {rep && (

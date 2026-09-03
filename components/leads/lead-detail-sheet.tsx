@@ -1,7 +1,9 @@
 "use client"
 
-import { Phone, Mail, MessageCircle, CalendarPlus, Target, Clock } from "lucide-react"
-import type { Activity, Lead } from "@/types"
+import { useState } from "react"
+import { toast } from "sonner"
+import { Phone, Mail, MessageCircle, CalendarPlus, Target, Clock, ArrowRightLeft } from "lucide-react"
+import type { Activity, Lead, LeadType } from "@/types"
 import {
   Sheet,
   SheetContent,
@@ -14,12 +16,18 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { PlatformBadge } from "@/components/shared/platform-badge"
+import { LeadTypeBadge } from "@/components/shared/lead-type-badge"
 import { ScoreRing } from "@/components/shared/score-badge"
 import { StageBadge } from "@/components/shared/score-badge"
 import { TemperatureDot } from "@/components/shared/score-badge"
 import { LeadTimeline } from "@/components/leads/lead-timeline"
 import { LeadAiAssistant } from "@/components/leads/lead-ai-assistant"
 import { useUsersMap } from "@/lib/firebase/collections"
+import { updateLeadType } from "@/lib/firebase/leads"
+import { useWorkspace } from "@/lib/firebase/workspace-context"
+import { describeError } from "@/lib/firebase/errors"
+import { LEAD_TYPE_SINGULAR, PLATFORM_LABELS, TEMPERATURE_LABELS } from "@/lib/constants"
+import { displayStage, leadTypeOf } from "@/lib/leads"
 import { formatCurrency, formatRelativeTime } from "@/lib/format"
 import { t } from "@/lib/i18n"
 
@@ -31,8 +39,39 @@ interface LeadDetailSheetProps {
 
 export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetProps) {
   const usersMap = useUsersMap()
+  const { isSuperAdmin, workspaces, role } = useWorkspace()
+  const [changingType, setChangingType] = useState(false)
   if (!lead) return null
   const rep = usersMap[lead.assignedToId]
+  const type = leadTypeOf(lead)
+  const isRecruiting = type === "recruiting"
+  const canChangeType = isSuperAdmin || role === "client_admin" || role === "manager"
+  const workspaceName = workspaces.find((w) => w.id === lead.workspaceId)?.name ?? lead.workspaceId
+  const rec = lead.recruiting
+  const hasExtraAttribution = Boolean(
+    lead.attribution.utmSource ||
+      lead.attribution.utmMedium ||
+      lead.attribution.utmCampaign ||
+      lead.attribution.landingPage ||
+      lead.attribution.referrer ||
+      lead.attribution.externalCampaignId ||
+      lead.attribution.externalAdId,
+  )
+
+  async function handleChangeType() {
+    if (!lead) return
+    const to: LeadType = isRecruiting ? "sales" : "recruiting"
+    if (!window.confirm(t.leads.detail.changeTypeConfirm(LEAD_TYPE_SINGULAR[to]))) return
+    setChangingType(true)
+    try {
+      await updateLeadType(lead.id, to)
+      toast.success(t.leads.detail.typeChanged)
+    } catch (err) {
+      toast.error(t.leads.detail.typeChangeError, { description: describeError(err).message })
+    } finally {
+      setChangingType(false)
+    }
+  }
   // Activities are not persisted yet (roadmap). Until then the timeline only
   // shows the real creation event derived from the lead itself — never mock
   // conversations mixed with real data.
@@ -55,8 +94,9 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
           <div className="flex items-start gap-4">
             <ScoreRing score={lead.score} size={52} />
             <div className="flex flex-1 flex-col gap-1">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <SheetTitle className="text-lg">{lead.name}</SheetTitle>
+                <LeadTypeBadge type={type} />
                 <TemperatureDot temperature={lead.temperature} withLabel />
               </div>
               <SheetDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -65,10 +105,12 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                 <span>{lead.campaignName}</span>
               </SheetDescription>
               <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <Target className="size-3.5" />
-                  {formatCurrency(lead.potentialValue)} {t.leads.detail.potential}
-                </span>
+                {!isRecruiting && (
+                  <span className="flex items-center gap-1">
+                    <Target className="size-3.5" />
+                    {formatCurrency(lead.potentialValue)} {t.leads.detail.potential}
+                  </span>
+                )}
                 <span className="flex items-center gap-1">
                   <Clock className="size-3.5" />
                   {formatRelativeTime(lead.createdAt)}
@@ -108,10 +150,52 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
               <TabsContent value="details" className="pt-4">
                 <div className="flex flex-col gap-4">
                   <InfoRow
-                    label={t.leads.detail.stage}
-                    value={<StageBadge stage={lead.stage} />}
+                    label={t.leads.detail.type}
+                    value={
+                      <span className="flex items-center justify-end gap-2">
+                        <LeadTypeBadge type={type} />
+                        {canChangeType && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 gap-1 px-2 text-xs"
+                            onClick={handleChangeType}
+                            disabled={changingType}
+                          >
+                            <ArrowRightLeft className="size-3" />
+                            {t.leads.detail.changeType}
+                          </Button>
+                        )}
+                      </span>
+                    }
                   />
-                  <InfoRow label={t.leads.detail.phone} value={lead.phone} />
+                  <InfoRow
+                    label={t.leads.detail.source}
+                    value={<PlatformBadge platform={lead.source} />}
+                  />
+                  <InfoRow
+                    label={t.leads.detail.campaign}
+                    value={lead.campaignName || t.leads.detail.notAvailable}
+                  />
+                  <InfoRow
+                    label={t.leads.detail.stage}
+                    value={<StageBadge stage={displayStage(lead)} />}
+                  />
+                  <InfoRow
+                    label={t.leads.detail.temperature}
+                    value={TEMPERATURE_LABELS[lead.temperature]}
+                  />
+                  <InfoRow
+                    label={t.leads.detail.createdAt}
+                    value={new Date(lead.createdAt).toLocaleString("es", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}
+                  />
+                  {isSuperAdmin && (
+                    <InfoRow label={t.leads.detail.workspace} value={workspaceName} />
+                  )}
+                  <InfoRow label={t.leads.detail.phone} value={lead.phone || t.leads.detail.notAvailable} />
                   <InfoRow label={t.leads.detail.email} value={lead.email} />
                   <InfoRow
                     label={t.leads.detail.assignedTo}
@@ -129,6 +213,55 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                         : t.leads.detail.notContacted
                     }
                   />
+
+                  {isRecruiting && (
+                    <>
+                      <Separator />
+                      <p className="text-xs font-medium text-muted-foreground">
+                        {t.leads.detail.candidate.title}
+                      </p>
+                      <InfoRow
+                        label={t.leads.detail.candidate.jobTitle}
+                        value={rec?.jobTitle || t.leads.detail.notAvailable}
+                      />
+                      <InfoRow
+                        label={t.leads.detail.candidate.location}
+                        value={[rec?.city, rec?.state].filter(Boolean).join(", ") || t.leads.detail.notAvailable}
+                      />
+                      <InfoRow
+                        label={t.leads.detail.candidate.employmentPreference}
+                        value={rec?.employmentPreference || t.leads.detail.notAvailable}
+                      />
+                      <InfoRow
+                        label={t.leads.detail.candidate.hasVehicle}
+                        value={
+                          rec?.hasVehicle === undefined
+                            ? t.leads.detail.notAvailable
+                            : rec.hasVehicle
+                              ? t.leads.detail.candidate.yes
+                              : t.leads.detail.candidate.no
+                        }
+                      />
+                      <InfoRow
+                        label={t.leads.detail.candidate.interviewDate}
+                        value={rec?.interviewDate ? formatRelativeTime(rec.interviewDate) : t.leads.detail.notAvailable}
+                      />
+                      <InfoRow
+                        label={t.leads.detail.candidate.orientationDate}
+                        value={rec?.orientationDate ? formatRelativeTime(rec.orientationDate) : t.leads.detail.notAvailable}
+                      />
+                      <InfoRow
+                        label={t.leads.detail.candidate.hiredAt}
+                        value={rec?.hiredAt ? formatRelativeTime(rec.hiredAt) : t.leads.detail.notAvailable}
+                      />
+                      {(lead.source === "indeed" || rec?.indeedCandidateId) && (
+                        <InfoRow
+                          label={t.leads.detail.candidate.indeedCandidate}
+                          value={rec?.indeedCandidateId ?? PLATFORM_LABELS.indeed}
+                        />
+                      )}
+                    </>
+                  )}
                 </div>
               </TabsContent>
 
@@ -153,6 +286,39 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                       </code>
                     }
                   />
+                  {hasExtraAttribution ? (
+                    <>
+                      <Separator />
+                      {(lead.attribution.utmSource || lead.attribution.utmMedium || lead.attribution.utmCampaign) && (
+                        <InfoRow
+                          label={t.leads.detail.utm}
+                          value={[lead.attribution.utmSource, lead.attribution.utmMedium, lead.attribution.utmCampaign]
+                            .filter(Boolean)
+                            .join(" / ")}
+                        />
+                      )}
+                      {lead.attribution.landingPage && (
+                        <InfoRow label={t.leads.detail.landingPage} value={lead.attribution.landingPage} />
+                      )}
+                      {lead.attribution.referrer && (
+                        <InfoRow label={t.leads.detail.referrer} value={lead.attribution.referrer} />
+                      )}
+                      {(lead.attribution.externalCampaignId || lead.attribution.externalAdId) && (
+                        <InfoRow
+                          label={t.leads.detail.externalIds}
+                          value={
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                              {[lead.attribution.externalCampaignId, lead.attribution.externalAdSetId, lead.attribution.externalAdId]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </code>
+                          }
+                        />
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">{t.leads.detail.noAttribution}</p>
+                  )}
                 </div>
               </TabsContent>
             </Tabs>

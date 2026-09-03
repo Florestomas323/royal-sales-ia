@@ -7,6 +7,10 @@ import {
   ArrowRightLeft,
   Trophy,
   Inbox,
+  Presentation,
+  Users,
+  GraduationCap,
+  BadgeCheck,
 } from "lucide-react"
 import type { Activity, ActivityType } from "@/types"
 import { formatRelativeTime } from "@/lib/format"
@@ -21,6 +25,10 @@ const ICONS: Record<ActivityType, typeof Inbox> = {
   note: StickyNote,
   stage_change: ArrowRightLeft,
   sale: Trophy,
+  demo: Presentation,
+  interview: Users,
+  orientation: GraduationCap,
+  hired: BadgeCheck,
 }
 
 export function LeadTimeline({ activities }: { activities: Activity[] }) {
