@@ -1,40 +1,39 @@
-import type { Lead } from "@/types"
+import type { Lead, LeadType } from "@/types"
 import { formatCurrency } from "@/lib/format"
+import { computeRecruitingMetrics, computeSalesMetrics } from "@/lib/metrics"
 import { Card, CardContent } from "@/components/ui/card"
 import { t } from "@/lib/i18n"
 
-export function PipelineSummary({ leads }: { leads: Lead[] }) {
-  const total = leads.length || 1
-  const open = leads.filter((l) => l.stage !== "sale")
+interface Stat {
+  label: string
+  value: string
+  sub: string
+}
+
+function salesStats(leads: Lead[]): Stat[] {
+  const m = computeSalesMetrics(leads)
+  const open = leads.filter((l) => l.stage !== "sale" && l.stage !== "not_interested")
   const openValue = open.reduce((sum, l) => sum + l.potentialValue, 0)
-  const won = leads.filter((l) => l.stage === "sale")
-  const wonValue = won.reduce((sum, l) => sum + l.potentialValue, 0)
-  const avgScore = Math.round(leads.reduce((sum, l) => sum + l.score, 0) / total)
-  const winRate = Math.round((won.length / total) * 100)
-
-  const stats = [
-    {
-      label: t.pipeline.stats.open,
-      value: formatCurrency(openValue, true),
-      sub: t.pipeline.stats.openSub(open.length),
-    },
-    {
-      label: t.pipeline.stats.won,
-      value: formatCurrency(wonValue, true),
-      sub: t.pipeline.stats.wonSub(won.length),
-    },
-    {
-      label: t.pipeline.stats.winRate,
-      value: `${winRate}%`,
-      sub: t.pipeline.stats.winRateSub,
-    },
-    {
-      label: t.pipeline.stats.avgScore,
-      value: `${avgScore}`,
-      sub: t.pipeline.stats.avgScoreSub,
-    },
+  return [
+    { label: t.pipeline.stats.open, value: formatCurrency(openValue, true), sub: t.pipeline.stats.openSub(open.length) },
+    { label: t.pipeline.stats.won, value: formatCurrency(m.revenue, true), sub: t.pipeline.stats.wonSub(m.sales) },
+    { label: t.pipeline.stats.winRate, value: `${Math.round(m.conversion * 100)}%`, sub: t.pipeline.stats.winRateSub },
+    { label: t.pipeline.stats.avgScore, value: `${m.avgScore}`, sub: t.pipeline.stats.avgScoreSub },
   ]
+}
 
+function recruitingStats(leads: Lead[]): Stat[] {
+  const m = computeRecruitingMetrics(leads)
+  return [
+    { label: t.pipeline.recruitingStats.open, value: `${m.open}`, sub: t.pipeline.recruitingStats.openSub },
+    { label: t.pipeline.recruitingStats.interviews, value: `${m.interviews}`, sub: t.pipeline.recruitingStats.interviewsSub },
+    { label: t.pipeline.recruitingStats.hired, value: `${m.hired}`, sub: t.pipeline.recruitingStats.hiredSub },
+    { label: t.pipeline.recruitingStats.conversion, value: `${Math.round(m.conversion * 100)}%`, sub: t.pipeline.recruitingStats.conversionSub },
+  ]
+}
+
+export function PipelineSummary({ leads, leadType }: { leads: Lead[]; leadType: LeadType }) {
+  const stats = leadType === "recruiting" ? recruitingStats(leads) : salesStats(leads)
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       {stats.map((s) => (

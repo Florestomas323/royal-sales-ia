@@ -4,9 +4,10 @@ import { useMemo, useState } from "react"
 import { GripVertical } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { updateLeadStage } from "@/lib/firebase/leads"
-import { STAGE_ORDER, STAGE_LABELS } from "@/lib/constants"
+import { PIPELINES, STAGE_LABELS, STAGE_TONE } from "@/lib/constants"
+import { displayStage } from "@/lib/leads"
 import { formatCurrency } from "@/lib/format"
-import type { Lead, PipelineStage } from "@/types"
+import type { Lead, LeadType, PipelineStage } from "@/types"
 import { PlatformMark } from "@/components/shared/platform-badge"
 import { ScoreBadge, TemperatureDot } from "@/components/shared/score-badge"
 import { LeadDetailSheet } from "@/components/leads/lead-detail-sheet"
@@ -14,29 +15,27 @@ import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { t } from "@/lib/i18n"
 
-const STAGE_ACCENT: Record<PipelineStage, string> = {
-  new_lead: "var(--chart-1)",
-  contact: "var(--chart-2)",
-  contacted: "var(--chart-3)",
-  interested: "var(--chart-4)",
-  appointment: "var(--chart-5)",
-  follow_up: "var(--chart-2)",
-  sale: "var(--success)",
-}
-
-export function PipelineBoard({ leads }: { leads: Lead[] }) {
+/**
+ * Kanban for ONE pipeline. `leads` must already be filtered to `leadType`
+ * (the container does it in Firestore); a lead whose stored stage belongs to
+ * the other pipeline is displayed in the initial column (see displayStage).
+ */
+export function PipelineBoard({ leads, leadType }: { leads: Lead[]; leadType: LeadType }) {
   const [dragId, setDragId] = useState<string | null>(null)
   const [overStage, setOverStage] = useState<PipelineStage | null>(null)
   const [selected, setSelected] = useState<Lead | null>(null)
+  const pipeline = PIPELINES[leadType]
+  const showValue = leadType === "sales"
 
   const byStage = useMemo(() => {
     const map = {} as Record<PipelineStage, Lead[]>
-    for (const stage of STAGE_ORDER) map[stage] = []
+    for (const stage of pipeline.stages) map[stage] = []
     for (const lead of leads) {
-      if (map[lead.stage]) map[lead.stage].push(lead)
+      const stage = displayStage(lead)
+      if (map[stage]) map[stage].push(lead)
     }
     return map
-  }, [leads])
+  }, [leads, pipeline])
 
   async function handleDrop(stage: PipelineStage) {
     if (!dragId) return
@@ -56,7 +55,7 @@ export function PipelineBoard({ leads }: { leads: Lead[] }) {
   return (
     <>
       <div className="flex gap-4 overflow-x-auto pb-4">
-        {STAGE_ORDER.map((stage) => {
+        {pipeline.stages.map((stage) => {
           const stageLeads = byStage[stage] ?? []
               const total = stageLeads.reduce((sum, l) => sum + l.potentialValue, 0)
           const isOver = overStage === stage
@@ -81,7 +80,7 @@ export function PipelineBoard({ leads }: { leads: Lead[] }) {
                 <div className="flex items-center gap-2">
                   <span
                     className="size-2 rounded-full"
-                    style={{ backgroundColor: STAGE_ACCENT[stage] }}
+                    style={{ backgroundColor: STAGE_TONE[stage] }}
                     aria-hidden="true"
                   />
                   <span className="text-sm font-medium">{STAGE_LABELS[stage]}</span>
@@ -89,9 +88,11 @@ export function PipelineBoard({ leads }: { leads: Lead[] }) {
                     {stageLeads.length}
                   </Badge>
                 </div>
-                <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                  {formatCurrency(total, true)}
-                </span>
+                {showValue && (
+                  <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                    {formatCurrency(total, true)}
+                  </span>
+                )}
               </div>
 
               <div className="flex min-h-24 flex-1 flex-col gap-2 p-2">
@@ -131,9 +132,15 @@ export function PipelineBoard({ leads }: { leads: Lead[] }) {
                           <ScoreBadge score={lead.score} />
                           <TemperatureDot temperature={lead.temperature} />
                         </div>
-                        <span className="font-mono text-xs font-medium tabular-nums">
-                          {formatCurrency(lead.potentialValue, true)}
-                        </span>
+                        {showValue ? (
+                          <span className="font-mono text-xs font-medium tabular-nums">
+                            {formatCurrency(lead.potentialValue, true)}
+                          </span>
+                        ) : (
+                          <span className="truncate text-xs text-muted-foreground">
+                            {lead.recruiting?.city ?? lead.recruiting?.jobTitle ?? ""}
+                          </span>
+                        )}
                       </div>
                     </button>
                   ))
