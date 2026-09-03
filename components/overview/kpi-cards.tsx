@@ -1,42 +1,64 @@
-import { ArrowDownRight, ArrowUpRight } from "lucide-react"
+"use client"
+
 import { Card, CardContent } from "@/components/ui/card"
-import { kpis } from "@/lib/mock-data"
-import { formatKpi, percentChange } from "@/lib/format"
-import { cn } from "@/lib/utils"
+import { Skeleton } from "@/components/ui/skeleton"
+import { DataErrorState } from "@/components/shared/data-error-state"
+import { useLeads } from "@/lib/firebase/leads"
+import { computeRecruitingMetrics, computeSalesMetrics } from "@/lib/metrics"
+import { isOpen, leadTypeOf } from "@/lib/leads"
+import { formatNumber } from "@/lib/format"
 import { t } from "@/lib/i18n"
 
+/**
+ * Real KPI cards computed from the workspace's leads in Firestore.
+ * No period comparison is shown: there is no historical snapshot yet, and we
+ * do not fabricate trends.
+ */
 export function KpiCards() {
-  return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-      {kpis.map((kpi) => {
-        const change = percentChange(kpi.value, kpi.previousValue)
-        const positive = kpi.invertedTrend ? change < 0 : change >= 0
-        const Arrow = change >= 0 ? ArrowUpRight : ArrowDownRight
-        return (
-          <Card key={kpi.id} className="overflow-hidden">
+  const { leads, loading, error } = useLeads("all")
+
+  if (error) return <DataErrorState error={error} />
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Card key={i}>
             <CardContent className="flex flex-col gap-3 p-5">
-              <span className="text-sm text-muted-foreground">{kpi.label}</span>
-              <span className="font-serif text-3xl font-semibold tracking-tight tabular-nums">
-                {formatKpi(kpi.value, kpi.format)}
-              </span>
-              <div className="flex items-center gap-1.5 text-xs">
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 font-medium tabular-nums",
-                    positive
-                      ? "bg-success/10 text-success"
-                      : "bg-destructive/10 text-destructive",
-                  )}
-                >
-                  <Arrow className="size-3" />
-                  {Math.abs(change).toFixed(1)}%
-                </span>
-                <span className="text-muted-foreground">{t.common.vsPrevious}</span>
-              </div>
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-9 w-16" />
+              <Skeleton className="h-3 w-20" />
             </CardContent>
           </Card>
-        )
-      })}
+        ))}
+      </div>
+    )
+  }
+
+  const sales = computeSalesMetrics(leads)
+  const recruiting = computeRecruitingMetrics(leads)
+  const salesOpen = leads.filter((l) => leadTypeOf(l) === "sales" && isOpen(l)).length
+
+  const cards = [
+    { label: t.overview.kpis.totalLeads, value: leads.length, sub: t.overview.kpis.totalLeadsSub },
+    { label: t.overview.kpis.salesLeads, value: sales.leads, sub: t.overview.kpis.salesLeadsSub(salesOpen) },
+    { label: t.overview.kpis.candidates, value: recruiting.candidates, sub: t.overview.kpis.candidatesSub(recruiting.open) },
+    { label: t.overview.kpis.closed, value: sales.sales, sub: t.overview.kpis.closedSub(recruiting.hired) },
+  ]
+
+  return (
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {cards.map((kpi) => (
+        <Card key={kpi.label} className="overflow-hidden">
+          <CardContent className="flex flex-col gap-3 p-5">
+            <span className="text-sm text-muted-foreground">{kpi.label}</span>
+            <span className="font-serif text-3xl font-semibold tracking-tight tabular-nums">
+              {formatNumber(kpi.value)}
+            </span>
+            <span className="text-xs text-muted-foreground">{kpi.sub}</span>
+          </CardContent>
+        </Card>
+      ))}
     </div>
   )
 }
