@@ -5,20 +5,20 @@ import type {
   MetaWebhookEvent,
   ProcessedMetaLead,
 } from "@/types"
+import type { GraphCampaignLookup } from "./graph"
 import type { MetaLeadgenEvent } from "./types"
 
 /**
- * Lead Ads processing contract. The webhook route only talks to this
- * interface.
+ * Lead Ads processing.
  *
- *  - `createFirestoreProcessor(adminDb)` — persistent (Firebase Admin, server
- *    only). Idempotency via a transaction on `processedMetaLeads/{leadgenId}`;
- *    owner resolution ONLY through `metaCampaignLinks/{metaCampaignId}`.
- *  - `createLogOnlyProcessor()` — fallback when Admin is not configured:
- *    nothing is persisted, every event ends `unresolved`.
+ *   leadgen webhook
+ *     → claim leadgen_id (transaction, idempotent, reprocess-aware)
+ *     → campaign_id from payload, or ad_id → Graph API → campaign_id
+ *     → metaCampaignLinks/{campaignId}  (active === true)
+ *     → resolved { workspaceId, objective }   ← nothing is written to `leads` yet
  *
- * Neither implementation ever creates a document in `leads`. That is the next
- * phase, after the owner can be resolved and the lead downloaded via OAuth.
+ * Ownership is decided ONLY by the campaign link. page_id, form_id, ad_id and
+ * adgroup_id are stored as metadata and never used to pick a workspace.
  */
 
 export const COLLECTIONS = {
@@ -27,61 +27,147 @@ export const COLLECTIONS = {
   links: "metaCampaignLinks",
 } as const
 
+/** How long a `received` claim may stay open before another invocation may take it over. */
+const STALE_CLAIM_MS = 5 * 60 * 1000
+
 export interface ResolvedOwner {
   workspaceId: string
   objective: LeadType
+  metaCampaignId: string
+  /** Local Royal Sales IA campaign id from the link, if set. */
   campaignId: string | null
 }
 
-export type UnresolvedReason = "missing_leadgen_id" | "missing_campaign_id" | "no_link"
+/** Permanent for this payload, or waiting for a link (reprocessable). */
+export type UnresolvedReason =
+  | "missing_leadgen_id"
+  | "missing_ad_id"
+  | "ad_not_found"
+  | "no_campaign_id"
+  | "no_link"
+  | "link_inactive"
+  | "link_invalid"
+
+/** Temporary; the same leadgen_id may be reprocessed later. */
+export type RetryableReason =
+  | "graph_not_configured"
+  | "graph_timeout"
+  | "graph_network"
+  | "graph_rate_limit"
+  | "graph_auth"
+  | "graph_server"
+  | "graph_invalid_json"
+  | "graph_http"
 
 export type LeadgenOutcome =
   | { status: "duplicate" }
   | { status: "unresolved"; reason: UnresolvedReason }
-  | { status: "resolved"; owner: ResolvedOwner }
+  | { status: "retryable"; reason: RetryableReason }
+  | { status: "resolved"; owner: ResolvedOwner; via: "payload" | "graph" }
   | { status: "error"; reason: string }
 
-export interface MetaLeadProcessor {
-  /**
-   * Atomically claims a leadgen_id. Returns "duplicate" if it was already
-   * claimed by this or a concurrent invocation.
-   */
-  claim(event: MetaLeadgenEvent): Promise<"claimed" | "duplicate">
-  /**
-   * Finds the OWNER workspace. Resolves exclusively via an explicit, active
-   * campaign link keyed by Meta campaign id — NEVER via page_id, form_id,
-   * ad_id, adgroup_id or campaign names.
-   */
-  resolveOwner(event: MetaLeadgenEvent): Promise<ResolvedOwner | null>
-  /** Persists the outcome (status on the processed record + diagnostic event). */
-  record(event: MetaLeadgenEvent, outcome: LeadgenOutcome): Promise<void>
+export interface ClaimResult {
+  outcome: "claimed" | "duplicate"
+  attempt: number
 }
 
-/** Runs the full decision for one leadgen event. Never guesses a workspace. */
+export interface MetaLeadProcessor {
+  /** Atomically claims a leadgen_id (or re-claims a reprocessable one). */
+  claim(event: MetaLeadgenEvent): Promise<ClaimResult>
+  /** Looks up the explicit campaign link. Never resolves through page/form/ad ids. */
+  resolveLink(metaCampaignId: string): Promise<
+    | { status: "resolved"; owner: ResolvedOwner }
+    | { status: "unresolved"; reason: "no_link" | "link_inactive" | "link_invalid" }
+  >
+  /** Persists the outcome (processed record + diagnostic event). */
+  record(event: MetaLeadgenEvent, outcome: LeadgenOutcome, ctx: RecordContext): Promise<void>
+}
+
+export interface RecordContext {
+  attempt: number
+  campaignId: string | null
+  adsetId: string | null
+  via: "payload" | "graph" | null
+}
+
+export type CampaignLookupFn = (adId: string) => Promise<GraphCampaignLookup>
+
+const GRAPH_REASON: Record<Exclude<GraphCampaignLookup, { ok: true }>["kind"], RetryableReason | UnresolvedReason> = {
+  not_configured: "graph_not_configured",
+  timeout: "graph_timeout",
+  network: "graph_network",
+  rate_limit: "graph_rate_limit",
+  auth: "graph_auth",
+  server: "graph_server",
+  invalid_json: "graph_invalid_json",
+  http: "graph_http",
+  not_found: "ad_not_found",
+  no_campaign_id: "no_campaign_id",
+}
+
+/**
+ * Full decision for one leadgen event. Never guesses a workspace, never
+ * writes to `leads`, never lets a transient failure become a 5xx for Meta.
+ */
 export async function handleLeadgenEvent(
   event: MetaLeadgenEvent,
   processor: MetaLeadProcessor,
+  lookupCampaignId: CampaignLookupFn,
 ): Promise<LeadgenOutcome> {
+  const ctx: RecordContext = { attempt: 0, campaignId: event.campaignId, adsetId: null, via: null }
   let outcome: LeadgenOutcome
+
   try {
     if (!event.leadgenId) {
       outcome = { status: "unresolved", reason: "missing_leadgen_id" }
-    } else if ((await processor.claim(event)) === "duplicate") {
-      outcome = { status: "duplicate" }
-    } else if (!event.campaignId) {
-      outcome = { status: "unresolved", reason: "missing_campaign_id" }
     } else {
-      const owner = await processor.resolveOwner(event)
-      outcome = owner ? { status: "resolved", owner } : { status: "unresolved", reason: "no_link" }
+      const claim = await processor.claim(event)
+      ctx.attempt = claim.attempt
+      if (claim.outcome === "duplicate") {
+        outcome = { status: "duplicate" }
+      } else {
+        // 1. campaign_id: from the payload if present, otherwise via ad_id → Graph.
+        let campaignId = event.campaignId
+        if (campaignId) {
+          ctx.via = "payload"
+        } else if (!event.adId) {
+          campaignId = null
+        } else {
+          const lookup = await lookupCampaignId(event.adId)
+          if (lookup.ok) {
+            campaignId = lookup.campaignId
+            ctx.adsetId = lookup.adsetId
+            ctx.via = "graph"
+          } else {
+            const reason = GRAPH_REASON[lookup.kind]
+            outcome = lookup.retryable
+              ? { status: "retryable", reason: reason as RetryableReason }
+              : { status: "unresolved", reason: reason as UnresolvedReason }
+            await processor.record(event, outcome, ctx)
+            return outcome
+          }
+        }
+        ctx.campaignId = campaignId
+
+        // 2. campaign_id → explicit link → owner.
+        if (!campaignId) {
+          outcome = { status: "unresolved", reason: "missing_ad_id" }
+        } else {
+          const link = await processor.resolveLink(campaignId)
+          outcome =
+            link.status === "resolved"
+              ? { status: "resolved", owner: link.owner, via: ctx.via ?? "payload" }
+              : { status: "unresolved", reason: link.reason }
+        }
+      }
     }
   } catch (err) {
     outcome = { status: "error", reason: err instanceof Error ? err.name : "unknown" }
   }
 
   try {
-    await processor.record(event, outcome)
+    await processor.record(event, outcome, ctx)
   } catch (err) {
-    // Recording must never turn a handled event into a 5xx for Meta.
     console.error("[meta/processor] record failed:", err instanceof Error ? err.name : "unknown")
   }
   return outcome
@@ -95,6 +181,18 @@ function nowIso(): string {
   return new Date().toISOString()
 }
 
+/** Statuses/reasons that may be processed again on a later delivery. */
+function isReprocessable(rec: Partial<ProcessedMetaLead>, now: number): boolean {
+  if (rec.status === "retryable" || rec.status === "error") return true
+  if (rec.status === "unresolved" && (rec.reason === "no_link" || rec.reason === "link_inactive")) return true
+  if (rec.status === "received") {
+    // A claim left open by a crashed invocation must not block the lead forever.
+    const updated = typeof rec.updatedAt === "string" ? Date.parse(rec.updatedAt) : NaN
+    return Number.isFinite(updated) && now - updated > STALE_CLAIM_MS
+  }
+  return false
+}
+
 export function createFirestoreProcessor(db: Firestore): MetaLeadProcessor {
   const processed = db.collection(COLLECTIONS.processed)
   const events = db.collection(COLLECTIONS.events)
@@ -102,52 +200,75 @@ export function createFirestoreProcessor(db: Firestore): MetaLeadProcessor {
 
   return {
     async claim(event) {
-      if (!event.leadgenId) return "duplicate"
+      if (!event.leadgenId) return { outcome: "duplicate", attempt: 0 }
       const ref = processed.doc(event.leadgenId)
-      // Transaction: read-then-create is atomic, so two concurrent deliveries
-      // of the same leadgen_id cannot both claim it.
+      const now = nowIso()
+      // Transaction: read-then-write is atomic, so two concurrent deliveries of
+      // the same leadgen_id cannot both claim it. `resolved` is terminal.
       return db.runTransaction(async (tx) => {
         const snap = await tx.get(ref)
-        if (snap.exists) return "duplicate" as const
-        const record: ProcessedMetaLead = {
-          leadgenId: event.leadgenId as string,
-          pageId: event.pageId,
-          formId: event.formId,
-          adId: event.adId,
-          adgroupId: event.adgroupId,
-          campaignId: event.campaignId,
-          receivedAt: nowIso(),
-          status: "received",
-          workspaceId: null,
-          objective: null,
-          reason: null,
+        if (!snap.exists) {
+          const record: ProcessedMetaLead = {
+            leadgenId: event.leadgenId as string,
+            pageId: event.pageId,
+            formId: event.formId,
+            adId: event.adId,
+            adgroupId: event.adgroupId,
+            campaignId: event.campaignId,
+            adsetId: null,
+            resolvedVia: null,
+            receivedAt: now,
+            updatedAt: now,
+            attempts: 1,
+            status: "received",
+            workspaceId: null,
+            objective: null,
+            localCampaignId: null,
+            reason: null,
+          }
+          tx.create(ref, record)
+          return { outcome: "claimed" as const, attempt: 1 }
         }
-        tx.create(ref, record)
-        return "claimed" as const
+        const existing = snap.data() as Partial<ProcessedMetaLead>
+        if (!isReprocessable(existing, Date.now())) {
+          return { outcome: "duplicate" as const, attempt: existing.attempts ?? 1 }
+        }
+        const attempt = (existing.attempts ?? 1) + 1
+        tx.update(ref, { status: "received", updatedAt: now, attempts: attempt, reason: null })
+        return { outcome: "claimed" as const, attempt }
       })
     },
 
-    async resolveOwner(event) {
-      if (!event.campaignId) return null
+    async resolveLink(metaCampaignId) {
       // Document id === metaCampaignId → one link per campaign, unique by construction.
-      const snap = await links.doc(event.campaignId).get()
-      if (!snap.exists) return null
+      const snap = await links.doc(metaCampaignId).get()
+      if (!snap.exists) return { status: "unresolved", reason: "no_link" }
       const link = snap.data() as Partial<MetaCampaignLink>
-      if (link.active !== true) return null
-      if (typeof link.workspaceId !== "string" || link.workspaceId.length === 0) return null
-      if (link.objective !== "sales" && link.objective !== "recruiting") return null
+      if (link.active !== true) return { status: "unresolved", reason: "link_inactive" }
+      if (typeof link.workspaceId !== "string" || link.workspaceId.length === 0) {
+        return { status: "unresolved", reason: "link_invalid" }
+      }
+      if (link.objective !== "sales" && link.objective !== "recruiting") {
+        return { status: "unresolved", reason: "link_invalid" }
+      }
       return {
-        workspaceId: link.workspaceId,
-        objective: link.objective,
-        campaignId: typeof link.campaignId === "string" ? link.campaignId : null,
+        status: "resolved",
+        owner: {
+          workspaceId: link.workspaceId,
+          objective: link.objective,
+          metaCampaignId,
+          campaignId: typeof link.campaignId === "string" ? link.campaignId : null,
+        },
       }
     },
 
-    async record(event, outcome) {
+    async record(event, outcome, ctx) {
       const receivedAt = nowIso()
-      const resolved = outcome.status === "resolved" ? outcome.owner : null
+      const owner = outcome.status === "resolved" ? outcome.owner : null
       const reason =
-        outcome.status === "unresolved" || outcome.status === "error" ? outcome.reason : null
+        outcome.status === "unresolved" || outcome.status === "retryable" || outcome.status === "error"
+          ? outcome.reason
+          : null
 
       const diagnostic: MetaWebhookEvent = {
         kind: "leadgen",
@@ -156,31 +277,33 @@ export function createFirestoreProcessor(db: Firestore): MetaLeadProcessor {
         formId: event.formId,
         adId: event.adId,
         adgroupId: event.adgroupId,
-        campaignId: event.campaignId,
+        campaignId: ctx.campaignId,
+        adsetId: ctx.adsetId,
         createdTime: event.createdTime,
         receivedAt,
         outcome: outcome.status,
         reason,
-        workspaceId: resolved?.workspaceId ?? null,
-        objective: resolved?.objective ?? null,
+        resolvedVia: ctx.via,
+        attempt: ctx.attempt,
+        workspaceId: owner?.workspaceId ?? null,
+        objective: owner?.objective ?? null,
       }
       const writes: Promise<unknown>[] = [events.add(diagnostic)]
 
-      // Duplicates keep the original record untouched.
+      // Duplicates never touch the existing record.
       if (event.leadgenId && outcome.status !== "duplicate") {
-        const status: ProcessedMetaLead["status"] =
-          outcome.status === "resolved" ? "resolved" : outcome.status === "error" ? "error" : "unresolved"
-        writes.push(
-          processed.doc(event.leadgenId).set(
-            {
-              status,
-              reason,
-              workspaceId: resolved?.workspaceId ?? null,
-              objective: resolved?.objective ?? null,
-            },
-            { merge: true },
-          ),
-        )
+        const patch: Partial<ProcessedMetaLead> = {
+          status: outcome.status,
+          reason,
+          updatedAt: receivedAt,
+          campaignId: ctx.campaignId,
+          adsetId: ctx.adsetId,
+          resolvedVia: ctx.via,
+          workspaceId: owner?.workspaceId ?? null,
+          objective: owner?.objective ?? null,
+          localCampaignId: owner?.campaignId ?? null,
+        }
+        writes.push(processed.doc(event.leadgenId).set(patch, { merge: true }))
       }
       await Promise.all(writes)
     },
@@ -191,21 +314,16 @@ export function createFirestoreProcessor(db: Firestore): MetaLeadProcessor {
 /*  Log-only fallback (no Admin credentials)                                   */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Used only when Firebase Admin is not configured. Nothing persists; the
- * in-memory set just avoids double-logging on a warm instance. Every event
- * ends "unresolved" because no link storage is reachable.
- */
 export function createLogOnlyProcessor(): MetaLeadProcessor {
   const seen = new Set<string>()
   return {
     async claim(event) {
-      if (!event.leadgenId || seen.has(event.leadgenId)) return "duplicate"
+      if (!event.leadgenId || seen.has(event.leadgenId)) return { outcome: "duplicate", attempt: 1 }
       seen.add(event.leadgenId)
-      return "claimed"
+      return { outcome: "claimed", attempt: 1 }
     },
-    async resolveOwner() {
-      return null
+    async resolveLink() {
+      return { status: "unresolved", reason: "no_link" }
     },
     async record() {
       // Intentionally nothing.

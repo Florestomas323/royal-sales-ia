@@ -37,6 +37,24 @@ export function getMetaAppId(): string | null {
   return process.env.META_APP_ID?.trim() || null
 }
 
+/**
+ * Server-side Graph API token (ads_read / business_management) used to look
+ * up ad → campaign. Until OAuth exists it is a manually issued token stored
+ * only in Vercel. Never sent to the browser, never logged.
+ */
+export function getMetaAccessToken(): string {
+  return required("META_ACCESS_TOKEN")
+}
+
+const DEFAULT_GRAPH_VERSION = "v26.0"
+
+/** Graph API version, e.g. "v26.0". Configurable via META_GRAPH_API_VERSION. */
+export function getGraphApiVersion(): string {
+  const raw = process.env.META_GRAPH_API_VERSION?.trim()
+  if (!raw) return DEFAULT_GRAPH_VERSION
+  return /^v\d+\.\d+$/.test(raw) ? raw : DEFAULT_GRAPH_VERSION
+}
+
 export function isMissingEnvError(err: unknown): err is MissingEnvError {
   return err instanceof MissingEnvError
 }
