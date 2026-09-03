@@ -26,6 +26,12 @@ export interface MetaLeadgenEvent {
   pageId: string | null
   adId: string | null
   adgroupId: string | null
+  /**
+   * Meta campaign id. The standard leadgen webhook does NOT include it (only
+   * ad_id / adgroup_id / form_id / page_id); it is read if present and is the
+   * ONLY key used to resolve the owner workspace. Never inferred.
+   */
+  campaignId: string | null
   /** Unix seconds as sent by Meta. */
   createdTime: number | null
 }
@@ -80,6 +86,7 @@ export function parseMetaWebhook(input: unknown): ParsedMetaWebhook {
         pageId: str(value.page_id) ?? entryPageId,
         adId: str(value.ad_id),
         adgroupId: str(value.adgroup_id),
+        campaignId: str(value.campaign_id),
         createdTime: num(value.created_time),
       })
     }
