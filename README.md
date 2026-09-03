@@ -138,6 +138,9 @@ cp .env.example .env.local
 | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Sender ID de mensajería |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | App ID |
 | `NEXT_PUBLIC_ENABLE_DEMO_SEED` | Opcional. `true` solo en staging para permitir sembrar datos demo. Nunca en producción. |
+| `META_APP_ID` | Server only. Id de la app de Meta (ver `META.md`). |
+| `META_APP_SECRET` | **Server only.** Firma de webhooks de Meta. |
+| `META_WEBHOOK_VERIFY_TOKEN` | **Server only.** Token de verificación del webhook; el mismo valor se pega en Meta for Developers. |
 
 Los valores `NEXT_PUBLIC_FIREBASE_*` son **config web pública** (seguros de exponer en el cliente). La seguridad real la imponen Firebase Auth + Firestore Security Rules, no el ocultamiento de estas claves.
 

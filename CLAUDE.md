@@ -58,6 +58,7 @@ Cada decisión técnica debe acercar el producto a soportar este flujo de extrem
 - Firestore realtime para: **Leads**, **Pipeline** (con drag & drop persistente), **Clients**, **Team**, **Campaigns** — todos filtrados por `workspaceId` desde Firestore.
 - **Multi-tenancy**: `workspaces`, `memberships/{authUid}`, `workspaceId` en todas las colecciones, `WorkspaceProvider` (`useWorkspace()`), selector de workspace para super admin, Security Rules versionadas en `firestore.rules`. Ver `MULTITENANT.md`.
 - Seed de datos demo **solo explícito** (Configuración → Super admin) y solo fuera de producción.
+- **Webhook de Meta** (`app/api/meta/webhook/route.ts`): GET de verificación y POST firmado (HMAC-SHA256). Procesador `log-only` hasta que exista Firebase Admin; nunca crea prospectos sin propietario resuelto. Ver `META.md`.
 - **Integraciones** sin estados falsos: catálogo en `lib/integrations/catalog.ts`, estado real por workspace vía `useMetaConnection` (stub `not_connected` hasta la fase OAuth), pantalla `/integrations/meta` con "Pendiente de conexión". Regla de propiedad 1 campaña = 1 workspace documentada en `META.md`.
 - **Ventas + Reclutamiento** (Fase 2): `Lead.leadType`, dos pipelines independientes (`PIPELINES` en `lib/constants.ts`), filtro Todos/Ventas/Reclutamiento con conteos reales, fuentes por tipo (Indeed solo reclutamiento), `Campaign.objective`, atribución y campos de candidato preparados. KPIs y prioridades del Command Center leen Firestore real. Ver `ARCHITECTURE.md §5b`.
 - Marca completa: icono de app, favicon, apple-touch-icon, manifiesto PWA, imagen Open Graph.
@@ -106,6 +107,7 @@ Solo dejar la arquitectura preparada para incorporarlos después. Los secretos d
 | Seed de datos demo (explícito) | `lib/firebase/seed.ts` |
 | Migración / herramientas super admin | `lib/firebase/admin-tools.ts`, `components/settings/super-admin-tools.tsx` |
 | Reglas e índices de Firestore | `firestore.rules`, `firestore.indexes.json` |
+| Meta webhook (server) | `lib/meta/{env,signature,types,processor}.ts`, `app/api/meta/webhook/route.ts` |
 | Errores de datos | `lib/firebase/errors.ts`, `components/shared/data-error-state.tsx` |
 | Config de Firebase | `lib/firebase/client.ts` (+ `.env.example`) |
 | Navegación / sidebar | `components/shell/nav-config.ts` |
