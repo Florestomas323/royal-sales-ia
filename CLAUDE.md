@@ -55,14 +55,14 @@ Cada decisión técnica debe acercar el producto a soportar este flujo de extrem
 
 ### IMPLEMENTADO
 - Firebase Authentication (email/password + Google) con guard de rutas.
-- Firestore realtime para: **Leads**, **Pipeline** (con drag & drop persistente), **Clients**, **Team**, **Campaigns**.
-- Seed idempotente de datos demo preservando ids.
+- Firestore realtime para: **Leads**, **Pipeline** (con drag & drop persistente), **Clients**, **Team**, **Campaigns** — todos filtrados por `workspaceId` desde Firestore.
+- **Multi-tenancy**: `workspaces`, `memberships/{authUid}`, `workspaceId` en todas las colecciones, `WorkspaceProvider` (`useWorkspace()`), selector de workspace para super admin, Security Rules versionadas en `firestore.rules`. Ver `MULTITENANT.md`.
+- Seed de datos demo **solo explícito** (Configuración → Super admin) y solo fuera de producción.
 - Marca completa: icono de app, favicon, apple-touch-icon, manifiesto PWA, imagen Open Graph.
 - Config de Firebase por variables de entorno (`NEXT_PUBLIC_FIREBASE_*`) con fallback de desarrollo.
 
 ### EN DESARROLLO
-- Migración de módulos restantes de mock a Firestore.
-- Multi-tenancy (aún sin `workspaceId` en las colecciones).
+- Migración de módulos restantes de mock a Firestore (ver inventario en `MULTITENANT.md`).
 
 ### MOCK (usan `lib/mock-data`)
 - Command Center / Overview (`/`)
@@ -94,9 +94,15 @@ Solo dejar la arquitectura preparada para incorporarlos después. Los secretos d
 | --- | --- |
 | Cambiar el modelo de datos | `types/index.ts` (fuente única de verdad) |
 | Lógica de auth | `lib/firebase/auth-context.tsx`, `components/auth/` |
+| Workspace activo / rol / usuario | `lib/firebase/workspace-context.tsx` (`useWorkspace`, `useCan`) |
+| Identidad (membership ↔ perfil) | `lib/firebase/membership.ts` |
+| Workspaces | `lib/firebase/workspaces.ts` |
 | Datos de Leads | `lib/firebase/leads.ts` |
 | Datos de Clients/Team/Campaigns | `lib/firebase/collections.ts` |
-| Seed de datos demo | `lib/firebase/seed.ts`, `lib/firebase/collections.ts` |
+| Seed de datos demo (explícito) | `lib/firebase/seed.ts` |
+| Migración / herramientas super admin | `lib/firebase/admin-tools.ts`, `components/settings/super-admin-tools.tsx` |
+| Reglas e índices de Firestore | `firestore.rules`, `firestore.indexes.json` |
+| Errores de datos | `lib/firebase/errors.ts`, `components/shared/data-error-state.tsx` |
 | Config de Firebase | `lib/firebase/client.ts` (+ `.env.example`) |
 | Navegación / sidebar | `components/shell/nav-config.ts` |
 | Datos aún mock | `lib/mock-data/` |

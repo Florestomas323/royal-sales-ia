@@ -91,7 +91,7 @@ pnpm install
 pnpm dev
 ```
 
-La app queda disponible en `http://localhost:3000`. Al abrirla te redirige a `/login`; una vez autenticado, los datos demo se siembran automáticamente en Firestore la primera vez.
+La app queda disponible en `http://localhost:3000`. Al abrirla te redirige a `/login`; los datos demo ya **no** se siembran automáticamente: se hace desde Configuración → Super admin (solo fuera de producción). Ver `MULTITENANT.md`.
 
 Scripts disponibles:
 
@@ -113,22 +113,11 @@ El repositorio incluye una **configuración web de desarrollo por defecto** (pro
 4. **Firestore → Rules:** publica las reglas mínimas (ver abajo).
 5. **Project settings → General → Your apps → Web app:** copia los valores del SDK a tu `.env.local` (ver [Variables de entorno](#7-variables-de-entorno)).
 
-### Reglas de seguridad de Firestore (mínimo)
+### Reglas de seguridad de Firestore
 
-Toda lectura/escritura requiere sesión autenticada. **No debilites estas reglas para desarrollar.**
+Las reglas viven versionadas en [`firestore.rules`](./firestore.rules) (multi-tenant por `workspaceId` y por rol). Publícalas en **Firestore → Rules** (pegar y Publish) o con `firebase deploy --only firestore:rules`. Los índices compuestos necesarios están en [`firestore.indexes.json`](./firestore.indexes.json).
 
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{collection}/{docId} {
-      allow read, write: if request.auth != null;
-    }
-  }
-}
-```
-
-> Estas reglas son el punto de partida. El roadmap multi-tenant las endurecerá para aislar por `workspaceId` y por rol (ver [`ARCHITECTURE.md`](./ARCHITECTURE.md)).
+Después de publicarlas, crea el primer `super_admin` y migra los datos existentes siguiendo [`MULTITENANT.md`](./MULTITENANT.md). **No debilites estas reglas para desarrollar.**
 
 ---
 
@@ -148,6 +137,7 @@ cp .env.example .env.local
 | `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | Bucket de Storage |
 | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Sender ID de mensajería |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | App ID |
+| `NEXT_PUBLIC_ENABLE_DEMO_SEED` | Opcional. `true` solo en staging para permitir sembrar datos demo. Nunca en producción. |
 
 Los valores `NEXT_PUBLIC_FIREBASE_*` son **config web pública** (seguros de exponer en el cliente). La seguridad real la imponen Firebase Auth + Firestore Security Rules, no el ocultamiento de estas claves.
 

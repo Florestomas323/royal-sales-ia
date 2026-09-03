@@ -61,7 +61,7 @@ Royal Sales IA es una aplicación **Next.js 16 (App Router)** renderizada mayori
   - `leads.ts` → colección `leads` (`useLeads`, `createLead`, `updateLeadStage`).
   - `collections.ts` → colecciones `clients`, `users`, `campaigns` (seeder genérico + hooks + creadores).
   - `seed.ts` → seed idempotente de `leads`.
-- **Seed idempotente:** siembra el dataset demo solo si la colección está vacía y **preserva los ids originales** para no romper referencias cruzadas.
+- **Seed explícito:** `seed.ts` ya no se ejecuta solo; se invoca desde las herramientas de super admin y solo fuera de producción (o con `NEXT_PUBLIC_ENABLE_DEMO_SEED=true`). Ver `MULTITENANT.md`.
 
 ---
 
@@ -71,38 +71,50 @@ Todas las interfaces viven en `types/index.ts`. Colecciones actuales de Firestor
 
 ### `leads`
 ```
-id, name, phone, email,
+id, workspaceId, leadType (sales|recruiting), name, phone, email,
 source (Platform), campaignId, campaignName,
 score, temperature (hot|warm|cold),
 stage (new_lead|contact|contacted|interested|appointment|follow_up|sale),
 assignedToId  → users.id,
 clientId      → clients.id,
 potentialValue, createdAt, lastContactAt, nextFollowUpAt, nextAction,
-attribution { platform, campaign, adSet, ad, creative }
+attribution { platform, campaign, adSet, ad, creative,
+              externalCampaignId?, externalAdSetId?, externalAdId?, externalCreativeId?, clickId? }
+isDemo?
 ```
 
 ### `clients`
 ```
-id, name, industry, logoColor, status (active|onboarding|paused),
+id, workspaceId, name, industry, logoColor, status (active|onboarding|paused),
 adSpend, leads, appointments, sales, revenue
 ```
 
-### `users` (miembros del equipo)
+### `users` (miembros del equipo — NO es Firebase Auth)
 ```
-id, name, email, role (super_admin|client_admin|manager|sales_rep|viewer),
+id, workspaceId, authUid (uid de Firebase Auth | null), name, email, role (super_admin|client_admin|manager|sales_rep|viewer),
 avatarColor, status (active|invited|inactive),
 assignedLeads, appointments, sales
 ```
 
 ### `campaigns`
 ```
-id, name, platform (Platform), status (active|paused|learning|ended),
+id, workspaceId, campaignType (sales|recruiting), name, platform (Platform), status (active|paused|learning|ended),
 spend, leads, cpl, appointments, sales, revenue, roas,
-clientId → clients.id
+clientId → clients.id, externalId?
+```
+
+### `workspaces`
+```
+id, name, plan, logoColor, status (active|suspended), createdAt, ownerEmail?
+```
+
+### `memberships` (document id = Firebase Auth UID)
+```
+workspaceId (null para super_admin), role, userId → users.id, email, createdAt
 ```
 
 ### Definidas en el modelo, aún no como colección (mock/roadmap)
-`Workspace`, `Appointment`, `Activity`, `AIInsight`, `Kpi`, `FunnelStep`, `PlatformMetrics`, `Notification`.
+`WorkspaceIntegration`, `Appointment`, `Activity`, `AIInsight`, `Kpi`, `FunnelStep`, `PlatformMetrics`, `Notification`.
 
 ### Relaciones
 
@@ -123,21 +135,14 @@ User (team) ───┴── assignedTo ──▶ Lead      └── Sale (de
 
 ## 5. Multi-tenancy
 
-El objetivo es aislamiento por **workspace** (agencia/organización) con roles.
+**Estado: implementado.** Detalle completo en [`MULTITENANT.md`](./MULTITENANT.md).
 
-**Estado actual:** las colecciones son planas y globales; el aislamiento aún no está activo. El modelo ya contempla `Workspace` y `UserRole`.
-
-**Dirección objetivo:**
-
-1. Añadir `workspaceId` a cada documento (`leads`, `clients`, `users`, `campaigns`).
-2. Resolver el `workspaceId` del usuario tras el login (documento de perfil o custom claims).
-3. Filtrar todas las consultas por `workspaceId`.
-4. Endurecer las Security Rules para exigir `resource.data.workspaceId == <workspace del usuario>` y validar el rol para escrituras sensibles.
-5. Escalar los roles (`super_admin` global; `client_admin`/`manager`/`sales_rep`/`viewer` dentro del workspace).
-
-> No debilitar las Security Rules para facilitar el desarrollo. El aislamiento se refuerza en el backend, no solo en la UI.
-
----
+- **Workspace** = distribuidor (tenant). **Client** = cuenta comercial dentro del workspace. El aislamiento es siempre por `workspaceId`.
+- `memberships/{authUid}` vincula Firebase Auth con un workspace y un rol; `users/{id}` es el perfil de equipo (puede existir antes del registro, `authUid: null`).
+- `WorkspaceProvider` resuelve membership → perfil → workspace tras el login y expone `useWorkspace()` (`currentUser`, `currentWorkspace`, `workspaceId`, `role`, `isSuperAdmin`, `selectWorkspace`).
+- Todas las consultas de `leads`, `clients`, `users`, `campaigns` filtran por `workspaceId` en Firestore (y por `assignedToId` para `sales_rep`).
+- `firestore.rules` (versionado) es la autoridad: `super_admin` global; `client_admin`/`manager` dentro de su workspace; `sales_rep` solo sus leads; `viewer` solo lectura. Cualquier colección no declarada está cerrada.
+- Documentos legacy sin `workspaceId` se migran desde **Configuración → Super admin** (no destructivo).
 
 ## 6. Flujo de negocio (visión futura)
 
@@ -189,5 +194,5 @@ Los secretos de estas integraciones **nunca** van en el frontend ni en variables
 - `next.config.mjs` tiene `typescript.ignoreBuildErrors: true`. El typecheck está limpio hoy (`pnpm exec tsc --noEmit` pasa); considerar poner el flag en `false` para que los errores de tipo bloqueen el build.
 - `images.unoptimized: true` está activo (compatibilidad con la preview de v0). Revisar al optimizar para producción.
 - Guard de rutas del lado cliente (limitación del SDK web). Las Security Rules son la salvaguarda real.
-- Colecciones aún sin `workspaceId` (pendiente para multi-tenancy).
+- Bootstrap del primer `super_admin` es manual en la consola (documentado en `MULTITENANT.md`). Cuando exista backend (Admin SDK) conviene moverlo a custom claims.
 - Overview, Analytics, Integrations y Settings siguen leyendo de `lib/mock-data`.
