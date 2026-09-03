@@ -23,7 +23,7 @@ export interface MetaConnectionState {
 
 export function useMetaConnection(workspaceId: string | null): MetaConnectionState {
   return useMemo(
-    () => ({ stat/us: "not_connected", connection: null, loading: false }),
+    () => ({ status: "not_connected", connection: null, loading: false }),
     // The workspace is part of the contract so the OAuth phase can subscribe per workspace.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [workspaceId],
