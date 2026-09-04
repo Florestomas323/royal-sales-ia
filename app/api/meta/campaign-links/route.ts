@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server"
 import { getAdminDb } from "@/lib/firebase/admin"
-import { authenticateRequest, canAccessWorkspace } from "@/lib/firebase/server-auth"
+import {
+  authenticateRequest,
+  canAccessWorkspace,
+  canManageCampaignLinks,
+} from "@/lib/firebase/server-auth"
 import { deleteCampaignLink, listCampaignLinks, upsertCampaignLink } from "@/lib/meta/campaign-links"
 import type { LeadType, MetaCampaignLink } from "@/types"
 
@@ -11,9 +15,14 @@ import type { LeadType, MetaCampaignLink } from "@/types"
  *   POST   /api/meta/campaign-links            → assign / reassign a campaign
  *   DELETE /api/meta/campaign-links?campaignId → remove an assignment
  *
- * The workspace in the body is NEVER trusted blindly: `canAccessWorkspace`
- * checks it against `memberships/{uid}`. A workspace admin can only assign
- * campaigns to their own workspace; super_admin can assign to any.
+ * The workspace in the body is NEVER trusted blindly: it is checked against
+ * `memberships/{uid}` on the server.
+ *
+ * Reading  → `canAccessWorkspace(user, ws, false)` (any member of the workspace).
+ * Writing  → `canManageCampaignLinks(user, ws)`: super_admin anywhere,
+ *            client_admin only in their own workspace. manager, sales_rep and
+ *            viewer are read-only here, even though `manager` may write other
+ *            resources — this one decides where leads land.
  */
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -70,7 +79,10 @@ export async function POST(request: Request) {
   if (!metaCampaignId || !workspaceId) return NextResponse.json({ error: "missing_fields" }, { status: 400 })
   if (!isLeadType(body.objective)) return NextResponse.json({ error: "invalid_objective" }, { status: 400 })
   // Assigning ownership is a write on the TARGET workspace.
-  if (!canAccessWorkspace(auth.user, workspaceId, true)) {
+  if (!canManageCampaignLinks(auth.user, workspaceId)) {
+    console.warn(
+      `[meta/campaign-links] denied assign role=${auth.user.membership.role} target=${workspaceId}`,
+    )
     return NextResponse.json({ error: "forbidden" }, { status: 403 })
   }
 
@@ -102,7 +114,10 @@ export async function DELETE(request: Request) {
   )
   if (!existing) return NextResponse.json({ ok: true })
   // Only someone who could assign it may remove it.
-  if (!canAccessWorkspace(auth.user, existing.workspaceId, true)) {
+  if (!canManageCampaignLinks(auth.user, existing.workspaceId)) {
+    console.warn(
+      `[meta/campaign-links] denied delete role=${auth.user.membership.role} target=${existing.workspaceId}`,
+    )
     return NextResponse.json({ error: "forbidden" }, { status: 403 })
   }
 
