@@ -18,6 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { MetaCampaignsTable } from "@/components/integrations/meta-campaigns-table"
+import { MetaSyncReportCard } from "@/components/integrations/meta-sync-report"
 import { useCan, useWorkspace } from "@/lib/firebase/workspace-context"
 import { syncMetaConnection, useMetaConnection } from "@/lib/integrations/meta"
 import { formatRelativeTime } from "@/lib/format"
@@ -264,6 +266,16 @@ export function MetaConnectionPanel() {
             )}
           </CardContent>
         </Card>
+
+        {/* Resultado por recurso de la última sincronización */}
+        <MetaSyncReportCard report={connection?.syncReport ?? null} />
+
+        {/* Campañas → workspace propietario */}
+        <MetaCampaignsTable
+          campaigns={connection?.campaigns ?? []}
+          adAccountId={connection?.adAccount?.id ?? null}
+          loading={loading}
+        />
 
         {/* Permisos del token */}
         <Card className="lg:col-span-2">
