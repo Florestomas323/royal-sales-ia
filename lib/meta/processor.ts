@@ -47,6 +47,7 @@ export type UnresolvedReason =
   | "no_link"
   | "link_inactive"
   | "link_invalid"
+  | "graph_permission"
 
 /** Temporary; the same leadgen_id may be reprocessed later. */
 export type RetryableReason =
@@ -98,6 +99,7 @@ const GRAPH_REASON: Record<Exclude<GraphCampaignLookup, { ok: true }>["kind"], R
   network: "graph_network",
   rate_limit: "graph_rate_limit",
   auth: "graph_auth",
+  permission: "graph_permission",
   server: "graph_server",
   invalid_json: "graph_invalid_json",
   http: "graph_http",
