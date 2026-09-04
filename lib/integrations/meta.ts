@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { auth } from "@/lib/firebase/client"
 import type { MetaStatusResponse } from "@/lib/meta/api-response"
-import type { ConnectionStatus, MetaConnection } from "@/types"
+import type { ConnectionStatus, LeadType, MetaCampaignLink, MetaConnection } from "@/types"
 
 /**
  * Meta connection state for a workspace, read through the server
@@ -53,6 +53,11 @@ function messageFor(err: unknown): string {
     case "invalid_token":
     case "not_signed_in":
       return "Tu sesión no es válida. Vuelve a iniciar sesión."
+    case "no_workspace":
+      return "Tu cuenta no está asignada a ningún workspace."
+    case "invalid_objective":
+    case "missing_fields":
+      return "Faltan datos para asignar la campaña."
     default:
       return GENERIC_ERROR
   }
@@ -103,6 +108,77 @@ export function useMetaConnection(workspaceId: string | null): MetaConnectionSta
  * Manual "Sincronizar Meta": the server re-reads Meta and persists the
  * result for the workspace. Optionally sets the preferred ad account / page.
  */
+/* -------------------------------------------------------------------------- */
+/*  Campaign → workspace links                                                */
+/* -------------------------------------------------------------------------- */
+
+async function parseJson<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    let code = `http_${res.status}`
+    try {
+      const body = (await res.json()) as { error?: string }
+      if (body.error) code = body.error
+    } catch {
+      // keep http code
+    }
+    throw new Error(code)
+  }
+  return (await res.json()) as T
+}
+
+/**
+ * Links visible to the caller. Super admin omits `workspaceId` to get them
+ * all; the server ignores any workspace the caller is not a member of.
+ */
+export async function fetchCampaignLinks(workspaceId?: string | null): Promise<MetaCampaignLink[]> {
+  try {
+    const query = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ""
+    const res = await fetch(`/api/meta/campaign-links${query}`, {
+      headers: await authHeaders(),
+      cache: "no-store",
+    })
+    const body = await parseJson<{ links: MetaCampaignLink[] }>(res)
+    return body.links
+  } catch (err) {
+    throw new Error(messageFor(err))
+  }
+}
+
+/** Assign or reassign a Meta campaign to a workspace. */
+export async function assignCampaign(input: {
+  metaCampaignId: string
+  workspaceId: string
+  objective: LeadType
+  active?: boolean
+  metaCampaignName?: string | null
+  adAccountId?: string | null
+}): Promise<MetaCampaignLink> {
+  try {
+    const res = await fetch("/api/meta/campaign-links", {
+      method: "POST",
+      headers: { ...(await authHeaders()), "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    })
+    const body = await parseJson<{ link: MetaCampaignLink }>(res)
+    return body.link
+  } catch (err) {
+    throw new Error(messageFor(err))
+  }
+}
+
+/** Remove an assignment. Leads already created keep their workspace. */
+export async function unassignCampaign(metaCampaignId: string): Promise<void> {
+  try {
+    const res = await fetch(`/api/meta/campaign-links?campaignId=${encodeURIComponent(metaCampaignId)}`, {
+      method: "DELETE",
+      headers: await authHeaders(),
+    })
+    await parseJson<{ ok: boolean }>(res)
+  } catch (err) {
+    throw new Error(messageFor(err))
+  }
+}
+
 export async function syncMetaConnection(
   workspaceId: string,
   selection: { adAccountId?: string | null; pageId?: string | null } = {},
