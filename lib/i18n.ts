@@ -637,7 +637,7 @@ export const t = {
         empty: 'No hay campañas en la cuenta publicitaria seleccionada. Sincroniza Meta o elige otra cuenta.',
         emptyNoAccount: 'Selecciona una cuenta publicitaria y sincroniza para ver sus campañas.',
         loadError: 'No se pudieron cargar las asignaciones de campañas.',
-        readOnly: 'Solo un administrador del workspace o el super admin puede asignar campañas.',
+        readOnly: 'Solo el administrador del workspace (client_admin) o el super admin pueden asignar campañas. Tu rol puede consultarlas.',
         existingOnly: 'Las asignaciones solo afectan a los prospectos que lleguen a partir de ahora.',
       },
       syncReport: {
