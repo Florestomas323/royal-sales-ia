@@ -3,6 +3,7 @@ import { getMetaAppSecret, getWebhookVerifyToken, isMissingEnvError } from "@/li
 import { verifyMetaSignature } from "@/lib/meta/signature"
 import { maskId, parseMetaWebhook } from "@/lib/meta/types"
 import {
+  buildLeadAttribution,
   createFirestoreProcessor,
   createLogOnlyProcessor,
   handleLeadgenEvent,
@@ -131,6 +132,14 @@ export async function POST(request: Request) {
   for (const event of parsed.leadgen) {
     const outcome = await handleLeadgenEvent(event, active, lookupCampaignIdForAd)
     summary[outcome.status]++
+    if (outcome.status === "resolved") {
+      // Attribution is ready; creating the lead needs `leads_retrieval` to
+      // download field_data, which Meta has not granted yet (see META.md).
+      const attribution = buildLeadAttribution(event, outcome.owner, null)
+      console.info(
+        `[meta/webhook] lead pending download workspace=${maskId(attribution.workspaceId)} leadType=${attribution.leadType} form=${maskId(attribution.externalFormId ?? null)}`,
+      )
+    }
     const detail =
       outcome.status === "resolved"
         ? ` campaign=${maskId(outcome.owner.metaCampaignId)} via=${outcome.via} workspace=${maskId(outcome.owner.workspaceId)} objective=${outcome.owner.objective}`
