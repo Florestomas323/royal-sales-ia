@@ -108,6 +108,50 @@ const GRAPH_REASON: Record<Exclude<GraphCampaignLookup, { ok: true }>["kind"], R
 }
 
 /**
+ * Attribution payload for the lead that WILL be created once
+ * `leads_retrieval` is granted. Built from the webhook + the resolved link;
+ * every field is optional because Meta does not always send them, and none is
+ * ever invented.
+ *
+ * Consumed later by `createLead({ workspaceId, leadType, source: "meta", attribution })`.
+ */
+export interface MetaLeadAttribution {
+  workspaceId: string
+  leadType: LeadType
+  campaignId: string | null
+  metaLeadId?: string
+  externalCampaignId?: string
+  externalAdSetId?: string
+  externalAdId?: string
+  externalFormId?: string
+  externalPageId?: string
+  receivedAt?: string
+}
+
+export function buildLeadAttribution(
+  event: MetaLeadgenEvent,
+  owner: ResolvedOwner,
+  adsetId: string | null,
+): MetaLeadAttribution {
+  const attribution: MetaLeadAttribution = {
+    workspaceId: owner.workspaceId,
+    leadType: owner.objective,
+    campaignId: owner.campaignId,
+    externalCampaignId: owner.metaCampaignId,
+  }
+  if (event.leadgenId) attribution.metaLeadId = event.leadgenId
+  if (adsetId) attribution.externalAdSetId = adsetId
+  else if (event.adgroupId) attribution.externalAdSetId = event.adgroupId
+  if (event.adId) attribution.externalAdId = event.adId
+  if (event.formId) attribution.externalFormId = event.formId
+  if (event.pageId) attribution.externalPageId = event.pageId
+  if (typeof event.createdTime === "number") {
+    attribution.receivedAt = new Date(event.createdTime * 1000).toISOString()
+  }
+  return attribution
+}
+
+/**
  * Full decision for one leadgen event. Never guesses a workspace, never
  * writes to `leads`, never lets a transient failure become a 5xx for Meta.
  */

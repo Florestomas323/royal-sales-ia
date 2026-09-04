@@ -255,6 +255,40 @@ export const getCampaigns = (adAccountId: string, o?: GraphClientOptions) =>
     o,
   )
 
+export interface GraphAdSet {
+  id: string
+  name?: string
+  status?: string
+  effective_status?: string
+  campaign_id?: string
+}
+
+export interface GraphAd {
+  id: string
+  name?: string
+  status?: string
+  effective_status?: string
+  adset_id?: string
+  campaign_id?: string
+  creative?: { id?: string }
+}
+
+/** Ad sets of a campaign. Needs ads_read on the owning ad account. */
+export const getAdSets = (campaignId: string, o?: GraphClientOptions) =>
+  graphGet<GraphPaged<GraphAdSet>>(
+    `${encodeURIComponent(campaignId)}/adsets`,
+    { fields: "id,name,status,effective_status,campaign_id", limit: "100" },
+    o,
+  )
+
+/** Ads of a campaign (flattened across its ad sets). Needs ads_read. */
+export const getAds = (campaignId: string, o?: GraphClientOptions) =>
+  graphGet<GraphPaged<GraphAd>>(
+    `${encodeURIComponent(campaignId)}/ads`,
+    { fields: "id,name,status,effective_status,adset_id,campaign_id,creative{id}", limit: "100" },
+    o,
+  )
+
 /** Lead forms of a page. Needs pages_manage_ads / leads_retrieval; fails honestly otherwise. */
 export const getLeadForms = (pageId: string, o?: GraphClientOptions) =>
   graphGet<GraphPaged<GraphLeadForm>>(
