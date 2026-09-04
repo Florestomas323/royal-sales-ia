@@ -107,6 +107,7 @@ Solo dejar la arquitectura preparada para incorporarlos después. Los secretos d
 | Seed de datos demo (explícito) | `lib/firebase/seed.ts` |
 | Migración / herramientas super admin | `lib/firebase/admin-tools.ts`, `components/settings/super-admin-tools.tsx` |
 | Reglas e índices de Firestore | `firestore.rules`, `firestore.indexes.json` |
+| Meta campaign links (server) | `lib/meta/campaign-links.ts`, `app/api/meta/campaign-links/route.ts` |
 | Meta webhook (server) | `lib/meta/{env,signature,types,processor,graph}.ts`, `app/api/meta/webhook/route.ts` |
 | Firebase Admin (server only) | `lib/firebase/admin.ts` |
 | Errores de datos | `lib/firebase/errors.ts`, `components/shared/data-error-state.tsx` |

@@ -273,3 +273,62 @@ Navegador ── Authorization: Bearer <Firebase ID token> ──► /api/meta/s
 - Si el token falla: `status = expired` (190) / `error` / `not_connected` (sin token), `lastError = kind`, mensaje amigable al usuario, detalle solo en logs.
 
 Aún NO: OAuth por distribuidor, descarga de `field_data`, creación en `leads`.
+---
+
+## Preparación Lead Ads (bloqueado por `leads_retrieval`)
+
+### Asignación campaña → workspace
+
+`metaCampaignLinks/{metaCampaignId}` ahora se administra desde la app, no a
+mano en la consola:
+
+| Endpoint | Quién | Qué hace |
+| --- | --- | --- |
+| `GET /api/meta/campaign-links[?workspaceId=]` | miembro del workspace / super admin | Lista las asignaciones visibles. El super admin sin parámetro las ve todas |
+| `POST /api/meta/campaign-links` | client_admin / manager / super admin | Asigna o reasigna `{ metaCampaignId, workspaceId, objective, active }` |
+| `DELETE /api/meta/campaign-links?campaignId=` | igual que POST | Quita la asignación |
+
+- El `workspaceId` del cuerpo **nunca se acepta a ciegas**: `canAccessWorkspace`
+  lo valida contra `memberships/{uid}`. Un admin de workspace solo puede
+  asignar campañas a su propio workspace; el super admin, a cualquiera.
+- El id del documento es el id de campaña de Meta, así que **reasignar
+  sobrescribe el mismo documento**: una campaña no puede tener dos dueños.
+- Los prospectos ya creados conservan su workspace; la asignación solo afecta
+  a los que lleguen después.
+- La UI está en **Administrar Meta → Campañas y workspace propietario**:
+  nombre, id de Meta, estado, workspace y tipo (Clientes / Candidatos).
+
+### Sincronización parcial
+
+`buildMetaInventory` devuelve un `syncReport` por recurso
+(`businesses`, `adAccounts`, `pages`, `campaigns`, `leadForms`,
+`leadRetrieval`) con estado `ok | permission_required | error | skipped`.
+Que falte `leads_retrieval` **no cancela** el resto: cuentas, páginas y
+campañas se sincronizan igual. La tarjeta "Resultado de la última
+sincronización" lo muestra tal cual.
+
+### Atribución lista para el día que llegue el permiso
+
+`buildLeadAttribution(event, owner, adsetId)` (en `lib/meta/processor.ts`)
+construye, a partir del webhook + el link resuelto:
+
+```
+workspaceId, leadType (sales|recruiting), campaignId (interno),
+metaLeadId, externalCampaignId, externalAdSetId, externalAdId,
+externalFormId, externalPageId, receivedAt
+```
+
+Todo lo que Meta no envía queda `undefined`; nada se inventa. `Attribution`
+(en `types/index.ts`) ya acepta esos campos junto a los `utm*`, `clickId`,
+`landingPage` y `referrer` que ya existían, y `Lead.receivedAt` guarda el
+momento en que Meta generó el prospecto cuando difiere de `createdAt`.
+
+Cuando `leads_retrieval` esté concedido, el único paso que falta es:
+`GET /{leadgen_id}?fields=field_data` con token de página →
+`createLead({ workspaceId, leadType, source: "meta", attribution })`.
+
+### Nomenclatura
+
+El prompt de esta fase usaba `recruitment`; el código ya usaba **`recruiting`**
+en `LeadType`, en las etapas `rec_*` y en los 15 prospectos de producción. Se
+mantiene `recruiting` para no romper datos existentes.
