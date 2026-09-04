@@ -38,7 +38,7 @@ export function MetaCampaignsTable({
   loading: boolean
 }) {
   const { workspaceId, workspaces, isSuperAdmin } = useWorkspace()
-  const { canManageWorkspace } = useCan()
+  const { canManageCampaignLinks } = useCan()
   const [links, setLinks] = useState<Record<string, MetaCampaignLink>>({})
   const [loadingLinks, setLoadingLinks] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -48,7 +48,8 @@ export function MetaCampaignsTable({
     () => (isSuperAdmin ? workspaces : workspaces.filter((w) => w.id === workspaceId)),
     [isSuperAdmin, workspaces, workspaceId],
   )
-  const canAssign = canManageWorkspace && assignableWorkspaces.length > 0
+  // Server-side `canManageCampaignLinks` is the authority; this only hides controls.
+  const canAssign = canManageCampaignLinks && assignableWorkspaces.length > 0
 
   const reload = useCallback(async () => {
     setLoadingLinks(true)
