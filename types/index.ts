@@ -239,6 +239,30 @@ export interface MetaCampaignSummary {
   updatedTime: string | null
 }
 
+/**
+ * Outcome of syncing ONE Meta resource. A missing permission must never fail
+ * the whole sync — each resource reports its own state.
+ */
+export type MetaResourceState = 'ok' | 'permission_required' | 'error' | 'skipped'
+
+export interface MetaResourceStatus {
+  state: MetaResourceState
+  /** Number of items retrieved when state === 'ok'. */
+  count: number
+  /** Safe, user-facing note (Spanish) when not ok. */
+  note: string | null
+}
+
+export type MetaSyncResource =
+  | 'businesses'
+  | 'adAccounts'
+  | 'pages'
+  | 'campaigns'
+  | 'leadForms'
+  | 'leadRetrieval'
+
+export type MetaSyncReport = Record<MetaSyncResource, MetaResourceStatus>
+
 /** Capabilities derived from /me/permissions (granted only). */
 export interface MetaCapabilities {
   adsRead: boolean
@@ -272,6 +296,8 @@ export interface MetaConnection {
   status: ConnectionStatus
   /** Meta user / system user that the token authenticates. */
   account: MetaAssetRef | null
+  /** Businesses the system user belongs to (needs business_management). */
+  businesses: MetaAssetRef[]
   /** Preferred ad account of this workspace (chosen among `adAccounts`). */
   adAccount: MetaAdAccountRef | null
   adAccounts: MetaAdAccountRef[]
@@ -283,6 +309,8 @@ export interface MetaConnection {
   permissions: string[]
   capabilities: MetaCapabilities
   leadAdsStatus: MetaLeadAdsStatus
+  /** Per-resource outcome of the last sync (partial failures are expected). */
+  syncReport: MetaSyncReport | null
   missingPermissions: string[]
   /** Whether the Lead Ads webhook subscription is active for the page. */
   leadAdsActive: boolean
@@ -321,6 +349,12 @@ export interface MetaCampaignLink {
   pageId: string | null
   /** Informational only — never used for ownership. */
   formIds: string[]
+  /** Campaign name at assignment time, so the admin UI reads well offline. */
+  metaCampaignName: string | null
+  /** Ad account the campaign belongs to ("act_123"). Informational. */
+  adAccountId: string | null
+  /** users.id of whoever assigned it (audit). */
+  assignedByUserId: string | null
   createdAt: string
   updatedAt: string
 }
@@ -447,6 +481,10 @@ export interface Attribution {
   utmTerm?: string
   landingPage?: string
   referrer?: string
+  /** Meta Lead Ads: `leadgen_id`, form and page the lead came from. */
+  metaLeadId?: string
+  externalFormId?: string
+  externalPageId?: string
 }
 
 /**
@@ -488,6 +526,11 @@ export interface Lead {
   nextAction: string
   attribution: Attribution
   clientId: string
+  /**
+   * When the platform says the lead was generated, if different from
+   * `createdAt` (the moment Royal Sales IA stored it). ISO string.
+   */
+  receivedAt?: string
   /** Present only for recruiting leads. */
   recruiting?: RecruitingProfile
   isDemo?: boolean
