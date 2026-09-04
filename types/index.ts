@@ -210,34 +210,85 @@ export interface MetaAssetRef {
   name: string
 }
 
+export interface MetaAdAccountRef extends MetaAssetRef {
+  /** "act_123" */
+  id: string
+  /** "123" */
+  accountId: string
+  /** Meta account_status code (1 = active). */
+  status: number | null
+  currency: string | null
+}
+
 export interface MetaLeadFormRef extends MetaAssetRef {
   pageId: string
   status: 'active' | 'inactive'
+  leadsCount: number | null
+}
+
+export interface MetaCampaignSummary {
+  id: string
+  name: string
+  status: string | null
+  objective: string | null
+  effectiveStatus: string | null
+  /** Minor units as Meta returns them (string), or null. */
+  dailyBudget: string | null
+  lifetimeBudget: string | null
+  createdTime: string | null
+  updatedTime: string | null
+}
+
+/** Capabilities derived from /me/permissions (granted only). */
+export interface MetaCapabilities {
+  adsRead: boolean
+  adsManagement: boolean
+  businessManagement: boolean
+  leadsRetrieval: boolean
+  pagesAccess: boolean
 }
 
 /**
- * Connection of ONE workspace to Meta. Future document
- * `integrations/{workspaceId}_meta` (rules to be added with the OAuth phase).
+ * Lead Ads readiness, reported honestly:
+ *   active               → forms could be read for at least one page
+ *   permissions_required → the token lacks scopes (see missingPermissions)
+ *   no_pages             → no page reachable with this token
+ *   error                → Meta failed while reading forms
+ */
+export type MetaLeadAdsStatus = 'active' | 'permissions_required' | 'no_pages' | 'error' | 'unknown'
+
+/**
+ * Connection of ONE workspace to Meta. Persisted by the SERVER only at
+ * `integrations/{workspaceId}_meta` (Firebase Admin). Clients never read it
+ * from Firestore — they get it through /api/meta/status.
  *
- * SECURITY: this document never holds an access token. Tokens live server-side
- * (Secret Manager) and are referenced by `secretRef`; the client only sees
- * status and asset names.
+ * SECURITY: this document never holds an access token. `secretRef` is a
+ * pointer to a server-side secret (today: the META_ACCESS_TOKEN env var).
  */
 export interface MetaConnection {
   id: string
   workspaceId: string
   provider: 'meta_ads'
   status: ConnectionStatus
-  /** Meta user / Business that granted access. */
+  /** Meta user / system user that the token authenticates. */
   account: MetaAssetRef | null
-  adAccount: MetaAssetRef | null
+  /** Preferred ad account of this workspace (chosen among `adAccounts`). */
+  adAccount: MetaAdAccountRef | null
+  adAccounts: MetaAdAccountRef[]
+  /** Preferred page of this workspace (chosen among `pages`). Informational — never decides ownership. */
   page: MetaAssetRef | null
+  pages: MetaAssetRef[]
   leadForms: MetaLeadFormRef[]
+  campaigns: MetaCampaignSummary[]
+  permissions: string[]
+  capabilities: MetaCapabilities
+  leadAdsStatus: MetaLeadAdsStatus
+  missingPermissions: string[]
   /** Whether the Lead Ads webhook subscription is active for the page. */
   leadAdsActive: boolean
   lastSyncAt: string | null
   connectedAt: string | null
-  /** users.id of the person who connected it (audit). */
+  /** users.id of the person who last synced (audit). */
   connectedByUserId: string | null
   /** Pointer to the server-side secret. NEVER the token itself. */
   secretRef: string | null
