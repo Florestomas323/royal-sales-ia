@@ -54,6 +54,7 @@ function readServiceAccount(): ServiceAccountShape {
 }
 
 let app: App | null = null
+let cachedProjectId: string | null = null
 
 export function getAdminApp(): App {
   if (app) return app
@@ -63,6 +64,7 @@ export function getAdminApp(): App {
     return app
   }
   const sa = readServiceAccount()
+  cachedProjectId = sa.project_id
   app = initializeApp({
     credential: cert({
       projectId: sa.project_id,
@@ -76,6 +78,17 @@ export function getAdminApp(): App {
 
 export function getAdminDb(): Firestore {
   return getFirestore(getAdminApp())
+}
+
+/**
+ * Firebase project id from the service account. Needed to validate the
+ * `aud` / `iss` claims of ID tokens (see lib/firebase/verify-id-token.ts).
+ */
+export function getAdminProjectId(): string {
+  if (cachedProjectId) return cachedProjectId
+  const sa = readServiceAccount()
+  cachedProjectId = sa.project_id
+  return cachedProjectId
 }
 
 export function isAdminNotConfigured(err: unknown): err is AdminNotConfiguredError {
