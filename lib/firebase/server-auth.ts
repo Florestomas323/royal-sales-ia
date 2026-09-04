@@ -74,3 +74,23 @@ export function canAccessWorkspace(user: ServerUser, workspaceId: string, write:
   if (own !== workspaceId) return false
   return write ? ADMIN_ROLES.includes(role) : true
 }
+
+/**
+ * Stricter policy for `metaCampaignLinks`: assigning a Meta campaign decides
+ * WHICH WORKSPACE RECEIVES ITS LEADS, so it is limited to account owners.
+ *
+ *   super_admin  → any workspace
+ *   client_admin → only their own workspace
+ *   manager      → read only (cannot assign, reassign or remove)
+ *   sales_rep    → read only
+ *   viewer       → read only
+ *
+ * Reading is governed by `canAccessWorkspace(user, ws, false)`, so anyone who
+ * can see the Meta integration can see the assignments.
+ */
+export function canManageCampaignLinks(user: ServerUser, workspaceId: string): boolean {
+  const { role, workspaceId: own } = user.membership
+  if (role === "super_admin") return true
+  if (role !== "client_admin") return false
+  return own === workspaceId
+}

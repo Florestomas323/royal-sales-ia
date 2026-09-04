@@ -258,6 +258,12 @@ export function useCan() {
     isSuperAdmin,
     isClientAdmin: isSuperAdmin || role === "client_admin",
     canManageWorkspace: admin,
+    /**
+     * Assigning a Meta campaign to a workspace decides where its leads land,
+     * so it is limited to account owners. Mirrors `canManageCampaignLinks`
+     * on the server, which is the real authority.
+     */
+    canManageCampaignLinks: isSuperAdmin || role === "client_admin",
     canManageTeam: admin,
     canManageClients: admin,
     canManageCampaigns: admin,
