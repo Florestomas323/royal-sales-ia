@@ -1,6 +1,6 @@
 import { PIPELINES, RECRUITING_ONLY_SOURCES, SOURCES_BY_LEAD_TYPE } from "@/lib/constants"
 import { t } from "@/lib/i18n"
-import type { Campaign, Lead, LeadType, PipelineStage, Platform } from "@/types"
+import type { Campaign, Lead, LeadType, PipelineStage, Platform, UserRole } from "@/types"
 
 /**
  * Pure helpers shared by UI and data layers. No Firestore access here.
@@ -116,4 +116,124 @@ export function whatsappHref(raw: string | null | undefined, text?: string): str
   if (!digits) return null
   const query = text ? `?text=${encodeURIComponent(text)}` : ""
   return `https://wa.me/${digits}${query}`
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Phone storage: E.164 going forward, legacy-compatible reading              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * How phones are stored (inspected before Phase C):
+ *   - `createLead` used `normalizePhone`: digits, keeping "+" only if typed.
+ *     So production holds a mix of "+12145550198" and "2145550198".
+ *   - `phoneDigitsForDialing` already handles both (10 bare digits → US).
+ *
+ * Phase C rule: every phone SAVED from now on (create or edit) is E.164
+ * ("+<country><number>"), chosen through an explicit country selector — the
+ * country is never guessed silently. Existing bare numbers keep working
+ * through the legacy fallback and get normalised the first time they are
+ * edited. No data migration is executed.
+ */
+export interface PhoneCountry {
+  /** Dial code without "+". */
+  code: string
+  iso: string
+  label: string
+}
+
+export const PHONE_COUNTRIES: readonly PhoneCountry[] = [
+  { code: "1", iso: "US", label: "Estados Unidos / Canadá (+1)" },
+  { code: "52", iso: "MX", label: "México (+52)" },
+  { code: "57", iso: "CO", label: "Colombia (+57)" },
+  { code: "58", iso: "VE", label: "Venezuela (+58)" },
+  { code: "51", iso: "PE", label: "Perú (+51)" },
+  { code: "593", iso: "EC", label: "Ecuador (+593)" },
+  { code: "503", iso: "SV", label: "El Salvador (+503)" },
+  { code: "502", iso: "GT", label: "Guatemala (+502)" },
+  { code: "504", iso: "HN", label: "Honduras (+504)" },
+  { code: "505", iso: "NI", label: "Nicaragua (+505)" },
+  { code: "506", iso: "CR", label: "Costa Rica (+506)" },
+  { code: "507", iso: "PA", label: "Panamá (+507)" },
+  { code: "1809", iso: "DO", label: "Rep. Dominicana (+1 809)" },
+  { code: "34", iso: "ES", label: "España (+34)" },
+] as const
+
+/** Longest-prefix match so "+1809…" resolves to DO before US. */
+const COUNTRY_CODES_BY_LENGTH = [...PHONE_COUNTRIES].sort((a, b) => b.code.length - a.code.length)
+
+export interface SplitPhone {
+  /** Dial code without "+", or the default when the stored value has none. */
+  countryCode: string
+  /** National number, digits only. */
+  national: string
+  /** True when the stored value had no "+" and the country was assumed (legacy). */
+  assumed: boolean
+}
+
+/**
+ * Splits a stored phone into country + national number for editing.
+ * Legacy bare numbers: 10 digits → assumed US; 11 digits starting with 1 → US.
+ * Anything else without "+" is left with the default code and flagged so the
+ * form can show the person exactly what will be saved.
+ */
+export function splitPhone(raw: string | null | undefined): SplitPhone {
+  const trimmed = (raw ?? "").trim()
+  const digits = trimmed.replace(/[^\d]/g, "")
+  if (!digits) return { countryCode: DEFAULT_COUNTRY_CODE, national: "", assumed: false }
+
+  if (trimmed.startsWith("+")) {
+    const match = COUNTRY_CODES_BY_LENGTH.find((c) => digits.startsWith(c.code))
+    if (match) return { countryCode: match.code, national: digits.slice(match.code.length), assumed: false }
+    return { countryCode: DEFAULT_COUNTRY_CODE, national: digits, assumed: true }
+  }
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return { countryCode: "1", national: digits.slice(1), assumed: true }
+  }
+  return { countryCode: DEFAULT_COUNTRY_CODE, national: digits, assumed: true }
+}
+
+/** Builds the E.164 value to store, or "" when there is no number. */
+export function toE164(countryCode: string, national: string): string {
+  const cc = countryCode.replace(/[^\d]/g, "")
+  const n = national.replace(/[^\d]/g, "")
+  if (!n) return ""
+  return `+${cc}${n}`
+}
+
+/** E.164 sanity check: "+" followed by 8–15 digits. */
+export function isValidE164(value: string): boolean {
+  return /^\+[1-9]\d{7,14}$/.test(value)
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Edit permissions (mirror of firestore.rules — the Rules are the authority) */
+/* -------------------------------------------------------------------------- */
+
+export interface LeadEditorContext {
+  role: UserRole | null
+  /** users.id of the caller's team profile. */
+  userId: string | null
+  /** Caller's own workspace (null for super_admin). */
+  workspaceId: string | null
+  isSuperAdmin: boolean
+}
+
+/**
+ * Who may edit a lead. Mirrors `match /leads … allow update`:
+ *   super_admin → any; client_admin / manager → their workspace;
+ *   sales_rep   → only leads assigned to them; viewer → never.
+ */
+export function canEditLead(ctx: LeadEditorContext, lead: Pick<Lead, "workspaceId" | "assignedToId">): boolean {
+  if (ctx.isSuperAdmin) return true
+  if (ctx.workspaceId !== lead.workspaceId) return false
+  if (ctx.role === "client_admin" || ctx.role === "manager") return true
+  if (ctx.role === "sales_rep") return Boolean(ctx.userId) && lead.assignedToId === ctx.userId
+  return false
+}
+
+/** Reassigning is an admin action: Rules force `unchanged('assignedToId')` for reps. */
+export function canReassignLead(ctx: LeadEditorContext, lead: Pick<Lead, "workspaceId">): boolean {
+  if (ctx.isSuperAdmin) return true
+  if (ctx.workspaceId !== lead.workspaceId) return false
+  return ctx.role === "client_admin" || ctx.role === "manager"
 }
