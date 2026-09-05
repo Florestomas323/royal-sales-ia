@@ -15,9 +15,21 @@ import {
   FieldLabel,
 } from "@/components/ui/field"
 import { useAuth } from "@/lib/firebase/auth-context"
+import { checkInvitation } from "@/lib/firebase/invitations"
 import { t } from "@/lib/i18n"
 
-type Mode = "signin" | "signup"
+/**
+ * Access is invitation-only. There is no public sign-up:
+ *   "signin"   → existing account
+ *   "activate" → the person types the email they were invited with; the server
+ *                confirms an unclaimed invitation exists before any account is
+ *                created. Without one, no account is created at all.
+ *
+ * The security boundary is NOT this screen: a Firebase Auth account grants no
+ * data access by itself. Reading anything requires `memberships/{uid}`, which
+ * Security Rules only allow to be created by matching an invitation.
+ */
+type Mode = "signin" | "activate"
 
 function friendlyError(code: string): string {
   const e = t.auth.errors
@@ -84,10 +96,42 @@ export function AuthForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
+  /** Set once the server confirmed an invitation for this exact email. */
+  const [invitedEmail, setInvitedEmail] = useState<string | null>(null)
 
-  const isSignup = mode === "signup"
+  const isActivate = mode === "activate"
+  const invitationConfirmed = isActivate && invitedEmail === email.trim().toLowerCase()
+
+  function switchMode(next: Mode) {
+    setMode(next)
+    setError(null)
+    setNotice(null)
+    setInvitedEmail(null)
+    setPassword("")
+  }
+
+  async function handleCheckInvitation() {
+    setError(null)
+    setNotice(null)
+    setSubmitting(true)
+    try {
+      const target = email.trim().toLowerCase()
+      const result = await checkInvitation(target)
+      if (result.status === "invited") {
+        setInvitedEmail(target)
+        setNotice(t.auth.invitationFound(target))
+      } else if (result.status === "not_invited") {
+        setError(t.auth.invitationNotFound)
+      } else {
+        setError(t.auth.invitationUnavailable)
+      }
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   async function handleGoogle() {
     setError(null)
@@ -110,7 +154,13 @@ export function AuthForm() {
     setError(null)
     setSubmitting(true)
     try {
-      if (isSignup) {
+      if (isActivate) {
+        // Belt and braces: never create an account without a confirmed invitation.
+        if (!invitationConfirmed) {
+          setError(t.auth.invitationNotFound)
+          setSubmitting(false)
+          return
+        }
         await signUp(name.trim(), email.trim(), password)
       } else {
         await signIn(email.trim(), password)
@@ -126,14 +176,24 @@ export function AuthForm() {
     }
   }
 
+  // In activation mode the first step only verifies the invitation.
+  function onSubmit(e: FormEvent) {
+    if (isActivate && !invitationConfirmed) {
+      e.preventDefault()
+      void handleCheckInvitation()
+      return
+    }
+    void handleSubmit(e)
+  }
+
   return (
-    <form onSubmit={handleSubmit} noValidate>
+    <form onSubmit={onSubmit} noValidate>
       <div className="mb-6 flex flex-col gap-1.5">
         <h2 className="text-2xl font-semibold tracking-tight text-balance">
-          {isSignup ? t.auth.createAccount : t.auth.welcomeBack}
+          {isActivate ? t.auth.activateAccount : t.auth.welcomeBack}
         </h2>
         <p className="text-sm text-muted-foreground">
-          {isSignup ? t.auth.signUpSubtitle : t.auth.signInSubtitle}
+          {isActivate ? t.auth.activateSubtitle : t.auth.signInSubtitle}
         </p>
       </div>
 
@@ -159,7 +219,7 @@ export function AuthForm() {
           <span className="h-px flex-1 bg-border" />
         </div>
 
-        {isSignup && (
+        {invitationConfirmed && (
           <Field>
             <FieldLabel htmlFor="name">{t.auth.fullName}</FieldLabel>
             <Input
@@ -182,47 +242,80 @@ export function AuthForm() {
             autoComplete="email"
             placeholder={t.auth.emailPlaceholder}
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value)
+              // Changing the email invalidates a previous confirmation.
+              if (invitedEmail) setInvitedEmail(null)
+            }}
+            readOnly={invitationConfirmed}
             aria-invalid={!!error || undefined}
             required
           />
+          {notice && !error && <FieldDescription>{notice}</FieldDescription>}
         </Field>
 
-        <Field data-invalid={!!error || undefined}>
-          <FieldLabel htmlFor="password">{t.auth.password}</FieldLabel>
-          <Input
-            id="password"
-            type="password"
-            autoComplete={isSignup ? "new-password" : "current-password"}
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            aria-invalid={!!error || undefined}
-            required
-          />
-          {isSignup && !error && (
-            <FieldDescription>{t.auth.passwordHint}</FieldDescription>
-          )}
-          <FieldError>{error}</FieldError>
-        </Field>
+        {(!isActivate || invitationConfirmed) && (
+          <Field data-invalid={!!error || undefined}>
+            <FieldLabel htmlFor="password">{t.auth.password}</FieldLabel>
+            <Input
+              id="password"
+              type="password"
+              autoComplete={isActivate ? "new-password" : "current-password"}
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              aria-invalid={!!error || undefined}
+              required
+            />
+            {isActivate && !error && <FieldDescription>{t.auth.passwordHint}</FieldDescription>}
+          </Field>
+        )}
+
+        {error && (
+          <Field data-invalid>
+            <FieldError>{error}</FieldError>
+          </Field>
+        )}
 
         <Button type="submit" className="w-full" disabled={submitting || googleLoading}>
           {submitting && <Loader2 className="animate-spin" data-icon="inline-start" />}
-          {isSignup ? t.auth.signUp : t.auth.signIn}
+          {isActivate
+            ? invitationConfirmed
+              ? t.auth.activate
+              : submitting
+                ? t.auth.checking
+                : t.auth.checkInvitation
+            : t.auth.signIn}
         </Button>
 
-        <FieldDescription className="text-center">
-          {isSignup ? t.auth.haveAccount : t.auth.noAccount}{" "}
-          <button
-            type="button"
-            className="font-medium text-primary underline underline-offset-4"
-            onClick={() => {
-              setMode(isSignup ? "signin" : "signup")
-              setError(null)
-            }}
-          >
-            {isSignup ? t.auth.goToSignIn : t.auth.goToSignUp}
-          </button>
+        <FieldDescription className="text-center text-pretty">
+          {isActivate ? (
+            <>
+              {t.auth.haveAccount}{" "}
+              <button
+                type="button"
+                className="font-medium text-primary underline underline-offset-4"
+                onClick={() => switchMode("signin")}
+              >
+                {t.auth.goToSignIn}
+              </button>
+            </>
+          ) : (
+            <>
+              {t.auth.noAccountInvite}{" "}
+              <button
+                type="button"
+                className="font-medium text-primary underline underline-offset-4"
+                onClick={() => switchMode("activate")}
+              >
+                {t.auth.goToActivate}
+              </button>
+            </>
+          )}
+        </FieldDescription>
+
+        <FieldDescription className="text-center text-pretty">
+          {t.auth.inviteOnlyNotice}
         </FieldDescription>
       </FieldGroup>
     </form>
