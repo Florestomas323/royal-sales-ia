@@ -4,8 +4,11 @@ import { useEffect, useMemo, useState } from "react"
 import {
   addDoc,
   collection,
+  doc,
   onSnapshot,
   query,
+  serverTimestamp,
+  updateDoc,
   where,
   type Query,
   type DocumentData,
@@ -165,6 +168,34 @@ export async function createUser(input: NewUserInput) {
   }
   const ref = await addDoc(collection(db, "users"), user)
   return ref.id
+}
+
+/** Colors a person can pick for their own avatar. */
+export const AVATAR_COLORS: readonly string[] = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+  "var(--warning)",
+]
+
+/**
+ * Updates the signed-in person's own team profile.
+ * Security Rules only allow `name`, `avatarColor` and `updatedAt` on the
+ * document whose `authUid` matches the caller, so this can never be used to
+ * edit somebody else or change a role.
+ */
+export async function updateOwnProfile(
+  userId: string,
+  patch: { name?: string; avatarColor?: string },
+): Promise<void> {
+  // `updatedAt` is not part of the User model (it only exists to satisfy the
+  // Security Rule that whitelists name/avatarColor/updatedAt), hence DocumentData.
+  const data: DocumentData = { updatedAt: serverTimestamp() }
+  if (typeof patch.name === "string") data.name = patch.name.trim()
+  if (typeof patch.avatarColor === "string") data.avatarColor = patch.avatarColor
+  await updateDoc(doc(collection(db, "users"), userId), data)
 }
 
 /* -------------------------------------------------------------------------- */

@@ -12,7 +12,7 @@ import {
 import { sendEmailVerification } from "firebase/auth"
 import { toast } from "sonner"
 import { useAuth } from "./auth-context"
-import { resolveIdentity, type ResolvedIdentity } from "./membership"
+import { getProfile, resolveIdentity, type ResolvedIdentity } from "./membership"
 import { useWorkspaces } from "./workspaces"
 import { describeError, type DataError } from "./errors"
 import { Button } from "@/components/ui/button"
@@ -57,6 +57,8 @@ interface WorkspaceContextValue {
   workspaces: Workspace[]
   selectWorkspace: (id: string | typeof ALL_WORKSPACES) => void
   retry: () => void
+  /** Re-reads the team profile after the person edits it, without showing the loading gate. */
+  refreshProfile: () => Promise<void>
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | undefined>(undefined)
@@ -183,6 +185,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const retry = useCallback(() => setAttempt((n) => n + 1), [])
 
+  const refreshProfile = useCallback(async () => {
+    const userId = identity?.membership.userId
+    if (!userId) return
+    const profile = await getProfile(userId)
+    setIdentity((prev) => (prev ? { ...prev, profile } : prev))
+  }, [identity])
+
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       status,
@@ -197,6 +206,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       workspaces,
       selectWorkspace,
       retry,
+      refreshProfile,
     }),
     [
       status,
@@ -210,6 +220,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       workspaces,
       selectWorkspace,
       retry,
+      refreshProfile,
     ],
   )
 

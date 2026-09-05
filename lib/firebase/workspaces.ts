@@ -1,7 +1,17 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { addDoc, collection, documentId, onSnapshot, query, where } from "firebase/firestore"
+import {
+  addDoc,
+  collection,
+  doc,
+  documentId,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore"
 import { db } from "./client"
 import type { Workspace } from "@/types"
 
@@ -66,4 +76,13 @@ export async function createWorkspace(input: NewWorkspaceInput): Promise<string>
   }
   const ref = await addDoc(workspacesCol, ws)
   return ref.id
+}
+
+/**
+ * Renames a workspace. Security Rules only allow `name`, `logoColor`,
+ * `ownerEmail` and `updatedAt` here, and only for super_admin or the
+ * workspace's client_admin — a manager or viewer is rejected server-side.
+ */
+export async function updateWorkspaceName(workspaceId: string, name: string): Promise<void> {
+  await updateDoc(doc(workspacesCol, workspaceId), { name: name.trim(), updatedAt: serverTimestamp() })
 }
