@@ -131,9 +131,64 @@ export function useUsers() {
   return { users: data, loading, error }
 }
 
-/** Lookup map of users by id for the active workspace. */
-export function useUsersMap(): Record<string, User> {
-  const { users } = useUsers()
+/**
+ * Team members of ONE specific workspace, independent of the workspace
+ * currently selected in the sidebar.
+ *
+ * WHY THIS EXISTS: `useUsers()` is scoped to the AMBIENT workspace. Since the
+ * Prospectos workspace filter (super admin) can show leads from a workspace
+ * other than the ambient one, reading assignees from the ambient scope
+ * returned members of the wrong workspace — and after filtering by the lead's
+ * workspace, none at all. Assignees must come from `lead.workspaceId`.
+ *
+ * SECURITY: `workspaceId` must always be derived from an already-loaded,
+ * already-authorized document (the lead) — never from user input. Firestore
+ * Rules still decide: a member querying another workspace is denied, so this
+ * cannot widen access. Passing `null` disables the subscription.
+ */
+export function useUsersForWorkspace(workspaceId: string | null) {
+  const { status } = useWorkspace()
+  const [users, setUsers] = useState<User[]>([])
+  const [loading, setLoading] = useState(Boolean(workspaceId))
+  const [error, setError] = useState<Error | null>(null)
+
+  useEffect(() => {
+    if (status !== "ready" || !workspaceId) {
+      setUsers([])
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    setError(null)
+    const q = query(collection(db, "users"), where("workspaceId", "==", workspaceId))
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const rows = snap.docs.map((d) => ({ ...(d.data() as User), id: d.id }))
+        rows.sort(byName)
+        setUsers(rows)
+        setLoading(false)
+      },
+      (err) => {
+        console.error("[firestore] users(workspace) subscription failed:", err)
+        setError(err)
+        setLoading(false)
+      },
+    )
+    return () => unsub()
+  }, [workspaceId, status])
+
+  return { users, loading, error }
+}
+
+/**
+ * Lookup map of users by id. Pass a `workspaceId` to read that workspace
+ * instead of the ambient one (same reason as `useUsersForWorkspace`).
+ */
+export function useUsersMap(workspaceId?: string | null): Record<string, User> {
+  const ambient = useUsers()
+  const scoped = useUsersForWorkspace(workspaceId ?? null)
+  const users = workspaceId ? scoped.users : ambient.users
   return useMemo(() => {
     const map: Record<string, User> = {}
     for (const u of users) map[u.id] = u
