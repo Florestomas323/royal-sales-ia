@@ -163,8 +163,19 @@ export async function createLead(input: NewLeadInput) {
  * sales_rep accounts are automatically restricted to their own leads, which
  * is also what Security Rules require for the query to be allowed.
  */
-export function useLeads(leadType: LeadTypeFilter = "all") {
-  const { workspaceId, isSuperAdmin, role, membership, status } = useWorkspace()
+/**
+ * @param leadType  Ventas / Reclutamiento / todos.
+ * @param workspaceOverride  Narrows the query to ONE workspace.
+ *
+ * SECURITY: the override is honoured **only for super_admin**. For every other
+ * role it is ignored and the workspace still comes from `memberships/{uid}` via
+ * the context, so a tampered client cannot use it to reach another tenant.
+ * Even for super_admin it only narrows what Security Rules already allow —
+ * Firestore, not this hook, is the authority.
+ */
+export function useLeads(leadType: LeadTypeFilter = "all", workspaceOverride: string | null = null) {
+  const { workspaceId: contextWorkspaceId, isSuperAdmin, role, membership, status } = useWorkspace()
+  const workspaceId = isSuperAdmin && workspaceOverride ? workspaceOverride : contextWorkspaceId
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
@@ -212,8 +223,10 @@ export interface LeadTypeCounts {
  * `all` is the count without a leadType filter, so legacy leads that still
  * lack `leadType` are included in "Todos" until normalized.
  */
-export function useLeadTypeCounts(refreshKey: unknown = null) {
-  const { workspaceId, isSuperAdmin, role, membership, status } = useWorkspace()
+/** Same override rule as `useLeads`: super_admin only, and only to narrow. */
+export function useLeadTypeCounts(refreshKey: unknown = null, workspaceOverride: string | null = null) {
+  const { workspaceId: contextWorkspaceId, isSuperAdmin, role, membership, status } = useWorkspace()
+  const workspaceId = isSuperAdmin && workspaceOverride ? workspaceOverride : contextWorkspaceId
   const [counts, setCounts] = useState<LeadTypeCounts | null>(null)
   const [error, setError] = useState<Error | null>(null)
 
