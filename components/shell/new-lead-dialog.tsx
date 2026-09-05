@@ -29,7 +29,7 @@ import { PLATFORM_LABELS } from '@/lib/constants'
 import { campaignObjective, sourcesFor } from '@/lib/leads'
 import { createLead } from '@/lib/firebase/leads'
 import { useCampaigns, useUsers } from '@/lib/firebase/collections'
-import { useWorkspace } from '@/lib/firebase/workspace-context'
+import { useCan, useWorkspace } from '@/lib/firebase/workspace-context'
 import { describeError } from '@/lib/firebase/errors'
 import { cn } from '@/lib/utils'
 import { t } from '@/lib/i18n'
@@ -57,6 +57,7 @@ export function NewLeadDialog({
   const { campaigns } = useCampaigns()
   const { users } = useUsers()
   const { workspaceId, role, membership } = useWorkspace()
+  const { canCreateLeads } = useCan()
   const [open, setOpen] = React.useState(false)
   const [leadType, setLeadType] = React.useState<LeadType>(defaultLeadType)
   const [source, setSource] = React.useState<Platform>('manual')
@@ -157,6 +158,8 @@ export function NewLeadDialog({
     }
   }
 
+  // Roles without permission never see the trigger; Rules reject them anyway.
+  if (!canCreateLeads) return null
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger

@@ -46,7 +46,7 @@ export const navSections: NavSection[] = [
   {
     label: t.nav.sections.sales,
     items: [
-      { label: t.nav.items.leads, href: '/leads', icon: Users, badge: '12' },
+      { label: t.nav.items.leads, href: '/leads', icon: Users },
       { label: t.nav.items.pipeline, href: '/pipeline', icon: GitBranch },
       { label: t.nav.items.inbox, href: '/inbox', icon: Inbox },
       { label: t.nav.items.calendar, href: '/calendar', icon: Calendar },

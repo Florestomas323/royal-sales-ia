@@ -2,21 +2,12 @@
 
 import * as React from "react"
 import { usePathname } from "next/navigation"
-import { CalendarDays } from "lucide-react"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Separator } from "@/components/ui/separator"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { GlobalSearch } from "./global-search"
 import { NotificationsMenu } from "./notifications-menu"
 import { NewLeadDialog } from "./new-lead-dialog"
 import { navSections } from "./nav-config"
-import { periods } from "@/lib/mock-data"
 import { t } from "@/lib/i18n"
 
 function useCurrentTitle() {
@@ -43,19 +34,6 @@ export function TopBar() {
         <div className="hidden md:block">
           <GlobalSearch />
         </div>
-        <Select defaultValue="7d">
-          <SelectTrigger className="h-9 gap-2" aria-label={t.shell.reportingPeriod}>
-            <CalendarDays className="size-4 text-muted-foreground" />
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent align="end">
-            {periods.map((p) => (
-              <SelectItem key={p.value} value={p.value}>
-                {p.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
         <NotificationsMenu />
         <NewLeadDialog />
       </div>
