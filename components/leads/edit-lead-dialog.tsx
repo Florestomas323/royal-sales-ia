@@ -27,7 +27,7 @@ import { LeadValidationError, updateLead, type LeadPatch } from "@/lib/firebase/
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
 import { PIPELINES, STAGE_LABELS } from "@/lib/constants"
-import { canReassignLead, isValidE164, leadTypeOf, splitPhone, toE164 } from "@/lib/leads"
+import { canReassignLead, eligibleAssignees, isValidE164, leadTypeOf, splitPhone, toE164 } from "@/lib/leads"
 import { t } from "@/lib/i18n"
 import type { Lead, PipelineStage } from "@/types"
 
@@ -50,7 +50,7 @@ export function EditLeadDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const { role, membership, isSuperAdmin } = useWorkspace()
-  const { users } = useUsers()
+  const { users, loading: usersLoading } = useUsers()
   const type = leadTypeOf(lead)
   const canReassign = canReassignLead(
     { role, userId: membership?.userId ?? null, workspaceId: membership?.workspaceId ?? null, isSuperAdmin },
@@ -88,8 +88,9 @@ export function EditLeadDialog({
     setFormError(null)
   }, [open, lead, type])
 
-  // Only active members of this workspace (the hook is already scoped by Rules).
-  const members = users.filter((u) => u.status === "active" && u.workspaceId === lead.workspaceId)
+  // Members of the LEAD's workspace, including invited ones (see
+  // eligibleAssignees). `useUsers` is already scoped by Security Rules.
+  const members = eligibleAssignees(users, lead.workspaceId)
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -234,20 +235,32 @@ export function EditLeadDialog({
                       {(v: string) =>
                         v === NO_OWNER
                           ? t.common.unassigned
-                          : (members.find((m) => m.id === v)?.name ?? t.common.unassigned)
+                          : (members.find((m) => m.id === v)?.name ??
+                            users.find((u) => u.id === v)?.name ??
+                            t.common.unassigned)
                       }
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="max-h-[60svh]">
                     <SelectItem value={NO_OWNER}>{t.common.unassigned}</SelectItem>
+                    {/* value is `users/{id}` — the id leads reference, never authUid. */}
                     {members.map((m) => (
                       <SelectItem key={m.id} value={m.id}>
                         {m.name}
+                        {m.status === "invited" && ` · ${t.leads.editDialog.assignInvitedSuffix}`}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {!canReassign && <FieldDescription>{t.leads.editDialog.assignLocked}</FieldDescription>}
+                {!canReassign ? (
+                  <FieldDescription>{t.leads.editDialog.assignLocked}</FieldDescription>
+                ) : usersLoading ? (
+                  <FieldDescription>{t.leads.editDialog.assignLoading}</FieldDescription>
+                ) : members.length === 0 ? (
+                  <FieldDescription>{t.leads.editDialog.assignEmpty}</FieldDescription>
+                ) : members.some((m) => m.status === "invited") ? (
+                  <FieldDescription>{t.leads.editDialog.assignInvitedHint}</FieldDescription>
+                ) : null}
               </Field>
             </div>
 
