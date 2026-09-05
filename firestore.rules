@@ -90,6 +90,37 @@ service cloud.firestore {
       return v in ['sales', 'recruiting'];
     }
 
+    // --- Lead pipelines. Must stay in sync with PIPELINES in lib/constants.ts.
+    function salesStages() {
+      return ['new_lead', 'contact', 'contacted', 'interested',
+              'appointment', 'follow_up', 'sale', 'not_interested'];
+    }
+
+    function recruitingStages() {
+      return ['rec_new', 'rec_contact', 'rec_contacted', 'rec_qualified', 'rec_interview',
+              'rec_orientation', 'rec_follow_up', 'rec_hired', 'rec_disqualified'];
+    }
+
+    /** First stage of each pipeline: the only stage a type change may land on. */
+    function initialStageFor(type) {
+      return type == 'sales' ? 'new_lead' : 'rec_new';
+    }
+
+    /**
+     * A sales lead can only ever hold a sales stage, and a recruiting lead a
+     * `rec_*` stage. Enforced server-side so a direct SDK write cannot produce
+     * an incoherent document.
+     */
+    function stageMatchesType(type, stage) {
+      return (type == 'sales' && stage in salesStages())
+          || (type == 'recruiting' && stage in recruitingStages());
+    }
+
+    /** Keys added, removed or modified by this write. */
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
     /** Field `f` is not being modified by this write. */
     function unchanged(f) {
       return request.resource.data[f] == resource.data[f];
@@ -208,20 +239,42 @@ service cloud.firestore {
         || (inWorkspace(resource.data.workspaceId) && role() in ['client_admin', 'manager', 'viewer'])
         || (isWsRep(resource.data.workspaceId) && resource.data.assignedToId == myUserId());
 
-      // New leads must declare their type (Phase 2). Access is still decided
-      // exclusively by workspaceId / role / assignedToId.
-      allow create: if validLeadType(request.resource.data.leadType) && (
-        isSuperAdmin()
-        || isWsAdmin(request.resource.data.workspaceId)
-        || (isWsRep(request.resource.data.workspaceId)
-            && request.resource.data.assignedToId == myUserId())
-      );
+      // New leads must declare their type AND a stage of that type's pipeline.
+      // Access is still decided exclusively by workspaceId / role / assignedToId.
+      allow create: if validLeadType(request.resource.data.leadType)
+        && stageMatchesType(request.resource.data.leadType, request.resource.data.stage)
+        && (
+          isSuperAdmin()
+          || isWsAdmin(request.resource.data.workspaceId)
+          || (isWsRep(request.resource.data.workspaceId)
+              && request.resource.data.assignedToId == myUserId())
+        );
 
-      allow update: if isSuperAdmin()
-        || (isWsAdmin(resource.data.workspaceId) && unchanged('workspaceId'))
-        || (isWsRep(resource.data.workspaceId)
-            && resource.data.assignedToId == myUserId()
-            && unchanged('workspaceId') && unchanged('assignedToId'));
+      // Updates must keep the document coherent, whoever writes them:
+      //  1. leadType valid and stage belonging to that pipeline;
+      //  2. ownership and origin are immutable (also for super_admin) —
+      //     workspaceId, source, attribution, createdAt, clientId;
+      //  3. leadType may only change through the authorised flow, which resets
+      //     the stage to that pipeline's initial stage, and only for admins;
+      //  4. the role checks are exactly the previous ones, plus: a rep may not
+      //     reassign the lead nor change its type.
+      allow update: if validLeadType(request.resource.data.leadType)
+        && stageMatchesType(request.resource.data.leadType, request.resource.data.stage)
+        && !changedKeys().hasAny(['workspaceId', 'source', 'attribution', 'createdAt', 'clientId'])
+        && (
+          !changedKeys().hasAny(['leadType'])
+          || (
+            (isSuperAdmin() || isWsAdmin(resource.data.workspaceId))
+            && request.resource.data.stage == initialStageFor(request.resource.data.leadType)
+          )
+        )
+        && (
+          isSuperAdmin()
+          || isWsAdmin(resource.data.workspaceId)
+          || (isWsRep(resource.data.workspaceId)
+              && resource.data.assignedToId == myUserId()
+              && !changedKeys().hasAny(['assignedToId', 'leadType']))
+        );
 
       allow delete: if isSuperAdmin() || isWsAdmin(resource.data.workspaceId);
     }
