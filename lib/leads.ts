@@ -1,6 +1,6 @@
 import { PIPELINES, RECRUITING_ONLY_SOURCES, SOURCES_BY_LEAD_TYPE } from "@/lib/constants"
 import { t } from "@/lib/i18n"
-import type { Campaign, Lead, LeadType, PipelineStage, Platform, UserRole } from "@/types"
+import type { Campaign, Lead, LeadType, MemberStatus, PipelineStage, Platform, UserRole } from "@/types"
 
 /**
  * Pure helpers shared by UI and data layers. No Firestore access here.
@@ -229,6 +229,27 @@ export function canEditLead(ctx: LeadEditorContext, lead: Pick<Lead, "workspaceI
   if (ctx.role === "client_admin" || ctx.role === "manager") return true
   if (ctx.role === "sales_rep") return Boolean(ctx.userId) && lead.assignedToId === ctx.userId
   return false
+}
+
+/**
+ * Who can be the owner of a lead.
+ *
+ * ROOT CAUSE of the empty picker: it filtered `status === "active"`, but
+ * `createUser` writes `status: "invited"` and the profile only turns "active"
+ * when the person signs in and claims the invitation. A workspace whose team
+ * has been invited but has not signed in yet therefore had zero options.
+ *
+ * An invited profile is a perfectly valid assignee: `users/{id}` already
+ * exists, its id is stable, and leads reference that id (never `authUid`).
+ * Only `inactive` members are excluded.
+ *
+ * Assignees are always restricted to the LEAD's workspace, never the viewer's.
+ */
+export function eligibleAssignees<T extends { workspaceId: string; status: MemberStatus }>(
+  users: T[],
+  leadWorkspaceId: string,
+): T[] {
+  return users.filter((u) => u.workspaceId === leadWorkspaceId && u.status !== "inactive")
 }
 
 /** Reassigning is an admin action: Rules force `unchanged('assignedToId')` for reps. */
