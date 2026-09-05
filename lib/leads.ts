@@ -258,3 +258,49 @@ export function canReassignLead(ctx: LeadEditorContext, lead: Pick<Lead, "worksp
   if (ctx.workspaceId !== lead.workspaceId) return false
   return ctx.role === "client_admin" || ctx.role === "manager"
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Kanban (Phase D)                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Groups leads into the columns of ONE pipeline.
+ *  - Archived leads are never shown (they keep their stage untouched, so a
+ *    restore puts them straight back in the right column).
+ *  - Leads of the other type are ignored even if present in the input.
+ *  - A lead whose stored stage does not belong to its pipeline lands in the
+ *    initial column for display only (nothing is written).
+ * `overrides` lets the board show an optimistic stage while a move is saving.
+ */
+export function groupLeadsByStage(
+  leads: Lead[],
+  leadType: LeadType,
+  overrides: Record<string, PipelineStage> = {},
+): Record<PipelineStage, Lead[]> {
+  const pipeline = PIPELINES[leadType]
+  const map = {} as Record<PipelineStage, Lead[]>
+  for (const stage of pipeline.stages) map[stage] = []
+  for (const lead of leads) {
+    if (lead.archived === true) continue
+    if (leadTypeOf(lead) !== leadType) continue
+    const optimistic = overrides[lead.id]
+    const stage = optimistic && isStageOf(leadType, optimistic) ? optimistic : displayStage(lead)
+    if (map[stage]) map[stage].push(lead)
+  }
+  return map
+}
+
+/**
+ * Whether a move should be attempted at all. Combines the edit permission
+ * (mirror of Rules) with pipeline coherence (also enforced by Rules).
+ */
+export function canMoveLeadTo(
+  ctx: LeadEditorContext,
+  lead: Pick<Lead, "workspaceId" | "assignedToId" | "leadType" | "stage" | "archived">,
+  stage: PipelineStage,
+): boolean {
+  if (lead.archived === true) return false
+  if (!canEditLead(ctx, lead)) return false
+  if (!isStageOf(leadTypeOf(lead), stage)) return false
+  return lead.stage !== stage
+}
