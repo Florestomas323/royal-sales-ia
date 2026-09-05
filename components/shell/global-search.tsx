@@ -44,7 +44,8 @@ export function GlobalSearch() {
         .filter(
           (l) =>
             l.name.toLowerCase().includes(q) ||
-            l.email.toLowerCase().includes(q),
+            l.email.toLowerCase().includes(q) ||
+            l.phone.replace(/\D/g, "").includes(q.replace(/\D/g, "") || "\u0000"),
         )
         .slice(0, 5)
     : []
@@ -119,7 +120,7 @@ export function GlobalSearch() {
                 {leadResults.map((l) => (
                   <button
                     key={l.id}
-                    onClick={() => go('/leads')}
+                    onClick={() => go(`/leads?lead=${encodeURIComponent(l.id)}`)}
                     className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
                   >
                     <span className="flex flex-col items-start">
