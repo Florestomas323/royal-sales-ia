@@ -26,15 +26,17 @@ function LeadsLiveInner() {
   const searchParams = useSearchParams()
   const openLeadId = searchParams.get("lead")
   const [leadType, setLeadType] = useState<LeadTypeFilter>("all")
+  /** super_admin only; ignored by the data layer for every other role. */
+  const [workspaceFilter, setWorkspaceFilter] = useState<string | null>(null)
 
   // Once the deep-linked lead is open, drop the param so a refresh doesn't reopen it.
   const clearOpenLead = useCallback(() => {
     if (openLeadId) router.replace("/leads", { scroll: false })
   }, [openLeadId, router])
-  const { leads, loading, error } = useLeads(leadType)
+  const { leads, loading, error } = useLeads(leadType, workspaceFilter)
   // Re-count whenever the visible list or the active tab changes
   // (creation, deletion, normalization, tab switch).
-  const { counts } = useLeadTypeCounts(`${leadType}:${leads.length}`)
+  const { counts } = useLeadTypeCounts(`${leadType}:${workspaceFilter ?? "all"}:${leads.length}`, workspaceFilter)
 
   return (
     <div className="flex flex-col gap-4">
@@ -65,6 +67,8 @@ function LeadsLiveInner() {
           leadType={leadType}
           openLeadId={openLeadId}
           onOpenedLead={clearOpenLead}
+          workspaceFilter={workspaceFilter}
+          onWorkspaceFilterChange={setWorkspaceFilter}
         />
       )}
     </div>

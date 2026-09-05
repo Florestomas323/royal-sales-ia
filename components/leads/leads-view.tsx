@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Search, SlidersHorizontal, ArrowUpDown, Inbox } from "lucide-react"
+import { Search, SlidersHorizontal, ArrowUpDown, Inbox, Building2 } from "lucide-react"
 import type { Lead, LeadType, PipelineStage, Platform, LeadTemperature } from "@/types"
 import {
   Table,
@@ -14,7 +14,10 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
@@ -33,6 +36,7 @@ import {
 import { displayStage, leadTypeOf } from "@/lib/leads"
 import { t } from "@/lib/i18n"
 import { useUsersMap } from "@/lib/firebase/collections"
+import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { formatCurrency, formatRelativeTime, initials } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
@@ -63,6 +67,8 @@ export function LeadsView({
   leadType = "all",
   openLeadId = null,
   onOpenedLead,
+  workspaceFilter = null,
+  onWorkspaceFilterChange,
 }: {
   leads: Lead[]
   /** Active type filter; drives which stages are offered and whether the Tipo column shows. */
@@ -71,9 +77,23 @@ export function LeadsView({
   openLeadId?: string | null
   /** Called once the requested lead has been opened (or is not in the list). */
   onOpenedLead?: () => void
+  /** super_admin only: `null` = all authorized workspaces. */
+  workspaceFilter?: string | null
+  onWorkspaceFilterChange?: (workspaceId: string | null) => void
 }) {
   const usersMap = useUsersMap()
   const isNarrow = useIsNarrow()
+  const { isSuperAdmin, workspaces } = useWorkspace()
+  // The list of workspaces comes from Firestore under Security Rules (see
+  // useWorkspaces): it is the SAME authorization source the sidebar uses, so
+  // this filter can only narrow what the person may already read.
+  const showWorkspaceFilter = isSuperAdmin && workspaces.length > 1
+  const workspaceNames = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const w of workspaces) map[w.id] = w.name
+    return map
+  }, [workspaces])
+  const showWorkspaceColumn = showWorkspaceFilter && !workspaceFilter
   const stageOptions: PipelineStage[] =
     leadType === "all"
       ? [...PIPELINES.sales.stages, ...PIPELINES.recruiting.stages]
@@ -164,13 +184,38 @@ export function LeadsView({
                 }
               </SelectValue>
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-[60svh]">
               <SelectItem value="all">{t.leads.allStages}</SelectItem>
-              {stageOptions.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {STAGE_LABELS[s]}
-                </SelectItem>
-              ))}
+              {leadType === "all" ? (
+                /* Both pipelines share label text ("Contactar", "Seguimiento"),
+                   so they are grouped to avoid an ambiguous flat list. */
+                <>
+                  <SelectSeparator />
+                  <SelectGroup>
+                    <SelectLabel>{t.leads.stageGroupSales}</SelectLabel>
+                    {PIPELINES.sales.stages.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {STAGE_LABELS[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                  <SelectSeparator />
+                  <SelectGroup>
+                    <SelectLabel>{t.leads.stageGroupRecruiting}</SelectLabel>
+                    {PIPELINES.recruiting.stages.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {STAGE_LABELS[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </>
+              ) : (
+                stageOptions.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {STAGE_LABELS[s]}
+                  </SelectItem>
+                ))
+              )}
             </SelectContent>
           </Select>
           <Select value={platform} onValueChange={(v) => setPlatform(v as Platform | "all")}>
@@ -181,7 +226,7 @@ export function LeadsView({
                 }
               </SelectValue>
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-[60svh]">
               <SelectItem value="all">{t.leads.allSources}</SelectItem>
               {platforms.map((p) => (
                 <SelectItem key={p} value={p}>
@@ -201,19 +246,46 @@ export function LeadsView({
                 }
               </SelectValue>
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-[60svh]">
               <SelectItem value="all">{t.leads.allTemperatures}</SelectItem>
               <SelectItem value="hot">{TEMPERATURE_LABELS.hot}</SelectItem>
               <SelectItem value="warm">{TEMPERATURE_LABELS.warm}</SelectItem>
               <SelectItem value="cold">{TEMPERATURE_LABELS.cold}</SelectItem>
             </SelectContent>
           </Select>
+          {showWorkspaceFilter && (
+            <Select
+              value={workspaceFilter ?? "all"}
+              onValueChange={(v) => {
+                // Only ids from the authorized list are ever propagated.
+                const next = !v || v === "all" ? null : workspaces.some((w) => w.id === v) ? v : null
+                onWorkspaceFilterChange?.(next)
+              }}
+            >
+              <SelectTrigger className={FILTER_TRIGGER} aria-label={t.leads.workspaceFilterLabel}>
+                <Building2 className="size-3.5" data-icon="inline-start" />
+                <SelectValue>
+                  {(value: string) =>
+                    value === "all" ? t.leads.allWorkspaces : (workspaceNames[value] ?? t.leads.allWorkspaces)
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="max-h-[60svh]">
+                <SelectItem value="all">{t.leads.allWorkspaces}</SelectItem>
+                {workspaces.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    {w.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
             <SelectTrigger className={FILTER_TRIGGER}>
               <ArrowUpDown className="size-3.5" data-icon="inline-start" />
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-[60svh]">
               <SelectItem value="score">{t.leads.sortByScore}</SelectItem>
               <SelectItem value="value">{t.leads.sortByValue}</SelectItem>
               <SelectItem value="recent">{t.leads.sortByRecent}</SelectItem>
@@ -249,6 +321,7 @@ export function LeadsView({
               lead={lead}
               owner={usersMap[lead.assignedToId]}
               showType={leadType === "all"}
+              workspaceName={showWorkspaceColumn ? workspaceNames[lead.workspaceId] : undefined}
               onOpen={openLead}
             />
           ))}
@@ -262,6 +335,9 @@ export function LeadsView({
                 <TableHead>{t.leads.table.lead}</TableHead>
                 {leadType === "all" && (
                   <TableHead className="hidden sm:table-cell">{t.leads.table.type}</TableHead>
+                )}
+                {showWorkspaceColumn && (
+                  <TableHead className="hidden lg:table-cell">{t.leads.workspaceColumn}</TableHead>
                 )}
                 <TableHead>{t.leads.table.source}</TableHead>
                 <TableHead>{t.leads.table.stage}</TableHead>
@@ -293,6 +369,11 @@ export function LeadsView({
                     {leadType === "all" && (
                       <TableCell className="hidden sm:table-cell">
                         <LeadTypeBadge type={leadTypeOf(lead)} />
+                      </TableCell>
+                    )}
+                    {showWorkspaceColumn && (
+                      <TableCell className="hidden max-w-40 truncate text-xs text-muted-foreground lg:table-cell">
+                        {workspaceNames[lead.workspaceId] ?? "—"}
                       </TableCell>
                     )}
                     <TableCell>

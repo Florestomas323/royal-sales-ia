@@ -28,7 +28,7 @@ import { updateLeadType } from "@/lib/firebase/leads"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
 import { LEAD_TYPE_SINGULAR, PLATFORM_LABELS, TEMPERATURE_LABELS } from "@/lib/constants"
-import { displayStage, leadTypeOf, telHref, whatsappHref } from "@/lib/leads"
+import { displayStage, leadTypeOf, telHref, whatsappHref, whatsappOpener } from "@/lib/leads"
 import { formatCurrency, formatRelativeTime } from "@/lib/format"
 import { t } from "@/lib/i18n"
 
@@ -62,7 +62,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
 
   const nextType: LeadType = isRecruiting ? "sales" : "recruiting"
   const tel = telHref(lead.phone)
-  const wa = whatsappHref(lead.phone, t.leads.detail.whatsappGreeting(lead.name.split(" ")[0]))
+  const wa = whatsappHref(lead.phone, whatsappOpener(lead, rep?.name))
 
   async function handleChangeType() {
     if (!lead) return
@@ -94,8 +94,8 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-xl">
-        <SheetHeader className="shrink-0 gap-3 border-b p-4 pr-12 sm:p-5 sm:pr-14">
+      <SheetContent className="flex w-full flex-col gap-0 overflow-x-hidden p-0 sm:max-w-xl">
+        <SheetHeader className="min-w-0 shrink-0 gap-3 overflow-x-hidden border-b p-4 pr-12 sm:p-5 sm:pr-14">
           <div className="flex items-start gap-3 sm:gap-4">
             <ScoreRing score={lead.score} size={52} />
             <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -129,11 +129,11 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
             an explanation. Agendar has no calendar behind it yet, so it is
             disabled and says so — it never reports a success it did not do.
           */}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:grid-cols-3">
             {wa ? (
               <Button
                 size="sm"
-                className="h-10 gap-1.5 sm:h-8"
+                className="h-11 min-w-0 gap-1.5 sm:h-8"
                 nativeButton={false}
                 render={<a href={wa} target="_blank" rel="noopener noreferrer" />}
               >
@@ -141,7 +141,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                 {t.leads.detail.whatsapp}
               </Button>
             ) : (
-              <Button size="sm" className="h-10 gap-1.5 sm:h-8" disabled title={t.leads.detail.noPhone}>
+              <Button size="sm" className="h-11 min-w-0 gap-1.5 sm:h-8" disabled title={t.leads.detail.noPhone}>
                 <MessageCircle className="size-3.5" data-icon="inline-start" />
                 {t.leads.detail.whatsapp}
               </Button>
@@ -150,7 +150,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
               <Button
                 size="sm"
                 variant="outline"
-                className="h-10 gap-1.5 sm:h-8"
+                className="h-11 min-w-0 gap-1.5 sm:h-8"
                 nativeButton={false}
                 render={<a href={tel} />}
               >
@@ -158,7 +158,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                 {t.leads.detail.call}
               </Button>
             ) : (
-              <Button size="sm" variant="outline" className="h-10 gap-1.5 sm:h-8" disabled title={t.leads.detail.noPhone}>
+              <Button size="sm" variant="outline" className="h-11 min-w-0 gap-1.5 sm:h-8" disabled title={t.leads.detail.noPhone}>
                 <Phone className="size-3.5" data-icon="inline-start" />
                 {t.leads.detail.call}
               </Button>
@@ -166,7 +166,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
             <Button
               size="sm"
               variant="outline"
-              className="h-10 gap-1.5 sm:h-8"
+              className="col-span-2 h-11 gap-1.5 sm:col-span-1 sm:h-8"
               disabled
               title={t.leads.detail.bookPending}
               aria-describedby="book-pending"
@@ -184,7 +184,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
         </SheetHeader>
 
         <ScrollArea className="min-h-0 flex-1">
-          <div className="flex flex-col gap-5 p-4 sm:p-5">
+          <div className="flex min-w-0 flex-col gap-5 p-4 sm:p-5">
             <LeadAiAssistant lead={lead} />
 
             <Tabs defaultValue="details">

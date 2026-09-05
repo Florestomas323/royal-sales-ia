@@ -1,12 +1,12 @@
 "use client"
 
-import { MessageCircle, Phone } from "lucide-react"
+import { Building2, MessageCircle, Phone } from "lucide-react"
 import type { Lead, User } from "@/types"
 import { ScoreBadge, StageBadge } from "@/components/shared/score-badge"
 import { PlatformMark } from "@/components/shared/platform-badge"
 import { LeadTypeBadge } from "@/components/shared/lead-type-badge"
 import { PLATFORM_LABELS } from "@/lib/constants"
-import { displayStage, leadTypeOf, telHref, whatsappHref } from "@/lib/leads"
+import { displayStage, leadTypeOf, telHref, whatsappHref, whatsappOpener } from "@/lib/leads"
 import { formatCurrency, formatRelativeTime, initials } from "@/lib/format"
 import { t } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -21,16 +21,20 @@ export function LeadCard({
   lead,
   owner,
   showType,
+  workspaceName,
   onOpen,
 }: {
   lead: Lead
   owner: User | undefined
   showType: boolean
+  /** Shown only when a super admin is viewing several workspaces at once. */
+  workspaceName?: string
   onOpen: (lead: Lead) => void
 }) {
   const type = leadTypeOf(lead)
   const tel = telHref(lead.phone)
-  const wa = whatsappHref(lead.phone, t.leads.detail.whatsappGreeting(lead.name.split(" ")[0]))
+  // Opener differs for a customer and a candidate, and uses the real owner name when there is one.
+  const wa = whatsappHref(lead.phone, whatsappOpener(lead, owner?.name))
 
   return (
     <div
@@ -66,6 +70,13 @@ export function LeadCard({
         {showType && <LeadTypeBadge type={type} />}
         <StageBadge stage={displayStage(lead)} />
       </div>
+
+      {workspaceName && (
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Building2 className="size-3" />
+          <span className="truncate">{workspaceName}</span>
+        </span>
+      )}
 
       {/* Responsable, valor, fecha */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
