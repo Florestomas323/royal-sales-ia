@@ -408,6 +408,12 @@ export const t = {
       stageLabel: 'Etapa',
       assignLabel: 'Responsable',
       assignLocked: 'Solo un administrador puede reasignar el prospecto.',
+      assignLoading: 'Cargando miembros…',
+      assignEmpty:
+        'Este workspace todavía no tiene miembros. Invítalos desde Equipo para poder asignarles prospectos.',
+      assignInvitedSuffix: 'invitado',
+      assignInvitedHint:
+        'Puedes asignar prospectos a un miembro invitado: los verá en cuanto active su cuenta.',
       nextActionLabel: 'Siguiente acción',
       saved: 'Prospecto actualizado',
       saveError: 'No se pudo guardar el prospecto',
