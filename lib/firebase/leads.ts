@@ -16,7 +16,7 @@ import {
 import { db } from "./client"
 import { useWorkspace } from "./workspace-context"
 import { PIPELINES } from "@/lib/constants"
-import { normalizePhone } from "@/lib/leads"
+import { isStageOf, leadTypeOf, normalizePhone } from "@/lib/leads"
 import type {
   Attribution,
   Lead,
@@ -38,6 +38,8 @@ export interface LeadsScope {
   leadType?: LeadTypeFilter
   /** When set, only leads assigned to this team profile id (sales_rep). */
   assignedToId?: string
+  /** Count helper: restrict to explicitly archived docs. */
+  archived?: boolean
 }
 
 function scopeConstraints(scope: LeadsScope): QueryConstraint[] {
@@ -47,6 +49,7 @@ function scopeConstraints(scope: LeadsScope): QueryConstraint[] {
     constraints.push(where("leadType", "==", scope.leadType))
   }
   if (scope.assignedToId) constraints.push(where("assignedToId", "==", scope.assignedToId))
+  if (scope.archived !== undefined) constraints.push(where("archived", "==", scope.archived))
   return constraints
 }
 
@@ -94,6 +97,89 @@ export async function updateLeadStage(id: string, stage: PipelineStage) {
  */
 export async function updateLeadType(id: string, leadType: LeadType) {
   await updateDoc(doc(leadsCol, id), { leadType, stage: PIPELINES[leadType].initial })
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Editing (Phase C)                                                          */
+/* -------------------------------------------------------------------------- */
+
+/** Fields a person may change from the edit form. Nothing else is accepted. */
+export interface LeadPatch {
+  name?: string
+  phone?: string
+  email?: string
+  potentialValue?: number
+  stage?: PipelineStage
+  assignedToId?: string
+  nextAction?: string
+}
+
+export class LeadValidationError extends Error {
+  readonly field: keyof LeadPatch
+  constructor(field: keyof LeadPatch, message: string) {
+    super(message)
+    this.name = "LeadValidationError"
+    this.field = field
+  }
+}
+
+/**
+ * Validates and persists an edit.
+ *  - `workspaceId`, `leadType`, `source`, attribution… are NOT part of the
+ *    patch type, so they can never be changed from here (Rules also forbid
+ *    moving a lead between workspaces).
+ *  - The stage must belong to the lead's pipeline: a sales lead can never be
+ *    saved with a `rec_*` stage and vice-versa.
+ *  - Reassigning is rejected by Rules for sales_rep (`unchanged('assignedToId')`);
+ *    the form hides the control for them, and Firestore is the final say.
+ */
+export async function updateLead(
+  id: string,
+  current: Pick<Lead, "leadType">,
+  patch: LeadPatch,
+): Promise<void> {
+  const data: Partial<Lead> = {}
+  const type = leadTypeOf(current)
+
+  if (patch.name !== undefined) {
+    const name = patch.name.trim()
+    if (!name) throw new LeadValidationError("name", "El nombre es obligatorio.")
+    data.name = name
+  }
+  if (patch.phone !== undefined) data.phone = normalizePhone(patch.phone)
+  if (patch.email !== undefined) {
+    const email = patch.email.trim().toLowerCase()
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new LeadValidationError("email", "El correo no es válido.")
+    }
+    data.email = email
+  }
+  if (patch.potentialValue !== undefined) {
+    if (!Number.isFinite(patch.potentialValue) || patch.potentialValue < 0) {
+      throw new LeadValidationError("potentialValue", "El valor debe ser un número positivo.")
+    }
+    data.potentialValue = patch.potentialValue
+  }
+  if (patch.stage !== undefined) {
+    if (!isStageOf(type, patch.stage)) {
+      throw new LeadValidationError("stage", "La etapa no corresponde al tipo de prospecto.")
+    }
+    data.stage = patch.stage
+  }
+  if (patch.assignedToId !== undefined) data.assignedToId = patch.assignedToId
+  if (patch.nextAction !== undefined) data.nextAction = patch.nextAction.trim()
+
+  if (Object.keys(data).length === 0) return
+  await updateDoc(doc(leadsCol, id), data)
+}
+
+/** Archive: hidden from lists and counts, never deleted. */
+export async function archiveLead(id: string): Promise<void> {
+  await updateDoc(doc(leadsCol, id), { archived: true, archivedAt: new Date().toISOString() })
+}
+
+export async function restoreLead(id: string): Promise<void> {
+  await updateDoc(doc(leadsCol, id), { archived: false, archivedAt: null })
 }
 
 export interface NewLeadInput {
@@ -240,13 +326,24 @@ export function useLeadTypeCounts(refreshKey: unknown = null, workspaceOverride:
       return
     }
     let cancelled = false
+    // Archived leads always carry `archived: true` explicitly, so an equality
+    // count works even though legacy docs have no field at all.
     Promise.all([
       countLeads(base),
       countLeads({ ...base, leadType: "sales" }),
       countLeads({ ...base, leadType: "recruiting" }),
+      countLeads({ ...base, archived: true }),
+      countLeads({ ...base, leadType: "sales", archived: true }),
+      countLeads({ ...base, leadType: "recruiting", archived: true }),
     ])
-      .then(([all, sales, recruiting]) => {
-        if (!cancelled) setCounts({ all, sales, recruiting })
+      .then(([all, sales, recruiting, allArchived, salesArchived, recruitingArchived]) => {
+        if (!cancelled) {
+          setCounts({
+            all: all - allArchived,
+            sales: sales - salesArchived,
+            recruiting: recruiting - recruitingArchived,
+          })
+        }
       })
       .catch((err: Error) => {
         console.error("[firestore] lead counts failed:", err)
