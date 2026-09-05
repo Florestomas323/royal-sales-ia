@@ -1,7 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typescript: {
-    ignoreBuildErrors: true,
+    // Type errors must fail the deploy. The repo is clean; keeping this off
+    // meant a broken build could still ship to production.
+    ignoreBuildErrors: false,
   },
   images: {
     unoptimized: true,

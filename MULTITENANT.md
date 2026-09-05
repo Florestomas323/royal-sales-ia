@@ -70,6 +70,48 @@ Firebase Auth (uid, email, emailVerified)
 
 ---
 
+## 2b. Acceso solo por invitación (C4)
+
+**Royal Sales IA no tiene registro público.** La pantalla de acceso ofrece:
+
+- **Iniciar sesión** — cuentas ya existentes (correo/contraseña o Google).
+- **Activar invitación** — la persona escribe el correo con el que la invitaron;
+  `POST /api/auth/invitation` confirma en el servidor (Firebase Admin) que
+  existe un perfil `users` con ese correo y `authUid == null`. Solo entonces
+  aparecen los campos de nombre y contraseña. Sin invitación **no se crea
+  ninguna cuenta**.
+
+El endpoint es público por necesidad (ocurre antes de tener cuenta) pero
+devuelve **únicamente un booleano**: nunca el workspace, el rol ni el nombre.
+Lleva un límite de 20 peticiones por minuto y por IP.
+
+### Dónde está la seguridad de verdad
+
+La pantalla es una barrera de UX. La garantía real, que no depende del
+navegador, es la que ya existía:
+
+1. Una cuenta de Firebase Auth **por sí sola no da acceso a nada**. Sin
+   `memberships/{uid}` la app muestra "Tu cuenta aún no tiene workspace" y
+   Firestore rechaza toda lectura.
+2. `memberships/{uid}` solo puede crearse si coincide con una invitación
+   existente: mismo correo (verificado), mismo workspace y mismo rol que el
+   documento `users`. Las Rules lo validan campo por campo.
+3. `super_admin` nunca puede reclamarse desde la app.
+
+Por eso, aunque alguien llamara al SDK de Firebase directamente para crearse una
+cuenta, no obtendría acceso a ningún dato de ningún workspace.
+
+### Endurecimiento adicional (opcional, manual)
+
+Para impedir incluso la creación de cuentas huérfanas en Firebase Auth:
+**Firebase Console → Authentication → Settings → User actions → desactivar
+"Enable create (sign-up)"**. Efecto secundario a tener en cuenta: con esa
+opción desactivada, el acceso con Google tampoco podrá crear la cuenta la
+primera vez, así que el super admin tendría que crear cada cuenta a mano en la
+consola antes de invitarla. Decisión pendiente.
+
+---
+
 ## 3. Bootstrap del primer super admin (manual, una sola vez)
 
 Las reglas no permiten crear un `super_admin` desde la app. Hazlo en la
