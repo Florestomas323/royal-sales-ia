@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { PipelineSummary } from "@/components/pipeline/pipeline-summary"
 import { PipelineBoard } from "@/components/pipeline/pipeline-board"
 import { LeadTypeSwitch } from "@/components/shared/lead-type-switch"
@@ -19,6 +19,8 @@ import type { LeadType } from "@/types"
 export function PipelineLive() {
   const [leadType, setLeadType] = useState<LeadType>("sales")
   const { leads, loading, error } = useLeads(leadType)
+  // Archived leads are out of the funnel: neither columns nor summary numbers.
+  const active = useMemo(() => leads.filter((l) => l.archived !== true), [leads])
 
   return (
     <div className="flex flex-col gap-4">
@@ -30,7 +32,7 @@ export function PipelineLive() {
       </div>
 
       {error && <DataErrorState error={error} />}
-      <DemoRowsNotice rows={leads} />
+      <DemoRowsNotice rows={active} />
 
       {loading ? (
         <div className="flex flex-col gap-6">
@@ -47,8 +49,8 @@ export function PipelineLive() {
         </div>
       ) : (
         <>
-          <PipelineSummary leads={leads} leadType={leadType} />
-          <PipelineBoard leads={leads} leadType={leadType} />
+          <PipelineSummary leads={active} leadType={leadType} />
+          <PipelineBoard leads={active} leadType={leadType} />
         </>
       )}
     </div>
