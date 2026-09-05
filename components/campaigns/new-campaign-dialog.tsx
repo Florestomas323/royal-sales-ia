@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { createCampaign, useClients } from "@/lib/firebase/collections"
-import { useWorkspace } from "@/lib/firebase/workspace-context"
+import { useCan, useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
 import { CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_STATUS_LABELS, LEAD_TYPES, PLATFORM_LABELS } from "@/lib/constants"
 import { FieldDescription } from "@/components/ui/field"
@@ -46,6 +46,7 @@ const STATUS_OPTIONS: { value: Campaign["status"]; label: string }[] = [
 export function NewCampaignDialog() {
   const { clients } = useClients()
   const { workspaceId } = useWorkspace()
+  const { canManageCampaigns } = useCan()
   const [open, setOpen] = React.useState(false)
   const [objective, setObjective] = React.useState<LeadType>("sales")
   const [platform, setPlatform] = React.useState<Platform>("meta")
@@ -90,6 +91,8 @@ export function NewCampaignDialog() {
     }
   }
 
+  // Roles without permission never see the trigger; Rules reject them anyway.
+  if (!canManageCampaigns) return null
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
