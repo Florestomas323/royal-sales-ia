@@ -22,12 +22,13 @@ import { StageBadge } from "@/components/shared/score-badge"
 import { TemperatureDot } from "@/components/shared/score-badge"
 import { LeadTimeline } from "@/components/leads/lead-timeline"
 import { LeadAiAssistant } from "@/components/leads/lead-ai-assistant"
+import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { useUsersMap } from "@/lib/firebase/collections"
 import { updateLeadType } from "@/lib/firebase/leads"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
 import { LEAD_TYPE_SINGULAR, PLATFORM_LABELS, TEMPERATURE_LABELS } from "@/lib/constants"
-import { displayStage, leadTypeOf } from "@/lib/leads"
+import { displayStage, leadTypeOf, telHref, whatsappHref } from "@/lib/leads"
 import { formatCurrency, formatRelativeTime } from "@/lib/format"
 import { t } from "@/lib/i18n"
 
@@ -41,6 +42,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
   const usersMap = useUsersMap()
   const { isSuperAdmin, workspaces, role } = useWorkspace()
   const [changingType, setChangingType] = useState(false)
+  const [confirmTypeOpen, setConfirmTypeOpen] = useState(false)
   if (!lead) return null
   const rep = usersMap[lead.assignedToId]
   const type = leadTypeOf(lead)
@@ -58,14 +60,17 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
       lead.attribution.externalAdId,
   )
 
+  const nextType: LeadType = isRecruiting ? "sales" : "recruiting"
+  const tel = telHref(lead.phone)
+  const wa = whatsappHref(lead.phone, t.leads.detail.whatsappGreeting(lead.name.split(" ")[0]))
+
   async function handleChangeType() {
     if (!lead) return
-    const to: LeadType = isRecruiting ? "sales" : "recruiting"
-    if (!window.confirm(t.leads.detail.changeTypeConfirm(LEAD_TYPE_SINGULAR[to]))) return
     setChangingType(true)
     try {
-      await updateLeadType(lead.id, to)
+      await updateLeadType(lead.id, nextType)
       toast.success(t.leads.detail.typeChanged)
+      setConfirmTypeOpen(false)
     } catch (err) {
       toast.error(t.leads.detail.typeChangeError, { description: describeError(err).message })
     } finally {
@@ -89,22 +94,22 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full gap-0 p-0 sm:max-w-xl">
-        <SheetHeader className="gap-3 border-b p-5">
-          <div className="flex items-start gap-4">
+      <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-xl">
+        <SheetHeader className="shrink-0 gap-3 border-b p-4 pr-12 sm:p-5 sm:pr-14">
+          <div className="flex items-start gap-3 sm:gap-4">
             <ScoreRing score={lead.score} size={52} />
-            <div className="flex flex-1 flex-col gap-1">
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div className="flex flex-wrap items-center gap-2">
-                <SheetTitle className="text-lg">{lead.name}</SheetTitle>
+                <SheetTitle className="text-lg break-words">{lead.name}</SheetTitle>
                 <LeadTypeBadge type={type} />
                 <TemperatureDot temperature={lead.temperature} withLabel />
               </div>
               <SheetDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <PlatformBadge platform={lead.source} />
                 <span className="text-muted-foreground">·</span>
-                <span>{lead.campaignName}</span>
+                <span className="truncate">{lead.campaignName || t.leads.noCampaign}</span>
               </SheetDescription>
-              <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                 {!isRecruiting && (
                   <span className="flex items-center gap-1">
                     <Target className="size-3.5" />
@@ -118,24 +123,68 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" className="gap-1.5">
-              <MessageCircle className="size-3.5" data-icon="inline-start" />
-              {t.leads.detail.whatsapp}
-            </Button>
-            <Button size="sm" variant="outline" className="gap-1.5">
-              <Phone className="size-3.5" data-icon="inline-start" />
-              {t.leads.detail.call}
-            </Button>
-            <Button size="sm" variant="outline" className="gap-1.5">
+          {/*
+            Real actions: WhatsApp and Llamar are plain links to wa.me / tel:
+            built from the stored phone. Without a phone they are disabled with
+            an explanation. Agendar has no calendar behind it yet, so it is
+            disabled and says so — it never reports a success it did not do.
+          */}
+          <div className="grid grid-cols-3 gap-2">
+            {wa ? (
+              <Button
+                size="sm"
+                className="h-10 gap-1.5 sm:h-8"
+                nativeButton={false}
+                render={<a href={wa} target="_blank" rel="noopener noreferrer" />}
+              >
+                <MessageCircle className="size-3.5" data-icon="inline-start" />
+                {t.leads.detail.whatsapp}
+              </Button>
+            ) : (
+              <Button size="sm" className="h-10 gap-1.5 sm:h-8" disabled title={t.leads.detail.noPhone}>
+                <MessageCircle className="size-3.5" data-icon="inline-start" />
+                {t.leads.detail.whatsapp}
+              </Button>
+            )}
+            {tel ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-10 gap-1.5 sm:h-8"
+                nativeButton={false}
+                render={<a href={tel} />}
+              >
+                <Phone className="size-3.5" data-icon="inline-start" />
+                {t.leads.detail.call}
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline" className="h-10 gap-1.5 sm:h-8" disabled title={t.leads.detail.noPhone}>
+                <Phone className="size-3.5" data-icon="inline-start" />
+                {t.leads.detail.call}
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-10 gap-1.5 sm:h-8"
+              disabled
+              title={t.leads.detail.bookPending}
+              aria-describedby="book-pending"
+            >
               <CalendarPlus className="size-3.5" data-icon="inline-start" />
               {t.leads.detail.book}
             </Button>
           </div>
+          {!lead.phone && (
+            <p className="text-xs text-muted-foreground">{t.leads.detail.noPhone}</p>
+          )}
+          <p id="book-pending" className="text-xs text-muted-foreground">
+            {t.leads.detail.bookPending}
+          </p>
         </SheetHeader>
 
-        <ScrollArea className="h-[calc(100vh-9.5rem)]">
-          <div className="flex flex-col gap-5 p-5">
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="flex flex-col gap-5 p-4 sm:p-5">
             <LeadAiAssistant lead={lead} />
 
             <Tabs defaultValue="details">
@@ -159,7 +208,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                             variant="ghost"
                             size="sm"
                             className="h-7 gap-1 px-2 text-xs"
-                            onClick={handleChangeType}
+                            onClick={() => setConfirmTypeOpen(true)}
                             disabled={changingType}
                           >
                             <ArrowRightLeft className="size-3" />
@@ -325,6 +374,16 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
           </div>
         </ScrollArea>
       </SheetContent>
+
+      <ConfirmDialog
+        open={confirmTypeOpen}
+        onOpenChange={setConfirmTypeOpen}
+        title={t.leads.detail.changeTypeTitle}
+        description={t.leads.detail.changeTypeConfirm(LEAD_TYPE_SINGULAR[nextType])}
+        actionLabel={t.leads.detail.changeTypeAction(LEAD_TYPE_SINGULAR[nextType])}
+        busy={changingType}
+        onConfirm={handleChangeType}
+      />
     </Sheet>
   )
 }

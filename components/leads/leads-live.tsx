@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { Suspense, useCallback, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { LeadsView } from "@/components/leads/leads-view"
 import { LeadTypeSwitch } from "@/components/shared/lead-type-switch"
 import { DataErrorState } from "@/components/shared/data-error-state"
@@ -8,8 +9,28 @@ import { DemoRowsNotice } from "@/components/shared/demo-data-badge"
 import { useLeads, useLeadTypeCounts, type LeadTypeFilter } from "@/lib/firebase/leads"
 import { Skeleton } from "@/components/ui/skeleton"
 
+/**
+ * `useSearchParams` needs a Suspense boundary on statically rendered pages,
+ * hence the two-layer component.
+ */
 export function LeadsLive() {
+  return (
+    <Suspense fallback={<Skeleton className="h-16 w-full rounded-xl" />}>
+      <LeadsLiveInner />
+    </Suspense>
+  )
+}
+
+function LeadsLiveInner() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const openLeadId = searchParams.get("lead")
   const [leadType, setLeadType] = useState<LeadTypeFilter>("all")
+
+  // Once the deep-linked lead is open, drop the param so a refresh doesn't reopen it.
+  const clearOpenLead = useCallback(() => {
+    if (openLeadId) router.replace("/leads", { scroll: false })
+  }, [openLeadId, router])
   const { leads, loading, error } = useLeads(leadType)
   // Re-count whenever the visible list or the active tab changes
   // (creation, deletion, normalization, tab switch).
@@ -39,7 +60,12 @@ export function LeadsLive() {
           </div>
         </div>
       ) : (
-        <LeadsView leads={leads} leadType={leadType} />
+        <LeadsView
+          leads={leads}
+          leadType={leadType}
+          openLeadId={openLeadId}
+          onOpenedLead={clearOpenLead}
+        />
       )}
     </div>
   )

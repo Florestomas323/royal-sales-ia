@@ -23,13 +23,14 @@ import { ScoreBadge, StageBadge } from "@/components/shared/score-badge"
 import { PlatformMark } from "@/components/shared/platform-badge"
 import { LeadTypeBadge } from "@/components/shared/lead-type-badge"
 import { LeadDetailSheet } from "@/components/leads/lead-detail-sheet"
+import { LeadCard } from "@/components/leads/lead-card"
 import {
   STAGE_LABELS,
   PIPELINES,
   PLATFORM_LABELS,
   TEMPERATURE_LABELS,
 } from "@/lib/constants"
-import { leadTypeOf } from "@/lib/leads"
+import { displayStage, leadTypeOf } from "@/lib/leads"
 import { t } from "@/lib/i18n"
 import { useUsersMap } from "@/lib/firebase/collections"
 import { formatCurrency, formatRelativeTime, initials } from "@/lib/format"
@@ -37,15 +38,42 @@ import { cn } from "@/lib/utils"
 
 type SortKey = "score" | "value" | "recent"
 
+/**
+ * Filter trigger: full width and 44px tall on phones (readable, tappable),
+ * compact and content-sized from lg where there is room for one row.
+ */
+const FILTER_TRIGGER =
+  "h-11 w-full justify-between text-sm lg:h-8 lg:w-auto lg:min-w-40 [&_[data-slot=select-value]]:truncate"
+
+/** Matches Tailwind's `lg` breakpoint, used only to pick the placeholder copy. */
+function useIsNarrow(): boolean {
+  const [narrow, setNarrow] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1023px)")
+    const update = () => setNarrow(mq.matches)
+    update()
+    mq.addEventListener("change", update)
+    return () => mq.removeEventListener("change", update)
+  }, [])
+  return narrow
+}
+
 export function LeadsView({
   leads,
   leadType = "all",
+  openLeadId = null,
+  onOpenedLead,
 }: {
   leads: Lead[]
   /** Active type filter; drives which stages are offered and whether the Tipo column shows. */
   leadType?: LeadType | "all"
+  /** Lead to open on arrival (e.g. `/leads?lead=<id>` from the global search). */
+  openLeadId?: string | null
+  /** Called once the requested lead has been opened (or is not in the list). */
+  onOpenedLead?: () => void
 }) {
   const usersMap = useUsersMap()
+  const isNarrow = useIsNarrow()
   const stageOptions: PipelineStage[] =
     leadType === "all"
       ? [...PIPELINES.sales.stages, ...PIPELINES.recruiting.stages]
@@ -62,6 +90,24 @@ export function LeadsView({
   useEffect(() => {
     if (stage !== "all" && !stageOptions.includes(stage)) setStage("all")
   }, [stageOptions, stage])
+
+  // Deep link: open the requested lead as soon as it is in the live list.
+  useEffect(() => {
+    if (!openLeadId || leads.length === 0) return
+    const target = leads.find((l) => l.id === openLeadId)
+    if (target) {
+      setSelected(target)
+      setOpen(true)
+    }
+    onOpenedLead?.()
+  }, [openLeadId, leads, onOpenedLead])
+
+  // Keep the open sheet in sync with live updates (stage / type changes).
+  useEffect(() => {
+    if (!selected) return
+    const fresh = leads.find((l) => l.id === selected.id)
+    if (fresh && fresh !== selected) setSelected(fresh)
+  }, [leads, selected])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -89,19 +135,29 @@ export function LeadsView({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3 rounded-xl border bg-card p-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
+      {/*
+        Filters. On phones each control takes the full width (nothing gets
+        truncated), on small tablets two per row, and from lg up they sit in a
+        single row next to the search box like before. No fixed pixel widths.
+      */}
+      <div className="flex flex-col gap-3 rounded-xl border bg-card p-3 lg:flex-row lg:items-center">
+        <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={t.leads.searchPlaceholder}
-            className="h-9 w-full rounded-lg border border-input bg-background pr-3 pl-9 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:text-sm"
+            placeholder={isNarrow ? t.leads.searchPlaceholderShort : t.leads.searchPlaceholder}
+            aria-label={t.leads.searchPlaceholder}
+            className="h-11 w-full rounded-lg border border-input bg-background pr-3 pl-9 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 lg:h-9 lg:text-sm"
           />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div
+          role="group"
+          aria-label={t.leads.filtersLabel}
+          className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-center"
+        >
           <Select value={stage} onValueChange={(v) => setStage(v as PipelineStage | "all")}>
-            <SelectTrigger size="sm" className="w-[130px]">
+            <SelectTrigger className={FILTER_TRIGGER}>
               <SelectValue>
                 {(value: string) =>
                   value === "all" ? t.leads.allStages : STAGE_LABELS[value as PipelineStage]
@@ -118,7 +174,7 @@ export function LeadsView({
             </SelectContent>
           </Select>
           <Select value={platform} onValueChange={(v) => setPlatform(v as Platform | "all")}>
-            <SelectTrigger size="sm" className="w-[130px]">
+            <SelectTrigger className={FILTER_TRIGGER}>
               <SelectValue>
                 {(value: string) =>
                   value === "all" ? t.leads.allSources : PLATFORM_LABELS[value as Platform]
@@ -135,7 +191,7 @@ export function LeadsView({
             </SelectContent>
           </Select>
           <Select value={temp} onValueChange={(v) => setTemp(v as LeadTemperature | "all")}>
-            <SelectTrigger size="sm" className="w-[120px]">
+            <SelectTrigger className={FILTER_TRIGGER}>
               <SlidersHorizontal className="size-3.5" data-icon="inline-start" />
               <SelectValue>
                 {(value: string) =>
@@ -153,7 +209,7 @@ export function LeadsView({
             </SelectContent>
           </Select>
           <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
-            <SelectTrigger size="sm" className="w-[130px]">
+            <SelectTrigger className={FILTER_TRIGGER}>
               <ArrowUpDown className="size-3.5" data-icon="inline-start" />
               <SelectValue />
             </SelectTrigger>
@@ -184,7 +240,22 @@ export function LeadsView({
           </EmptyHeader>
         </Empty>
       ) : (
-        <div className="overflow-hidden rounded-xl border bg-card">
+        <>
+        {/* Móvil: tarjetas con toda la información y acciones reales */}
+        <div className="flex flex-col gap-3 md:hidden">
+          {filtered.map((lead) => (
+            <LeadCard
+              key={lead.id}
+              lead={lead}
+              owner={usersMap[lead.assignedToId]}
+              showType={leadType === "all"}
+              onOpen={openLead}
+            />
+          ))}
+        </div>
+
+        {/* Escritorio / tablet: tabla completa */}
+        <div className="hidden overflow-hidden rounded-xl border bg-card md:block">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
@@ -233,7 +304,7 @@ export function LeadsView({
                       </span>
                     </TableCell>
                     <TableCell>
-                      <StageBadge stage={lead.stage} />
+                      <StageBadge stage={displayStage(lead)} />
                     </TableCell>
                     <TableCell className="text-right">
                       <ScoreBadge score={lead.score} temperature={lead.temperature} className="justify-end" />
@@ -265,6 +336,7 @@ export function LeadsView({
             </TableBody>
           </Table>
         </div>
+        </>
       )}
 
       <LeadDetailSheet lead={selected} open={open} onOpenChange={setOpen} />
