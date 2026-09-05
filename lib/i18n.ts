@@ -393,6 +393,11 @@ export const t = {
     emptyDescription: 'Prueba quitando un filtro o ajustando tu búsqueda.',
     searchPlaceholderShort: 'Buscar prospectos…',
     filtersLabel: 'Filtros',
+    stageGroupSales: 'Etapas de ventas',
+    stageGroupRecruiting: 'Etapas de reclutamiento',
+    allWorkspaces: 'Todos los workspaces',
+    workspaceFilterLabel: 'Workspace',
+    workspaceColumn: 'Workspace',
     table: {
       lead: 'Prospecto',
       type: 'Tipo',
@@ -413,7 +418,19 @@ export const t = {
       book: 'Agendar',
       bookPending: 'Agendar estará disponible con el módulo de Calendario.',
       noPhone: 'Este prospecto no tiene teléfono registrado.',
-      whatsappGreeting: (name: string) => `Hola ${name}, te escribo de Royal Prestige.`,
+      /**
+       * Mensaje inicial de WhatsApp. Se abre prellenado y editable: nunca se
+       * envía solo. `owner` es el nombre real del responsable asignado; si no
+       * hay ninguno, se usa la variante sin nombre (no se inventa).
+       */
+      whatsappSales: (name: string, owner: string | null) =>
+        owner
+          ? `Hola ${name} 👋 Soy ${owner}. Vi que solicitaste información sobre nuestros productos de Royal Prestige. Quería saludarte personalmente y conocer un poquito más sobre lo que estás buscando 😊`
+          : `Hola ${name} 👋 Te escribo de Royal Prestige. Vi que solicitaste información sobre nuestros productos. Quería saludarte personalmente y conocer un poquito más sobre lo que estás buscando 😊`,
+      whatsappRecruiting: (name: string, owner: string | null) =>
+        owner
+          ? `Hola ${name} 👋 Soy ${owner}. Vi que solicitaste información para conocer nuestra oportunidad con Royal Prestige. Quería saludarte personalmente y saber qué estás buscando actualmente a nivel laboral o de ingresos 😊`
+          : `Hola ${name} 👋 Te escribo de Royal Prestige. Vi que solicitaste información para conocer nuestra oportunidad. Quería saludarte personalmente y saber qué estás buscando actualmente a nivel laboral o de ingresos 😊`,
       openLead: 'Abrir prospecto',
       tabs: {
         details: 'Detalles',

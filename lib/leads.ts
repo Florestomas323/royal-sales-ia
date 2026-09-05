@@ -1,4 +1,5 @@
 import { PIPELINES, RECRUITING_ONLY_SOURCES, SOURCES_BY_LEAD_TYPE } from "@/lib/constants"
+import { t } from "@/lib/i18n"
 import type { Campaign, Lead, LeadType, PipelineStage, Platform } from "@/types"
 
 /**
@@ -91,6 +92,22 @@ export function phoneDigitsForDialing(raw: string | null | undefined): string | 
 export function telHref(raw: string | null | undefined): string | null {
   const digits = phoneDigitsForDialing(raw)
   return digits ? `tel:+${digits}` : null
+}
+
+/**
+ * First WhatsApp message, different for a customer and for a candidate.
+ * `ownerName` is the real assigned rep when there is one; otherwise a natural
+ * variant without a name is used — a name is never invented.
+ */
+export function whatsappOpener(
+  lead: Pick<Lead, "leadType" | "name">,
+  ownerName?: string | null,
+): string {
+  const firstName = lead.name.trim().split(/\s+/)[0] || lead.name.trim()
+  const owner = ownerName?.trim() ? ownerName.trim().split(/\s+/)[0] : null
+  return leadTypeOf(lead) === "recruiting"
+    ? t.leads.detail.whatsappRecruiting(firstName, owner)
+    : t.leads.detail.whatsappSales(firstName, owner)
 }
 
 /** `https://wa.me/<digits>` link (WhatsApp requires country code, no "+"), or null. */
