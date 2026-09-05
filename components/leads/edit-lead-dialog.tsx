@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { PhoneField } from "@/components/leads/phone-field"
-import { useUsers } from "@/lib/firebase/collections"
+import { useUsersForWorkspace } from "@/lib/firebase/collections"
 import { LeadValidationError, updateLead, type LeadPatch } from "@/lib/firebase/leads"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
@@ -50,7 +50,8 @@ export function EditLeadDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const { role, membership, isSuperAdmin } = useWorkspace()
-  const { users, loading: usersLoading } = useUsers()
+  // Assignees come from the LEAD's workspace, not the sidebar selection.
+  const { users, loading: usersLoading } = useUsersForWorkspace(lead.workspaceId)
   const type = leadTypeOf(lead)
   const canReassign = canReassignLead(
     { role, userId: membership?.userId ?? null, workspaceId: membership?.workspaceId ?? null, isSuperAdmin },
@@ -88,8 +89,8 @@ export function EditLeadDialog({
     setFormError(null)
   }, [open, lead, type])
 
-  // Members of the LEAD's workspace, including invited ones (see
-  // eligibleAssignees). `useUsers` is already scoped by Security Rules.
+  // Already scoped to lead.workspaceId by the query; eligibleAssignees drops
+  // inactive members and keeps the workspace check as a second guard.
   const members = eligibleAssignees(users, lead.workspaceId)
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {

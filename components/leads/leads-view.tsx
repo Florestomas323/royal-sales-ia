@@ -83,7 +83,9 @@ export function LeadsView({
   workspaceFilter?: string | null
   onWorkspaceFilterChange?: (workspaceId: string | null) => void
 }) {
-  const usersMap = useUsersMap()
+  // Same reason as the assignee picker: when the workspace filter shows another
+  // workspace, owner names must be read from that workspace, not the ambient one.
+  const usersMap = useUsersMap(workspaceFilter)
   const isNarrow = useIsNarrow()
   const { isSuperAdmin, workspaces } = useWorkspace()
   // The list of workspaces comes from Firestore under Security Rules (see

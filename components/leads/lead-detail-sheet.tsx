@@ -48,7 +48,8 @@ interface LeadDetailSheetProps {
 }
 
 export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetProps) {
-  const usersMap = useUsersMap()
+  // Owner name must come from the lead's workspace (see useUsersForWorkspace).
+  const usersMap = useUsersMap(lead?.workspaceId ?? null)
   const { isSuperAdmin, workspaces, role, membership } = useWorkspace()
   const [changingType, setChangingType] = useState(false)
   const [confirmTypeOpen, setConfirmTypeOpen] = useState(false)
