@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { createClient } from "@/lib/firebase/collections"
-import { useWorkspace } from "@/lib/firebase/workspace-context"
+import { useCan, useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
 import { CLIENT_STATUS_LABELS } from "@/lib/constants"
 import { t } from "@/lib/i18n"
@@ -39,6 +39,7 @@ const STATUS_OPTIONS: { value: ClientStatus; label: string }[] = [
 
 export function AddClientDialog() {
   const { workspaceId } = useWorkspace()
+  const { canManageClients } = useCan()
   const [open, setOpen] = React.useState(false)
   const [status, setStatus] = React.useState<ClientStatus>("onboarding")
   const [submitting, setSubmitting] = React.useState(false)
@@ -69,6 +70,8 @@ export function AddClientDialog() {
     }
   }
 
+  // Roles without permission never see the trigger; Rules reject them anyway.
+  if (!canManageClients) return null
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
