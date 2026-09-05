@@ -533,6 +533,14 @@ export interface Lead {
   receivedAt?: string
   /** Present only for recruiting leads. */
   recruiting?: RecruitingProfile
+  /**
+   * Archived leads stay in Firestore (history is never lost) but are hidden
+   * from lists and counts by default. Absent on legacy docs = not archived.
+   * When set, `archived` is always written explicitly (true/false) so it can
+   * be counted with an equality query.
+   */
+  archived?: boolean
+  archivedAt?: string | null
   isDemo?: boolean
 }
 
