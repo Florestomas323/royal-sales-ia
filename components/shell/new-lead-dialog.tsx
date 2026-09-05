@@ -27,7 +27,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { PLATFORM_LABELS } from '@/lib/constants'
-import { campaignObjective, isValidE164, sourcesFor, toE164, DEFAULT_COUNTRY_CODE } from '@/lib/leads'
+import {
+  campaignObjective,
+  eligibleAssignees,
+  isValidE164,
+  sourcesFor,
+  toE164,
+  DEFAULT_COUNTRY_CODE,
+} from '@/lib/leads'
 import { createLead } from '@/lib/firebase/leads'
 import { useCampaigns, useUsers } from '@/lib/firebase/collections'
 import { useCan, useWorkspace } from '@/lib/firebase/workspace-context'
@@ -70,7 +77,8 @@ export function NewLeadDialog({
   const [phoneError, setPhoneError] = React.useState<string | null>(null)
   const [submitting, setSubmitting] = React.useState(false)
 
-  const activeReps = users.filter((u) => u.status === 'active')
+  // Same rule as the edit dialog: invited members are valid assignees.
+  const activeReps = workspaceId ? eligibleAssignees(users, workspaceId) : []
   const isRep = role === 'sales_rep'
   const sources = sourcesFor(leadType)
   // Only campaigns whose objective matches the lead type are offered.
@@ -307,6 +315,7 @@ export function NewLeadDialog({
                   {activeReps.map((u) => (
                     <SelectItem key={u.id} value={u.id}>
                       {u.name}
+                      {u.status === 'invited' && ` · ${t.leads.editDialog.assignInvitedSuffix}`}
                     </SelectItem>
                   ))}
                 </SelectContent>
