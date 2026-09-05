@@ -1,10 +1,11 @@
 "use client"
 
-import { Building2, MessageCircle, Phone } from "lucide-react"
+import { Archive, Building2, MessageCircle, Phone } from "lucide-react"
 import type { Lead, User } from "@/types"
 import { ScoreBadge, StageBadge } from "@/components/shared/score-badge"
 import { PlatformMark } from "@/components/shared/platform-badge"
 import { LeadTypeBadge } from "@/components/shared/lead-type-badge"
+import { Badge } from "@/components/ui/badge"
 import { PLATFORM_LABELS } from "@/lib/constants"
 import { displayStage, leadTypeOf, telHref, whatsappHref, whatsappOpener } from "@/lib/leads"
 import { formatCurrency, formatRelativeTime, initials } from "@/lib/format"
@@ -48,7 +49,7 @@ export function LeadCard({
         }
       }}
       aria-label={`${t.leads.detail.openLead}: ${lead.name}`}
-      className="flex flex-col gap-3 rounded-xl border bg-card p-4 text-left transition-colors active:bg-muted/60"
+      className={cn("flex flex-col gap-3 rounded-xl border bg-card p-4 text-left transition-colors active:bg-muted/60", lead.archived && "opacity-70")}
     >
       {/* Nombre + puntuación */}
       <div className="flex items-start justify-between gap-3">
@@ -69,6 +70,12 @@ export function LeadCard({
         </span>
         {showType && <LeadTypeBadge type={type} />}
         <StageBadge stage={displayStage(lead)} />
+        {lead.archived && (
+          <Badge variant="secondary" className="gap-1 text-[10px]">
+            <Archive className="size-3" />
+            {t.leads.detail.archived}
+          </Badge>
+        )}
       </div>
 
       {workspaceName && (

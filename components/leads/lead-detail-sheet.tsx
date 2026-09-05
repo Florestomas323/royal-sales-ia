@@ -2,8 +2,8 @@
 
 import { useState } from "react"
 import { toast } from "sonner"
-import { Phone, Mail, MessageCircle, CalendarPlus, Target, Clock, ArrowRightLeft } from "lucide-react"
-import type { Activity, Lead, LeadType } from "@/types"
+import { Phone, Mail, MessageCircle, CalendarPlus, Target, Clock, ArrowRightLeft, Pencil, Archive, ArchiveRestore } from "lucide-react"
+import type { Activity, Lead, LeadType, PipelineStage } from "@/types"
 import {
   Sheet,
   SheetContent,
@@ -23,12 +23,21 @@ import { TemperatureDot } from "@/components/shared/score-badge"
 import { LeadTimeline } from "@/components/leads/lead-timeline"
 import { LeadAiAssistant } from "@/components/leads/lead-ai-assistant"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
+import { EditLeadDialog } from "@/components/leads/edit-lead-dialog"
+import { Badge } from "@/components/ui/badge"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { useUsersMap } from "@/lib/firebase/collections"
-import { updateLeadType } from "@/lib/firebase/leads"
+import { archiveLead, restoreLead, updateLead, updateLeadType } from "@/lib/firebase/leads"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
-import { LEAD_TYPE_SINGULAR, PLATFORM_LABELS, TEMPERATURE_LABELS } from "@/lib/constants"
-import { displayStage, leadTypeOf, telHref, whatsappHref, whatsappOpener } from "@/lib/leads"
+import { LEAD_TYPE_SINGULAR, PIPELINES, PLATFORM_LABELS, STAGE_LABELS, TEMPERATURE_LABELS } from "@/lib/constants"
+import { canEditLead, displayStage, leadTypeOf, telHref, whatsappHref, whatsappOpener } from "@/lib/leads"
 import { formatCurrency, formatRelativeTime } from "@/lib/format"
 import { t } from "@/lib/i18n"
 
@@ -40,14 +49,27 @@ interface LeadDetailSheetProps {
 
 export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetProps) {
   const usersMap = useUsersMap()
-  const { isSuperAdmin, workspaces, role } = useWorkspace()
+  const { isSuperAdmin, workspaces, role, membership } = useWorkspace()
   const [changingType, setChangingType] = useState(false)
   const [confirmTypeOpen, setConfirmTypeOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [archiveOpen, setArchiveOpen] = useState(false)
+  const [archiving, setArchiving] = useState(false)
+  const [changingStage, setChangingStage] = useState(false)
   if (!lead) return null
   const rep = usersMap[lead.assignedToId]
   const type = leadTypeOf(lead)
   const isRecruiting = type === "recruiting"
   const canChangeType = isSuperAdmin || role === "client_admin" || role === "manager"
+  // Mirror of firestore.rules; Firestore remains the authority on every write.
+  const editor = {
+    role,
+    userId: membership?.userId ?? null,
+    workspaceId: membership?.workspaceId ?? null,
+    isSuperAdmin,
+  }
+  const canEdit = canEditLead(editor, lead)
+  const stageOptions = PIPELINES[type].stages
   const workspaceName = workspaces.find((w) => w.id === lead.workspaceId)?.name ?? lead.workspaceId
   const rec = lead.recruiting
   const hasExtraAttribution = Boolean(
@@ -63,6 +85,40 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
   const nextType: LeadType = isRecruiting ? "sales" : "recruiting"
   const tel = telHref(lead.phone)
   const wa = whatsappHref(lead.phone, whatsappOpener(lead, rep?.name))
+
+  async function handleStageChange(next: string | null) {
+    if (!lead || !next || next === lead.stage) return
+    setChangingStage(true)
+    try {
+      // updateLead rejects a stage that does not belong to this lead's pipeline.
+      await updateLead(lead.id, lead, { stage: next as PipelineStage })
+      toast.success(t.leads.detail.stageUpdated, { description: STAGE_LABELS[next as PipelineStage] })
+    } catch (err) {
+      toast.error(t.leads.detail.stageError, { description: describeError(err).message })
+    } finally {
+      setChangingStage(false)
+    }
+  }
+
+  async function handleArchiveToggle() {
+    if (!lead) return
+    setArchiving(true)
+    try {
+      if (lead.archived) {
+        await restoreLead(lead.id)
+        toast.success(t.leads.detail.restoredToast)
+      } else {
+        await archiveLead(lead.id)
+        toast.success(t.leads.detail.archivedToast)
+        onOpenChange(false)
+      }
+      setArchiveOpen(false)
+    } catch (err) {
+      toast.error(t.leads.detail.archiveError, { description: describeError(err).message })
+    } finally {
+      setArchiving(false)
+    }
+  }
 
   async function handleChangeType() {
     if (!lead) return
@@ -102,6 +158,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
               <div className="flex flex-wrap items-center gap-2">
                 <SheetTitle className="text-lg break-words">{lead.name}</SheetTitle>
                 <LeadTypeBadge type={type} />
+                {lead.archived && <Badge variant="secondary">{t.leads.detail.archived}</Badge>}
                 <TemperatureDot temperature={lead.temperature} withLabel />
               </div>
               <SheetDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -181,6 +238,35 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
           <p id="book-pending" className="text-xs text-muted-foreground">
             {t.leads.detail.bookPending}
           </p>
+          {canEdit ? (
+            <div className="grid w-full min-w-0 grid-cols-2 gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-11 min-w-0 gap-1.5 sm:h-8"
+                onClick={() => setEditOpen(true)}
+              >
+                <Pencil className="size-3.5" data-icon="inline-start" />
+                {t.leads.detail.edit}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-11 min-w-0 gap-1.5 text-muted-foreground sm:h-8"
+                onClick={() => setArchiveOpen(true)}
+                disabled={archiving}
+              >
+                {lead.archived ? (
+                  <ArchiveRestore className="size-3.5" data-icon="inline-start" />
+                ) : (
+                  <Archive className="size-3.5" data-icon="inline-start" />
+                )}
+                {lead.archived ? t.leads.detail.restore : t.leads.detail.archive}
+              </Button>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">{t.leads.detail.readOnlyHint}</p>
+          )}
         </SheetHeader>
 
         <ScrollArea className="min-h-0 flex-1">
@@ -228,7 +314,28 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                   />
                   <InfoRow
                     label={t.leads.detail.stage}
-                    value={<StageBadge stage={displayStage(lead)} />}
+                    value={
+                      canEdit ? (
+                        <Select
+                          value={displayStage(lead)}
+                          onValueChange={handleStageChange}
+                          disabled={changingStage || Boolean(lead.archived)}
+                        >
+                          <SelectTrigger className="h-9 w-full sm:h-8 sm:w-56" aria-label={t.leads.detail.changeStage}>
+                            <SelectValue>{(v: string) => STAGE_LABELS[v as PipelineStage]}</SelectValue>
+                          </SelectTrigger>
+                          <SelectContent className="max-h-[60svh]">
+                            {stageOptions.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {STAGE_LABELS[s]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <StageBadge stage={displayStage(lead)} />
+                      )
+                    }
                   />
                   <InfoRow
                     label={t.leads.detail.temperature}
@@ -374,6 +481,22 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
           </div>
         </ScrollArea>
       </SheetContent>
+
+      {canEdit && <EditLeadDialog lead={lead} open={editOpen} onOpenChange={setEditOpen} />}
+
+      <ConfirmDialog
+        open={archiveOpen}
+        onOpenChange={setArchiveOpen}
+        title={lead.archived ? t.leads.detail.restore : t.leads.detail.archiveTitle}
+        description={
+          lead.archived
+            ? `${lead.name}`
+            : t.leads.detail.archiveConfirm(lead.name)
+        }
+        actionLabel={lead.archived ? t.leads.detail.restore : t.leads.detail.archiveAction}
+        busy={archiving}
+        onConfirm={handleArchiveToggle}
+      />
 
       <ConfirmDialog
         open={confirmTypeOpen}

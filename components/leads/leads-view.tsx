@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Search, SlidersHorizontal, ArrowUpDown, Inbox, Building2 } from "lucide-react"
+import { Search, SlidersHorizontal, ArrowUpDown, Inbox, Building2, Archive } from "lucide-react"
 import type { Lead, LeadType, PipelineStage, Platform, LeadTemperature } from "@/types"
 import {
   Table,
@@ -22,6 +22,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
+import { Badge } from "@/components/ui/badge"
+import { Switch } from "@/components/ui/switch"
 import { ScoreBadge, StageBadge } from "@/components/shared/score-badge"
 import { PlatformMark } from "@/components/shared/platform-badge"
 import { LeadTypeBadge } from "@/components/shared/lead-type-badge"
@@ -103,6 +105,7 @@ export function LeadsView({
   const [platform, setPlatform] = useState<Platform | "all">("all")
   const [temp, setTemp] = useState<LeadTemperature | "all">("all")
   const [sort, setSort] = useState<SortKey>("score")
+  const [showArchived, setShowArchived] = useState(false)
   const [selected, setSelected] = useState<Lead | null>(null)
   const [open, setOpen] = useState(false)
 
@@ -132,6 +135,8 @@ export function LeadsView({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     const rows = leads.filter((l) => {
+      // Archived leads are kept in Firestore but hidden unless asked for.
+      if (!showArchived && l.archived === true) return false
       if (stage !== "all" && l.stage !== stage) return false
       if (platform !== "all" && l.source !== platform) return false
       if (temp !== "all" && l.temperature !== temp) return false
@@ -144,7 +149,9 @@ export function LeadsView({
       if (sort === "value") return b.potentialValue - a.potentialValue
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     })
-  }, [leads, query, stage, platform, temp, sort])
+  }, [leads, query, stage, platform, temp, sort, showArchived])
+
+  const archivedCount = useMemo(() => leads.filter((l) => l.archived === true).length, [leads])
 
   function openLead(lead: Lead) {
     setSelected(lead)
@@ -294,11 +301,17 @@ export function LeadsView({
         </div>
       </div>
 
-      <div className="flex items-center justify-between px-1">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
         <p className="text-sm text-muted-foreground">
           <span className="font-medium text-foreground">{filtered.length}</span>{" "}
-          {t.leads.count(filtered.length, leads.length)}
+          {t.leads.count(filtered.length, leads.length - (showArchived ? 0 : archivedCount))}
         </p>
+        {archivedCount > 0 && (
+          <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+            <Switch checked={showArchived} onCheckedChange={setShowArchived} />
+            {t.leads.showArchived} · {t.leads.archivedCount(archivedCount)}
+          </label>
+        )}
       </div>
 
       {filtered.length === 0 ? (
@@ -362,7 +375,15 @@ export function LeadsView({
                   >
                     <TableCell>
                       <div className="flex flex-col">
-                        <span className="font-medium">{lead.name}</span>
+                        <span className="flex items-center gap-2 font-medium">
+                          {lead.name}
+                          {lead.archived && (
+                            <Badge variant="secondary" className="gap-1 text-[10px]">
+                              <Archive className="size-3" />
+                              {t.leads.detail.archived}
+                            </Badge>
+                          )}
+                        </span>
                         <span className="text-xs text-muted-foreground">{lead.phone}</span>
                       </div>
                     </TableCell>
