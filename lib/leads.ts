@@ -63,3 +63,40 @@ export function normalizePhone(raw: string): string {
   const digits = trimmed.replace(/[^\d]/g, "")
   return trimmed.startsWith("+") ? `+${digits}` : digits
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Contact links (tel: / WhatsApp)                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Default country code applied ONLY when a number has exactly 10 digits and
+ * no "+" prefix. Royal Sales IA operates in the US; a 10-digit number written
+ * without country code is a US number by every reasonable reading. Numbers
+ * with "+" or with 11+ digits are used exactly as stored — never guessed.
+ */
+export const DEFAULT_COUNTRY_CODE = "1"
+
+/** Digits only, with the country code resolved as described above; null if unusable. */
+export function phoneDigitsForDialing(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const trimmed = raw.trim()
+  const digits = trimmed.replace(/[^\d]/g, "")
+  if (digits.length < 7) return null
+  if (trimmed.startsWith("+")) return digits
+  if (digits.length === 10) return `${DEFAULT_COUNTRY_CODE}${digits}`
+  return digits
+}
+
+/** `tel:` link the phone can open, or null when there is no dialable number. */
+export function telHref(raw: string | null | undefined): string | null {
+  const digits = phoneDigitsForDialing(raw)
+  return digits ? `tel:+${digits}` : null
+}
+
+/** `https://wa.me/<digits>` link (WhatsApp requires country code, no "+"), or null. */
+export function whatsappHref(raw: string | null | undefined, text?: string): string | null {
+  const digits = phoneDigitsForDialing(raw)
+  if (!digits) return null
+  const query = text ? `?text=${encodeURIComponent(text)}` : ""
+  return `https://wa.me/${digits}${query}`
+}

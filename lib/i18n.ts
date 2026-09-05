@@ -391,6 +391,8 @@ export const t = {
     count: (shown: number, total: number) => `de ${total} prospectos`,
     emptyTitle: 'Ningún prospecto coincide con tus filtros',
     emptyDescription: 'Prueba quitando un filtro o ajustando tu búsqueda.',
+    searchPlaceholderShort: 'Buscar prospectos…',
+    filtersLabel: 'Filtros',
     table: {
       lead: 'Prospecto',
       type: 'Tipo',
@@ -409,6 +411,10 @@ export const t = {
       whatsapp: 'WhatsApp',
       call: 'Llamar',
       book: 'Agendar',
+      bookPending: 'Agendar estará disponible con el módulo de Calendario.',
+      noPhone: 'Este prospecto no tiene teléfono registrado.',
+      whatsappGreeting: (name: string) => `Hola ${name}, te escribo de Royal Prestige.`,
+      openLead: 'Abrir prospecto',
       tabs: {
         details: 'Detalles',
         timeline: 'Historial',
@@ -427,8 +433,10 @@ export const t = {
       lastContact: 'Último contacto',
       notContacted: 'Sin contactar aún',
       changeType: 'Cambiar tipo',
+      changeTypeTitle: 'Cambiar tipo de prospecto',
       changeTypeConfirm: (to: string) =>
         `¿Cambiar este prospecto a ${to}? Volverá a la primera etapa de ese embudo.`,
+      changeTypeAction: (to: string) => `Cambiar a ${to}`,
       typeChanged: 'Tipo de prospecto actualizado',
       typeChangeError: 'No se pudo cambiar el tipo. Inténtalo de nuevo.',
       candidate: {
