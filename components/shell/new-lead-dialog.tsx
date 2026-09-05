@@ -16,6 +16,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { PhoneField } from '@/components/leads/phone-field'
 import { Switch } from '@/components/ui/switch'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import {
@@ -26,7 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { PLATFORM_LABELS } from '@/lib/constants'
-import { campaignObjective, sourcesFor } from '@/lib/leads'
+import { campaignObjective, isValidE164, sourcesFor, toE164, DEFAULT_COUNTRY_CODE } from '@/lib/leads'
 import { createLead } from '@/lib/firebase/leads'
 import { useCampaigns, useUsers } from '@/lib/firebase/collections'
 import { useCan, useWorkspace } from '@/lib/firebase/workspace-context'
@@ -64,6 +65,9 @@ export function NewLeadDialog({
   const [campaignId, setCampaignId] = React.useState<string>(NO_CAMPAIGN)
   const [assignedToId, setAssignedToId] = React.useState('')
   const [hasVehicle, setHasVehicle] = React.useState(false)
+  const [countryCode, setCountryCode] = React.useState(DEFAULT_COUNTRY_CODE)
+  const [national, setNational] = React.useState('')
+  const [phoneError, setPhoneError] = React.useState<string | null>(null)
   const [submitting, setSubmitting] = React.useState(false)
 
   const activeReps = users.filter((u) => u.status === 'active')
@@ -109,7 +113,13 @@ export function NewLeadDialog({
     e.preventDefault()
     const form = new FormData(e.currentTarget)
     const name = (form.get('name') as string)?.trim() || t.leads.defaultName
-    const phone = (form.get('phone') as string)?.trim()
+    // Stored as E.164 with an explicit country — never a silent guess.
+    const phone = toE164(countryCode, national)
+    if (phone && !isValidE164(phone)) {
+      setPhoneError(t.leads.editDialog.phoneInvalid)
+      return
+    }
+    setPhoneError(null)
     const email = (form.get('email') as string)?.trim()
     const campaign = campaigns.find((c) => c.id === campaignId)
     if (!workspaceId) {
@@ -151,6 +161,8 @@ export function NewLeadDialog({
       setCampaignId(NO_CAMPAIGN)
       setSource('manual')
       setHasVehicle(false)
+      setNational('')
+      setCountryCode(DEFAULT_COUNTRY_CODE)
     } catch (err) {
       toast.error(t.leads.createError, { description: describeError(err).message })
     } finally {
@@ -221,11 +233,18 @@ export function NewLeadDialog({
                 required
               />
             </Field>
+            <PhoneField
+              countryCode={countryCode}
+              national={national}
+              onCountryChange={setCountryCode}
+              onNationalChange={(v) => {
+                setNational(v)
+                if (phoneError) setPhoneError(null)
+              }}
+              error={phoneError}
+              disabled={submitting}
+            />
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor="phone">{t.leads.phone}</FieldLabel>
-                <Input id="phone" name="phone" inputMode="tel" placeholder="+1 555 000 0000" />
-              </Field>
               <Field>
                 <FieldLabel htmlFor="email">{t.leads.email}</FieldLabel>
                 <Input
