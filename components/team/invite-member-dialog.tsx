@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { createUser } from "@/lib/firebase/collections"
-import { useWorkspace } from "@/lib/firebase/workspace-context"
+import { useCan, useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
 import { ROLE_LABELS } from "@/lib/constants"
 import { t } from "@/lib/i18n"
@@ -38,6 +38,7 @@ const ROLE_OPTIONS = (Object.entries(ROLE_LABELS) as [UserRole, string][]).filte
 
 export function InviteMemberDialog() {
   const { workspaceId } = useWorkspace()
+  const { canManageTeam } = useCan()
   const [open, setOpen] = React.useState(false)
   const [role, setRole] = React.useState<UserRole>("sales_rep")
   const [submitting, setSubmitting] = React.useState(false)
@@ -68,6 +69,8 @@ export function InviteMemberDialog() {
     }
   }
 
+  // Roles without permission never see the trigger; Rules reject them anyway.
+  if (!canManageTeam) return null
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
