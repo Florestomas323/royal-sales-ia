@@ -239,10 +239,73 @@ service cloud.firestore {
         || (inWorkspace(resource.data.workspaceId) && role() in ['client_admin', 'manager', 'viewer'])
         || (isWsRep(resource.data.workspaceId) && resource.data.assignedToId == myUserId());
 
+      /**
+       * Closing data (`closedValue` / `closedAt`) may only appear through a
+       * REAL transition into the won stage, and must disappear when the lead
+       * leaves it. The authoritative moment of the close is the server-signed
+       * `stage_change` activity; these rules guarantee the lead can never hold
+       * incoherent closing data.
+       */
+      function wonStageOf(type) {
+        return type == 'sales' ? 'sale' : 'rec_hired';
+      }
+
+      /** Legacy docs may lack `leadType`; they were migrated as sales. */
+      function leadTypeBefore() {
+        return resource.data.get('leadType', 'sales');
+      }
+
+      function wasWon() {
+        return resource.data.stage == wonStageOf(leadTypeBefore());
+      }
+
+      function isWonNow() {
+        return request.resource.data.stage == wonStageOf(request.resource.data.leadType);
+      }
+
+      /** A field counts as absent when it is missing or explicitly null. */
+      function hasClosedValue() {
+        return request.resource.data.get('closedValue', null) != null;
+      }
+
+      function hasClosedAt() {
+        return request.resource.data.get('closedAt', null) != null;
+      }
+
+      function closedValueIsValid() {
+        return request.resource.data.closedValue is number
+            && request.resource.data.closedValue > 0;
+      }
+
+      function closingDataChanged() {
+        return changedKeys().hasAny(['closedValue', 'closedAt']);
+      }
+
+      function closingInvariants() {
+        //  1. A hire is not revenue: recruiting never carries an amount.
+        return (request.resource.data.leadType == 'sales' || !hasClosedValue())
+        //  2. Closing data only moves on a real won transition.
+        && (!closingDataChanged() || !wasWon() == isWonNow())
+        //  3. Entering the won stage: a sale needs a positive amount and a
+        //     date; a hire needs the date and no amount.
+        && ((wasWon() || !isWonNow()) || (
+              request.resource.data.leadType == 'sales'
+                ? (closedValueIsValid() && hasClosedAt())
+                : (!hasClosedValue() && hasClosedAt())
+            ))
+        //  4. Leaving the won stage clears both, in the same write.
+        && ((!wasWon() || isWonNow()) || (!hasClosedValue() && !hasClosedAt()))
+        //  5. A lead outside its won stage never holds closing data.
+        && (isWonNow() || (!hasClosedValue() && !hasClosedAt()));
+      }
+
       // New leads must declare their type AND a stage of that type's pipeline.
       // Access is still decided exclusively by workspaceId / role / assignedToId.
+      // A lead is never born closed: closing data can only appear later, on a
+      // real transition into the won stage.
       allow create: if validLeadType(request.resource.data.leadType)
         && stageMatchesType(request.resource.data.leadType, request.resource.data.stage)
+        && !request.resource.data.keys().hasAny(['closedValue', 'closedAt'])
         && (
           isSuperAdmin()
           || isWsAdmin(request.resource.data.workspaceId)
@@ -261,6 +324,7 @@ service cloud.firestore {
       allow update: if validLeadType(request.resource.data.leadType)
         && stageMatchesType(request.resource.data.leadType, request.resource.data.stage)
         && !changedKeys().hasAny(['workspaceId', 'source', 'attribution', 'createdAt', 'clientId'])
+        && closingInvariants()
         && (
           !changedKeys().hasAny(['leadType'])
           || (
