@@ -24,6 +24,7 @@ import { LeadTimeline } from "@/components/leads/lead-timeline"
 import { LeadAiAssistant } from "@/components/leads/lead-ai-assistant"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { EditLeadDialog } from "@/components/leads/edit-lead-dialog"
+import { CloseSaleDialog } from "@/components/leads/close-sale-dialog"
 import { Badge } from "@/components/ui/badge"
 import {
   Select,
@@ -39,7 +40,15 @@ import { AddNoteForm } from "@/components/leads/add-note-form"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
 import { LEAD_TYPE_SINGULAR, PIPELINES, PLATFORM_LABELS, STAGE_LABELS, TEMPERATURE_LABELS } from "@/lib/constants"
-import { canEditLead, displayStage, leadTypeOf, telHref, whatsappHref, whatsappOpener } from "@/lib/leads"
+import {
+  canEditLead,
+  displayStage,
+  leadTypeOf,
+  requiresClosedValue,
+  telHref,
+  whatsappHref,
+  whatsappOpener,
+} from "@/lib/leads"
 import { formatCurrency, formatRelativeTime } from "@/lib/format"
 import { t } from "@/lib/i18n"
 
@@ -59,6 +68,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
   const [archiveOpen, setArchiveOpen] = useState(false)
   const [archiving, setArchiving] = useState(false)
   const [changingStage, setChangingStage] = useState(false)
+  const [closingStage, setClosingStage] = useState<PipelineStage | null>(null)
   const [contacting, setContacting] = useState(false)
   const { activities, loading: activityLoading, error: activityError } = useLeadActivities(lead?.id ?? null)
   if (!lead) return null
@@ -95,13 +105,24 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
   const tel = telHref(lead.phone)
   const wa = whatsappHref(lead.phone, whatsappOpener(lead, rep?.name))
 
-  async function handleStageChange(next: string | null) {
+  async function handleStageChange(next: string | null, confirmedValue?: number) {
     if (!lead || !next || next === lead.stage) return
+    // Closing a sale needs the real amount confirmed first.
+    if (requiresClosedValue(lead, next as PipelineStage) && confirmedValue === undefined) {
+      setClosingStage(next as PipelineStage)
+      return
+    }
     setChangingStage(true)
     try {
       // updateLead rejects a stage that does not belong to this lead's pipeline.
-      await updateLead(lead.id, lead, { stage: next as PipelineStage }, actor ? { actor } : undefined)
+      await updateLead(
+        lead.id,
+        lead,
+        { stage: next as PipelineStage, ...(confirmedValue !== undefined ? { closedValue: confirmedValue } : {}) },
+        actor ? { actor } : undefined,
+      )
       toast.success(t.leads.detail.stageUpdated, { description: STAGE_LABELS[next as PipelineStage] })
+      setClosingStage(null)
     } catch (err) {
       toast.error(t.leads.detail.stageError, { description: describeError(err).message })
     } finally {
@@ -329,7 +350,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                       canEdit ? (
                         <Select
                           value={displayStage(lead)}
-                          onValueChange={handleStageChange}
+                          onValueChange={(next) => void handleStageChange(next)}
                           disabled={changingStage || Boolean(lead.archived)}
                         >
                           <SelectTrigger className="h-9 w-full sm:h-8 sm:w-56" aria-label={t.leads.detail.changeStage}>
@@ -503,6 +524,16 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
       </SheetContent>
 
       {canEdit && <EditLeadDialog lead={lead} open={editOpen} onOpenChange={setEditOpen} />}
+
+      <CloseSaleDialog
+        lead={lead}
+        open={closingStage !== null}
+        onOpenChange={(open) => !open && setClosingStage(null)}
+        busy={changingStage}
+        onConfirm={(amount) => {
+          if (closingStage) void handleStageChange(closingStage, amount)
+        }}
+      />
 
       <ConfirmDialog
         open={archiveOpen}
