@@ -1,39 +1,11 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { funnel } from "@/lib/mock-data"
-import { formatNumber } from "@/lib/format"
-import { t } from "@/lib/i18n"
-
-export function ConversionFunnel() {
-  const max = funnel[0]?.count ?? 1
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">{t.overview.funnel}</CardTitle>
-        <CardDescription>{t.overview.funnelDescription}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3.5">
-        {funnel.map((step, i) => {
-          const width = Math.max((step.count / max) * 100, 6)
-          return (
-            <div key={step.stage} className="flex flex-col gap-1.5">
-              <div className="flex items-baseline justify-between text-sm">
-                <span className="font-medium">{step.stage}</span>
-                <span className="flex items-center gap-2 text-muted-foreground tabular-nums">
-                  <span className="text-foreground">{formatNumber(step.count)}</span>
-                  {i > 0 && <span className="text-xs">{step.conversion}%</span>}
-                </span>
-              </div>
-              <div className="h-8 w-full overflow-hidden rounded-md bg-muted/60">
-                <div
-                  className="flex h-full items-center rounded-md bg-gradient-to-r from-primary to-accent transition-all"
-                  style={{ width: `${width}%` }}
-                />
-              </div>
-            </div>
-          )
-        })}
-      </CardContent>
-    </Card>
-  )
-}
+/**
+ * Intentionally empty.
+ *
+ * This component rendered demo data (fabricated trends, platform figures,
+ * funnel and "AI insights"). Phase F replaced the command center with metrics
+ * computed from real `leads` documents — see components/overview/command-center.tsx.
+ * The file is kept as an empty module so the repository never passes through a
+ * state where a stale component is still present but its imports are gone.
+ * Nothing imports it. Safe to delete in a later cleanup.
+ */
+export {}

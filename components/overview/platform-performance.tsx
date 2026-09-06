@@ -1,47 +1,11 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { PlatformBadge } from "@/components/shared/platform-badge"
-import { platformMetrics } from "@/lib/mock-data"
-import { formatCurrency, formatNumber } from "@/lib/format"
-import { t } from "@/lib/i18n"
-
-export function PlatformPerformance() {
-  const totalLeads = platformMetrics.reduce((s, p) => s + p.leads, 0)
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">{t.overview.platformPerformance}</CardTitle>
-        <CardDescription>{t.overview.platformPerformanceDescription}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-1">
-        {platformMetrics.map((p) => {
-          const share = totalLeads ? Math.round((p.leads / totalLeads) * 100) : 0
-          return (
-            <div
-              key={p.platform}
-              className="flex items-center gap-4 rounded-lg px-2 py-2.5 transition-colors hover:bg-muted/50"
-            >
-              <div className="w-32 shrink-0">
-                <PlatformBadge platform={p.platform} />
-              </div>
-              <div className="flex flex-1 flex-col gap-1">
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary"
-                    style={{ width: `${share}%` }}
-                  />
-                </div>
-              </div>
-              <div className="flex w-40 shrink-0 items-center justify-end gap-4 text-sm tabular-nums">
-                <span className="text-muted-foreground">
-                  {formatNumber(p.leads)} {t.overview.leadsUnit}
-                </span>
-                <span className="font-medium">{formatCurrency(p.cpl)}</span>
-              </div>
-            </div>
-          )
-        })}
-      </CardContent>
-    </Card>
-  )
-}
+/**
+ * Intentionally empty.
+ *
+ * This component rendered demo data (fabricated trends, platform figures,
+ * funnel and "AI insights"). Phase F replaced the command center with metrics
+ * computed from real `leads` documents — see components/overview/command-center.tsx.
+ * The file is kept as an empty module so the repository never passes through a
+ * state where a stale component is still present but its imports are gone.
+ * Nothing imports it. Safe to delete in a later cleanup.
+ */
+export {}
