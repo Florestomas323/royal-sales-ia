@@ -295,7 +295,8 @@ export const t = {
     campaignsEmpty: 'Todavía no hay prospectos con campaña en este periodo.',
     noCampaignRow: 'Sin campaña',
     priorities: 'Prioridades de hoy',
-    prioritiesDescription: 'Prospectos con mayor puntaje que necesitan un contacto',
+    prioritiesDescription:
+      'Cola de trabajo: prospectos abiertos con mayor puntaje, sin importar cuándo entraron ni el periodo seleccionado.',
     prioritiesEmpty: 'No hay prospectos activos en este workspace todavía.',
     table: {
       rep: 'Vendedor',
@@ -309,6 +310,7 @@ export const t = {
       closeRate: 'Cierre',
       cpl: 'CPL',
       unassigned: 'Sin asignar',
+      unknownOwner: (id: string) => `Usuario no disponible · ${id}`,
     },
   },
 
@@ -535,6 +537,9 @@ export const t = {
       closeSaleError: 'No se pudo registrar la venta',
       reopenNotice: 'Al sacar el prospecto de la etapa ganadora se borran el importe y la fecha de cierre.',
       noAmount: 'Venta sin importe registrado',
+      noAmountShort: 'Sin importe',
+      closedAmount: 'Importe cerrado',
+      potentialAmount: 'Valor potencial',
       noCloseDate: 'Venta sin fecha de cierre registrada',
       activityTitle: 'Actividad',
       activityEmpty: 'Todavía no hay actividad registrada para este prospecto.',
@@ -809,6 +814,7 @@ export const t = {
         columnWorkspace: 'Workspace propietario',
         columnType: 'Tipo',
         unassigned: 'Sin asignar',
+        unknownOwner: (id: string) => `Usuario no disponible · ${id}`,
         unassignedHint: 'Los prospectos de esta campaña quedarán sin asignar hasta que elijas un workspace.',
         assign: 'Asignar',
         remove: 'Quitar asignación',

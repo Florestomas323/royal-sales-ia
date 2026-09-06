@@ -189,7 +189,11 @@ export function computeMetrics(input: Lead[], options: MetricsOptions = {}): Com
 /*  Breakdowns                                                                 */
 /* -------------------------------------------------------------------------- */
 
+/** Group key for leads with no owner. Never a real `users.id`. */
+export const UNASSIGNED_OWNER = "__unassigned__"
+
 export interface RepPerformance {
+  /** `users.id`, or UNASSIGNED_OWNER for every unowned lead. */
   userId: string
   leads: number
   contacted: number
@@ -204,7 +208,10 @@ export interface RepPerformance {
 export function computeRepPerformance(leads: Lead[], options: MetricsOptions = {}): RepPerformance[] {
   const byRep = new Map<string, Lead[]>()
   for (const lead of activeLeads(leads)) {
-    const key = lead.assignedToId || ""
+    // Every shape of "no owner" collapses into ONE bucket: missing field,
+    // null, undefined, empty string or whitespace.
+    const raw = typeof lead.assignedToId === "string" ? lead.assignedToId.trim() : ""
+    const key = raw.length > 0 ? raw : UNASSIGNED_OWNER
     byRep.set(key, [...(byRep.get(key) ?? []), lead])
   }
   return [...byRep.entries()]

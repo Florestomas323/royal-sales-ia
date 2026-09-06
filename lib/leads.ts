@@ -370,3 +370,64 @@ export function isValidClosedValue(value: unknown): value is number {
 export function hasClosedAmount(lead: Pick<Lead, "closedValue">): boolean {
   return isValidClosedValue(lead.closedValue)
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Money displayed on a lead (Phase F correction)                             */
+/* -------------------------------------------------------------------------- */
+
+export interface LeadAmount {
+  /** Amount to render, or null when there is nothing honest to show. */
+  amount: number | null
+  /** True when it is a CONFIRMED closed amount, not a potential value. */
+  closed: boolean
+  /** Won sale with no confirmed amount (predates Phase F). */
+  legacyWonWithoutAmount: boolean
+}
+
+/**
+ * The single rule for showing money on a lead, used by every surface.
+ *
+ *   sale + closedValue > 0  → the confirmed amount (never `potentialValue`)
+ *   sale without amount     → nothing: a legacy sale must not be dressed up
+ *                             with its potential value
+ *   any other stage         → `potentialValue`, clearly a potential figure
+ *
+ * `rec_hired` is a hire, not revenue, so it never shows an amount as closed.
+ */
+export function leadAmount(
+  lead: Pick<Lead, "leadType" | "stage" | "potentialValue" | "closedValue">,
+): LeadAmount {
+  const type = leadTypeOf(lead)
+  const isWonSale = type === "sales" && lead.stage === PIPELINES.sales.won
+  if (!isWonSale) {
+    return { amount: lead.potentialValue ?? 0, closed: false, legacyWonWithoutAmount: false }
+  }
+  if (hasClosedAmount(lead)) {
+    return { amount: lead.closedValue as number, closed: true, legacyWonWithoutAmount: false }
+  }
+  return { amount: null, closed: false, legacyWonWithoutAmount: true }
+}
+
+/**
+ * Money total for a pipeline column.
+ *  - Won sales column → sum of CONFIRMED amounts only.
+ *  - Any other column → sum of potential values.
+ * A legacy won sale contributes 0 and is reported through `missingAmounts`.
+ */
+export function columnAmount(
+  leads: Pick<Lead, "leadType" | "stage" | "potentialValue" | "closedValue">[],
+): { total: number; closed: boolean; missingAmounts: number } {
+  let total = 0
+  let missing = 0
+  let closed = false
+  for (const lead of leads) {
+    const value = leadAmount(lead)
+    if (value.legacyWonWithoutAmount) {
+      missing += 1
+      continue
+    }
+    if (value.closed) closed = true
+    total += value.amount ?? 0
+  }
+  return { total, closed, missingAmounts: missing }
+}
