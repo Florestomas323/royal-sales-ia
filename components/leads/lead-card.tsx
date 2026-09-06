@@ -9,7 +9,7 @@ import { PlatformMark } from "@/components/shared/platform-badge"
 import { LeadTypeBadge } from "@/components/shared/lead-type-badge"
 import { Badge } from "@/components/ui/badge"
 import { PLATFORM_LABELS } from "@/lib/constants"
-import { displayStage, leadTypeOf, telHref, whatsappHref, whatsappOpener } from "@/lib/leads"
+import { displayStage, leadAmount, leadTypeOf, telHref, whatsappHref, whatsappOpener } from "@/lib/leads"
 import { formatCurrency, formatRelativeTime, initials } from "@/lib/format"
 import { recordContact } from "@/lib/firebase/leads"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
@@ -118,11 +118,20 @@ export function LeadCard({
         ) : (
           <span>{t.common.unassigned}</span>
         )}
-        {type === "sales" && (
-          <span className="font-medium tabular-nums text-foreground">
-            {formatCurrency(lead.potentialValue)}
-          </span>
-        )}
+        {type === "sales" && (() => {
+          // Confirmed amount for a closed sale; never its potential value.
+          const value = leadAmount(lead)
+          return value.legacyWonWithoutAmount ? (
+            <span title={t.leads.detail.noAmount}>{t.leads.detail.noAmountShort}</span>
+          ) : (
+            <span
+              className="font-medium tabular-nums text-foreground"
+              title={value.closed ? t.leads.detail.closedAmount : t.leads.detail.potentialAmount}
+            >
+              {formatCurrency(value.amount ?? 0)}
+            </span>
+          )
+        })()}
         <span className="ml-auto">{formatRelativeTime(lead.createdAt)}</span>
       </div>
 

@@ -43,6 +43,7 @@ import { LEAD_TYPE_SINGULAR, PIPELINES, PLATFORM_LABELS, STAGE_LABELS, TEMPERATU
 import {
   canEditLead,
   displayStage,
+  leadAmount,
   leadTypeOf,
   requiresClosedValue,
   telHref,
@@ -200,7 +201,14 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                 {!isRecruiting && (
                   <span className="flex items-center gap-1">
                     <Target className="size-3.5" />
-                    {formatCurrency(lead.potentialValue)} {t.leads.detail.potential}
+                    {(() => {
+                      // A closed sale shows its confirmed amount, not the potential one.
+                      const value = leadAmount(lead)
+                      if (value.legacyWonWithoutAmount) return t.leads.detail.noAmount
+                      return `${formatCurrency(value.amount ?? 0)} ${
+                        value.closed ? t.leads.detail.closedAmount : t.leads.detail.potential
+                      }`
+                    })()}
                   </span>
                 )}
                 <span className="flex items-center gap-1">

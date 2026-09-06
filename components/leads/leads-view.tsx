@@ -35,7 +35,7 @@ import {
   PLATFORM_LABELS,
   TEMPERATURE_LABELS,
 } from "@/lib/constants"
-import { displayStage, leadTypeOf } from "@/lib/leads"
+import { displayStage, leadAmount, leadTypeOf } from "@/lib/leads"
 import { t } from "@/lib/i18n"
 import { useUsersMap } from "@/lib/firebase/collections"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
@@ -414,9 +414,11 @@ export function LeadsView({
                       <ScoreBadge score={lead.score} temperature={lead.temperature} className="justify-end" />
                     </TableCell>
                     <TableCell className="hidden text-right font-medium tabular-nums md:table-cell">
-                      {leadTypeOf(lead) === "sales"
-                        ? formatCurrency(lead.potentialValue)
-                        : t.leads.detail.notAvailable}
+                      {leadTypeOf(lead) !== "sales"
+                        ? t.leads.detail.notAvailable
+                        : leadAmount(lead).legacyWonWithoutAmount
+                          ? t.leads.detail.noAmountShort
+                          : formatCurrency(leadAmount(lead).amount ?? 0)}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
                       {rep && (
