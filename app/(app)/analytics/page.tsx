@@ -1,28 +1,19 @@
 import type { Metadata } from "next"
 import { PageHeader } from "@/components/shared/page-header"
-import { PerformanceChart } from "@/components/overview/performance-chart"
-import { RevenueChart } from "@/components/analytics/revenue-chart"
-import { PlatformPerformance } from "@/components/overview/platform-performance"
-import { ConversionFunnel } from "@/components/overview/conversion-funnel"
-import { DemoDataBadge } from "@/components/shared/demo-data-badge"
+import { CommandCenter } from "@/components/overview/command-center"
 import { t } from "@/lib/i18n"
 
 export const metadata: Metadata = { title: t.analytics.title }
 
+/**
+ * Analytics shares the command center: the same real metrics with the same
+ * period filter. The previous demo charts were removed in Phase F.
+ */
 export default function AnalyticsPage() {
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        title={t.analytics.title}
-        description={t.analytics.description}
-        actions={<DemoDataBadge />}
-      />
-      <PerformanceChart />
-      <div className="grid gap-6 lg:grid-cols-2">
-        <RevenueChart />
-        <PlatformPerformance />
-      </div>
-      <ConversionFunnel />
+      <PageHeader title={t.analytics.title} description={t.analytics.description} />
+      <CommandCenter />
     </div>
   )
 }
