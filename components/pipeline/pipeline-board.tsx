@@ -4,7 +4,8 @@ import { useCallback, useMemo, useRef, useState } from "react"
 import { ArrowRightLeft, Building2, GripVertical, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-import { updateLead } from "@/lib/firebase/leads"
+import { updateLeadStage } from "@/lib/firebase/leads"
+import type { ActorContext } from "@/lib/firebase/activities"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
 import { PIPELINES, STAGE_LABELS, STAGE_TONE } from "@/lib/constants"
@@ -45,6 +46,10 @@ export function PipelineBoard({ leads, leadType }: { leads: Lead[]; leadType: Le
     [role, membership, isSuperAdmin],
   )
 
+  const actor: ActorContext | null = useMemo(
+    () => (membership?.userId && role ? { userId: membership.userId, role } : null),
+    [membership],
+  )
   const [dragId, setDragId] = useState<string | null>(null)
   const [overStage, setOverStage] = useState<PipelineStage | null>(null)
   const [selected, setSelected] = useState<Lead | null>(null)
@@ -72,11 +77,14 @@ export function PipelineBoard({ leads, leadType }: { leads: Lead[]; leadType: Le
         if (!canEditLead(editor, lead)) toast.error(t.pipeline.readOnly)
         return
       }
+      if (!actor) return
       inFlight.current.add(lead.id)
       setPending((p) => ({ ...p, [lead.id]: stage }))
       try {
-        // updateLead re-validates stage ∈ pipeline; Rules validate it again.
-        await updateLead(lead.id, lead, { stage })
+        // Single audited path shared by drag & drop and "Mover a": the stage
+        // and its activity commit in one batch, so no duplicates and no
+        // "stage saved without activity".
+        await updateLeadStage(lead, stage, actor)
         toast.success(t.pipeline.moved(lead.name, STAGE_LABELS[stage]))
         setMoving(null)
       } catch (err) {
@@ -91,7 +99,7 @@ export function PipelineBoard({ leads, leadType }: { leads: Lead[]; leadType: Le
         })
       }
     },
-    [editor],
+    [editor, actor],
   )
 
   function handleDrop(stage: PipelineStage) {
