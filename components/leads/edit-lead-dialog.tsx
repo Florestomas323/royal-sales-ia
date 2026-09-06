@@ -126,7 +126,18 @@ export function EditLeadDialog({
 
     setSaving(true)
     try {
-      await updateLead(lead.id, lead, patch)
+      await updateLead(
+        lead.id,
+        lead,
+        patch,
+        // Stage / assignment changes are audited in the same batch.
+        membership?.userId && role
+          ? {
+              actor: { userId: membership.userId, role },
+              memberName: (id) => members.find((m) => m.id === id)?.name ?? "",
+            }
+          : undefined,
+      )
       // Firestore confirmed: the live subscription refreshes the sheet/list.
       toast.success(t.leads.editDialog.saved)
       onOpenChange(false)

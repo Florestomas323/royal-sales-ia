@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { toast } from "sonner"
 import { Phone, Mail, MessageCircle, CalendarPlus, Target, Clock, ArrowRightLeft, Pencil, Archive, ArchiveRestore } from "lucide-react"
-import type { Activity, Lead, LeadType, PipelineStage } from "@/types"
+import type { Lead, LeadType, PipelineStage } from "@/types"
 import {
   Sheet,
   SheetContent,
@@ -33,7 +33,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useUsersMap } from "@/lib/firebase/collections"
-import { archiveLead, restoreLead, updateLead, updateLeadType } from "@/lib/firebase/leads"
+import { archiveLead, recordContact, restoreLead, updateLead, updateLeadType } from "@/lib/firebase/leads"
+import { useLeadActivities, type ActorContext } from "@/lib/firebase/activities"
+import { AddNoteForm } from "@/components/leads/add-note-form"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
 import { LEAD_TYPE_SINGULAR, PIPELINES, PLATFORM_LABELS, STAGE_LABELS, TEMPERATURE_LABELS } from "@/lib/constants"
@@ -57,6 +59,8 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
   const [archiveOpen, setArchiveOpen] = useState(false)
   const [archiving, setArchiving] = useState(false)
   const [changingStage, setChangingStage] = useState(false)
+  const [contacting, setContacting] = useState(false)
+  const { activities, loading: activityLoading, error: activityError } = useLeadActivities(lead?.id ?? null)
   if (!lead) return null
   const rep = usersMap[lead.assignedToId]
   const type = leadTypeOf(lead)
@@ -71,6 +75,10 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
   }
   const canEdit = canEditLead(editor, lead)
   const stageOptions = PIPELINES[type].stages
+  const actor: ActorContext | null =
+    membership?.userId && role ? { userId: membership.userId, role } : null
+  /** Actor names come from the lead's workspace; unresolved ones show a neutral label. */
+  const resolveActor = (actorId: string) => usersMap[actorId]?.name
   const workspaceName = workspaces.find((w) => w.id === lead.workspaceId)?.name ?? lead.workspaceId
   const rec = lead.recruiting
   const hasExtraAttribution = Boolean(
@@ -92,7 +100,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
     setChangingStage(true)
     try {
       // updateLead rejects a stage that does not belong to this lead's pipeline.
-      await updateLead(lead.id, lead, { stage: next as PipelineStage })
+      await updateLead(lead.id, lead, { stage: next as PipelineStage }, actor ? { actor } : undefined)
       toast.success(t.leads.detail.stageUpdated, { description: STAGE_LABELS[next as PipelineStage] })
     } catch (err) {
       toast.error(t.leads.detail.stageError, { description: describeError(err).message })
@@ -105,11 +113,12 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
     if (!lead) return
     setArchiving(true)
     try {
+      if (!actor) return
       if (lead.archived) {
-        await restoreLead(lead.id)
+        await restoreLead(lead, actor)
         toast.success(t.leads.detail.restoredToast)
       } else {
-        await archiveLead(lead.id)
+        await archiveLead(lead, actor)
         toast.success(t.leads.detail.archivedToast)
         onOpenChange(false)
       }
@@ -119,6 +128,20 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
     } finally {
       setArchiving(false)
     }
+  }
+
+  /**
+   * Records the contact attempt without blocking navigation: the button is a
+   * real <a>, so iOS opens WhatsApp / the dialer natively on tap while the
+   * batch (activity + lastContactAt) commits in the background. Opening the
+   * app is not proof of delivery, hence "iniciado".
+   */
+  function handleContact(kind: "whatsapp" | "call") {
+    if (!lead || !actor || contacting) return // double-tap guard
+    setContacting(true)
+    void recordContact(lead, kind, actor)
+      .catch((err) => toast.error(t.leads.detail.contactError, { description: describeError(err).message }))
+      .finally(() => setContacting(false))
   }
 
   async function handleChangeType() {
@@ -134,21 +157,6 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
       setChangingType(false)
     }
   }
-  // Activities are not persisted yet (roadmap). Until then the timeline only
-  // shows the real creation event derived from the lead itself — never mock
-  // conversations mixed with real data.
-  const activities: Activity[] = [
-    {
-      id: `${lead.id}-received`,
-      leadId: lead.id,
-      type: "lead_received",
-      title: t.leads.detail.receivedTitle,
-      description: t.leads.detail.receivedDescription(lead.campaignName),
-      actor: t.leads.detail.systemActor,
-      timestamp: lead.createdAt,
-    },
-  ]
-
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="flex w-full flex-col gap-0 overflow-x-hidden p-0 sm:max-w-xl">
@@ -194,6 +202,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                 className="h-11 min-w-0 gap-1.5 sm:h-8"
                 nativeButton={false}
                 render={<a href={wa} target="_blank" rel="noopener noreferrer" />}
+                onClick={() => handleContact("whatsapp")}
               >
                 <MessageCircle className="size-3.5" data-icon="inline-start" />
                 {t.leads.detail.whatsapp}
@@ -211,6 +220,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                 className="h-11 min-w-0 gap-1.5 sm:h-8"
                 nativeButton={false}
                 render={<a href={tel} />}
+                onClick={() => handleContact("call")}
               >
                 <Phone className="size-3.5" data-icon="inline-start" />
                 {t.leads.detail.call}
@@ -423,7 +433,16 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
               </TabsContent>
 
               <TabsContent value="timeline" className="pt-4">
-                <LeadTimeline activities={activities} />
+                <div className="flex flex-col gap-4">
+                  {actor && canEdit && <AddNoteForm lead={lead} actor={actor} />}
+                  {activityError ? (
+                    <p className="text-sm text-destructive">{t.leads.detail.activityError}</p>
+                  ) : activityLoading ? (
+                    <p className="text-sm text-muted-foreground">{t.leads.detail.activityLoading}</p>
+                  ) : (
+                    <LeadTimeline activities={activities} resolveActor={resolveActor} />
+                  )}
+                </div>
               </TabsContent>
 
               <TabsContent value="attribution" className="pt-4">

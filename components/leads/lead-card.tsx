@@ -1,5 +1,7 @@
 "use client"
 
+import { useRef } from "react"
+import { toast } from "sonner"
 import { Archive, Building2, MessageCircle, Phone } from "lucide-react"
 import type { Lead, User } from "@/types"
 import { ScoreBadge, StageBadge } from "@/components/shared/score-badge"
@@ -9,6 +11,9 @@ import { Badge } from "@/components/ui/badge"
 import { PLATFORM_LABELS } from "@/lib/constants"
 import { displayStage, leadTypeOf, telHref, whatsappHref, whatsappOpener } from "@/lib/leads"
 import { formatCurrency, formatRelativeTime, initials } from "@/lib/format"
+import { recordContact } from "@/lib/firebase/leads"
+import { useWorkspace } from "@/lib/firebase/workspace-context"
+import { describeError } from "@/lib/firebase/errors"
 import { t } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
@@ -32,8 +37,21 @@ export function LeadCard({
   workspaceName?: string
   onOpen: (lead: Lead) => void
 }) {
+  const { membership, role } = useWorkspace()
+  const contacting = useRef(false)
   const type = leadTypeOf(lead)
   const tel = telHref(lead.phone)
+
+  /** Same contract as the detail sheet: record without blocking navigation. */
+  function handleContact(kind: "whatsapp" | "call") {
+    if (!membership?.userId || !role || contacting.current) return
+    contacting.current = true
+    void recordContact(lead, kind, { userId: membership.userId, role })
+      .catch((err) => toast.error(t.leads.detail.contactError, { description: describeError(err).message }))
+      .finally(() => {
+        contacting.current = false
+      })
+  }
   // Opener differs for a customer and a candidate, and uses the real owner name when there is one.
   const wa = whatsappHref(lead.phone, whatsappOpener(lead, owner?.name))
 
@@ -110,8 +128,14 @@ export function LeadCard({
 
       {/* Acciones rápidas — enlaces reales, no botones decorativos */}
       <div className="grid grid-cols-2 gap-2">
-        <QuickAction href={wa} icon={MessageCircle} label={t.leads.detail.whatsapp} primary />
-        <QuickAction href={tel} icon={Phone} label={t.leads.detail.call} />
+        <QuickAction
+          href={wa}
+          icon={MessageCircle}
+          label={t.leads.detail.whatsapp}
+          primary
+          onActivate={() => handleContact("whatsapp")}
+        />
+        <QuickAction href={tel} icon={Phone} label={t.leads.detail.call} onActivate={() => handleContact("call")} />
       </div>
     </div>
   )
@@ -122,11 +146,13 @@ function QuickAction({
   icon: Icon,
   label,
   primary = false,
+  onActivate,
 }: {
   href: string | null
   icon: typeof Phone
   label: string
   primary?: boolean
+  onActivate?: () => void
 }) {
   const base =
     "flex h-11 items-center justify-center gap-1.5 rounded-lg text-sm font-medium transition-colors"
@@ -147,7 +173,10 @@ function QuickAction({
       href={href}
       target={href.startsWith("http") ? "_blank" : undefined}
       rel={href.startsWith("http") ? "noopener noreferrer" : undefined}
-      onClick={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation()
+        onActivate?.()
+      }}
       className={cn(
         base,
         primary
