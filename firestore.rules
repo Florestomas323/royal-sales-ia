@@ -279,6 +279,137 @@ service cloud.firestore {
       allow delete: if isSuperAdmin() || isWsAdmin(resource.data.workspaceId);
     }
 
+    // ------------------------------------------------- leads/{id}/activities
+    // Immutable audit trail. An activity may only be written together with the
+    // change it describes, in the SAME batch: `get()` sees the lead before the
+    // batch, `getAfter()` after it, so the rule can require a real transition.
+    match /leads/{leadId}/activities/{activityId} {
+
+      /** Lead state BEFORE this write. Only valid when the lead already exists. */
+      function leadBefore() {
+        return get(/databases/$(database)/documents/leads/$(leadId)).data;
+      }
+
+      /** Lead state AFTER this batch. Sees a lead created in the same batch. */
+      function leadAfter() {
+        return getAfter(/databases/$(database)/documents/leads/$(leadId)).data;
+      }
+
+      function leadExistedBefore() {
+        return exists(/databases/$(database)/documents/leads/$(leadId));
+      }
+
+      function activity() {
+        return request.resource.data;
+      }
+
+      function activityPayload() {
+        return activity().get('payload', {});
+      }
+
+      /** Reads use the CURRENT lead: getAfter() is not allowed on reads. */
+      function canSeeLead() {
+        return isSuperAdmin()
+          || (inWorkspace(leadBefore().workspaceId) && role() in ['client_admin', 'manager', 'viewer'])
+          || (isWsRep(leadBefore().workspaceId) && leadBefore().assignedToId == myUserId());
+      }
+
+      /** Writes use the RESULTING lead, so a lead born in this batch counts. */
+      function canActOnLead() {
+        return isSuperAdmin()
+          || isWsAdmin(leadAfter().workspaceId)
+          || (isWsRep(leadAfter().workspaceId) && leadAfter().assignedToId == myUserId());
+      }
+
+      function validActivityType(v) {
+        return v in ['whatsapp', 'call', 'stage_change', 'assignment_change',
+                     'note', 'lead_created', 'archived', 'restored'];
+      }
+
+      /**
+       * Audit snapshot of the actor's ROLE at the time of the action. Needed
+       * because the super admin has no `users` profile inside a workspace, so
+       * the name cannot always be resolved. It is pinned to the caller's real
+       * role in `memberships/{uid}`, so it cannot be faked.
+       */
+      function validActorRole(v) {
+        return v in ['super_admin', 'client_admin', 'manager', 'sales_rep', 'viewer'];
+      }
+
+      /** Exact shape: no extra fields, correct types, server-signed timestamp. */
+      function validShape() {
+        return activity().keys().hasOnly(['workspaceId', 'leadId', 'type', 'actorId', 'actorRole', 'createdAt', 'createdAtServer', 'payload'])
+          && activity().keys().hasAll(['workspaceId', 'leadId', 'type', 'actorId', 'actorRole', 'createdAt', 'createdAtServer'])
+          && activity().workspaceId is string
+          && activity().leadId is string
+          && activity().type is string
+          && validActivityType(activity().type)
+          && activity().actorId is string
+          && activity().actorRole is string
+          && validActorRole(activity().actorRole)
+          && activity().createdAt is string
+          && activity().createdAt.size() > 0
+          && activity().createdAtServer is timestamp
+          && activity().createdAtServer == request.time
+          && activityPayload() is map
+          && activityPayload().keys().hasOnly(['from', 'to', 'fromLabel', 'toLabel', 'note']);
+      }
+
+      /**
+       * An activity must describe a change that really happened in this batch.
+       * 'note' is the only type that does not modify the lead.
+       */
+      function describesRealChange() {
+        return activity().type == 'lead_created'
+            ? (!leadExistedBefore() && existsAfter(/databases/$(database)/documents/leads/$(leadId)))
+          : activity().type == 'stage_change'
+            ? (leadExistedBefore()
+               && leadBefore().stage != leadAfter().stage
+               && activityPayload().get('from', '') == leadBefore().stage
+               && activityPayload().get('to', '') == leadAfter().stage)
+          : activity().type == 'assignment_change'
+            ? (leadExistedBefore()
+               && leadBefore().get('assignedToId', '') != leadAfter().get('assignedToId', '')
+               && activityPayload().get('from', '') == leadBefore().get('assignedToId', '')
+               && activityPayload().get('to', '') == leadAfter().get('assignedToId', ''))
+          : activity().type == 'archived'
+            ? (leadExistedBefore()
+               && leadBefore().get('archived', false) != true
+               && leadAfter().get('archived', false) == true)
+          : activity().type == 'restored'
+            ? (leadExistedBefore()
+               && leadBefore().get('archived', false) == true
+               && leadAfter().get('archived', false) != true)
+          : (activity().type == 'whatsapp' || activity().type == 'call')
+            ? (leadExistedBefore()
+               && leadBefore().get('lastContactAt', null) != leadAfter().get('lastContactAt', null))
+          : leadExistedBefore();
+      }
+
+      /** A note must carry real text, not blanks. */
+      function validNote() {
+        return activity().type != 'note'
+          || (activityPayload().get('note', '') is string
+              && activityPayload().get('note', '').trim().size() > 0);
+      }
+
+      allow read: if canSeeLead();
+
+      allow create: if validShape()
+        && validNote()
+        && activity().leadId == leadId
+        && activity().actorId == myUserId()
+        // The role is not chosen by the client: it must be the caller's real one.
+        && activity().actorRole == role()
+        && existsAfter(/databases/$(database)/documents/leads/$(leadId))
+        && activity().workspaceId == leadAfter().workspaceId
+        && describesRealChange()
+        && canActOnLead();
+
+      // Audit trail: never edited, never deleted.
+      allow update, delete: if false;
+    }
+
     // ----------------------------------------------------- everything else
     // Any collection not listed above is closed. Add explicit rules when a new
     // collection is introduced (appointments, activities, integrations, …).
