@@ -289,6 +289,56 @@ export const getAds = (campaignId: string, o?: GraphClientOptions) =>
     o,
   )
 
+export interface GraphAction {
+  action_type: string
+  value: string
+}
+
+/** One row of /act_{id}/insights?level=campaign. Numbers arrive as strings. */
+export interface GraphCampaignInsight {
+  campaign_id: string
+  campaign_name?: string
+  date_start: string
+  date_stop: string
+  spend?: string
+  impressions?: string
+  reach?: string
+  frequency?: string
+  clicks?: string
+  inline_link_clicks?: string
+  ctr?: string
+  cpc?: string
+  cpm?: string
+  actions?: GraphAction[]
+  cost_per_action_type?: GraphAction[]
+}
+
+/**
+ * Campaign-level insights for an exact date range (never a preset that
+ * silently widens the window). READ-ONLY: this module has no write helpers
+ * by design — Media Buyer IA analyses, it never edits campaigns.
+ * Needs `ads_read` on the ad account.
+ */
+export const getCampaignInsights = (
+  adAccountId: string,
+  range: { since: string; until: string },
+  o?: GraphClientOptions,
+) =>
+  graphGet<GraphPaged<GraphCampaignInsight>>(
+    `${encodeURIComponent(adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`)}/insights`,
+    {
+      level: "campaign",
+      fields: [
+        "campaign_id", "campaign_name", "date_start", "date_stop",
+        "spend", "impressions", "reach", "frequency", "clicks", "inline_link_clicks",
+        "ctr", "cpc", "cpm", "actions", "cost_per_action_type",
+      ].join(","),
+      time_range: JSON.stringify({ since: range.since, until: range.until }),
+      limit: "200",
+    },
+    o,
+  )
+
 /** Lead forms of a page. Needs pages_manage_ads / leads_retrieval; fails honestly otherwise. */
 export const getLeadForms = (pageId: string, o?: GraphClientOptions) =>
   graphGet<GraphPaged<GraphLeadForm>>(
