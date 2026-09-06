@@ -13,11 +13,45 @@ import type { ContentAIProvider, ProviderRequest, ProviderResult } from "./types
  *
  * Model comes from OPENAI_MODEL so it can be switched (terra → sol → luna)
  * without a deploy.
+ *
+ * COST CONTROLS (per request, all server-side, none configurable by the
+ * browser):
+ *   reasoning.effort = "low"   — this is a formatting/copywriting task, not a
+ *                                reasoning-heavy one; low effort is enough
+ *                                and noticeably cheaper on reasoning tokens.
+ *   text.verbosity   = "low"   — shortest phrasing compatible with filling
+ *                                the required JSON fields.
+ *   max_output_tokens          — capped per schemaName, see MAX_OUTPUT_TOKENS.
+ *   prompt_cache_key           — a STATIC string per schemaName (e.g.
+ *                                "content-lab:creative_output"), never a
+ *                                workspace id, user id or anything dynamic:
+ *                                it only tells OpenAI's cache which feature
+ *                                is calling, so the identical system prompt
+ *                                and schema across requests can be reused.
  */
 
 const ENDPOINT = "https://api.openai.com/v1/responses"
 export const DEFAULT_MODEL = "gpt-5.6-terra"
 const TIMEOUT_MS = 45_000
+
+/**
+ * Output caps per schema. These are APPROXIMATE worst-case estimates by hand
+ * (word count × ~1.3–1.5 tokens/word + JSON structural overhead) — no
+ * tokenizer library was added to measure this exactly.
+ *
+ *   creative_output ≈ 1400–1550 tokens worst case: a video creative fills a
+ *     5-beat script (4 short fields each), an 8-field visual concept, 5
+ *     hooks, 3 angles and a full copy paragraph. 3500 leaves roughly 2x
+ *     headroom so a verbose answer does not get cut off mid-JSON.
+ *   variant_set ≈ 150–250 tokens worst case: 3 short variants of ONE field
+ *     (a hook, an angle name, a CTA or a headline). 800 leaves close to 3x
+ *     headroom while staying far below the creative cap, as required.
+ */
+const MAX_OUTPUT_TOKENS: Record<string, number> = {
+  creative_output: 3500,
+  variant_set: 800,
+}
+const DEFAULT_MAX_OUTPUT_TOKENS = 1500
 
 interface ResponsesOutputContent {
   type?: string
@@ -83,7 +117,11 @@ export const openAIProvider: ContentAIProvider = {
             { role: "system", content: request.system },
             { role: "user", content: request.user },
           ],
+          reasoning: { effort: "low" },
+          max_output_tokens: MAX_OUTPUT_TOKENS[request.schemaName] ?? DEFAULT_MAX_OUTPUT_TOKENS,
+          prompt_cache_key: `content-lab:${request.schemaName}`,
           text: {
+            verbosity: "low",
             format: {
               type: "json_schema",
               name: request.schemaName,
