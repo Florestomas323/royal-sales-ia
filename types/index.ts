@@ -531,6 +531,20 @@ export interface Lead {
    * `createdAt` (the moment Royal Sales IA stored it). ISO string.
    */
   receivedAt?: string
+  /**
+   * REAL closed amount, confirmed by a person when the lead reaches `sale`.
+   * Never derived from `potentialValue` automatically. Sales only: a
+   * `rec_hired` candidate is a hire, not revenue, so it never carries this.
+   * Cleared when the lead leaves the won stage.
+   */
+  closedValue?: number
+  /**
+   * When the lead entered its won stage (`sale` or `rec_hired`). ISO string,
+   * written by the client; the non-falsifiable counterpart is the
+   * `stage_change` activity, whose `createdAtServer` is signed by the server.
+   * Cleared when the lead leaves the won stage.
+   */
+  closedAt?: string | null
   /** Present only for recruiting leads. */
   recruiting?: RecruitingProfile
   /**
