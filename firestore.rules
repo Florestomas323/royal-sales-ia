@@ -230,6 +230,84 @@ service cloud.firestore {
       allow delete: if isSuperAdmin() || isWsClientAdmin(resource.data.workspaceId);
     }
 
+    // ---------------------------------------------------------- contentDrafts
+    // Laboratorio de Contenido. A draft belongs to exactly ONE workspace and
+    // is never readable from another. Internal drafts (strategy, angles,
+    // prompts) are for admins/managers only; sales_rep and viewer see ONLY
+    // creatives someone approved.
+    match /contentDrafts/{draftId} {
+
+      function validDraftStatus(v) {
+        return v in ['draft', 'approved', 'archived'];
+      }
+
+      function validDraftObjective(v) {
+        return v in ['sales', 'recruiting'];
+      }
+
+      /** Ownership and origin never change, not even for super_admin. */
+      function draftImmutablesKept() {
+        return !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['workspaceId', 'createdBy', 'createdAt']);
+      }
+
+      /** Exact shape: no stray fields, no PII smuggled in. */
+      function validDraftShape() {
+        return request.resource.data.keys().hasAll([
+              'workspaceId', 'createdBy', 'createdAt', 'updatedAt', 'objective',
+              'channel', 'format', 'title', 'inputs', 'output', 'outputSource', 'status'
+            ])
+          && request.resource.data.keys().hasOnly([
+              'workspaceId', 'createdBy', 'createdAt', 'updatedAt', 'objective',
+              'channel', 'format', 'sourceCampaignId', 'title', 'inputs', 'output',
+              'outputSource', 'variants', 'status', 'approvedBy', 'approvedAt'
+            ])
+          && request.resource.data.workspaceId is string
+          && request.resource.data.workspaceId.size() > 0
+          && request.resource.data.createdBy is string
+          && request.resource.data.createdBy.size() > 0
+          && request.resource.data.title is string
+          && request.resource.data.inputs is map
+          && request.resource.data.output is map
+          && request.resource.data.outputSource in ['ai', 'template']
+          && validDraftObjective(request.resource.data.objective)
+          && validDraftStatus(request.resource.data.status);
+      }
+
+      // Admins and managers read everything in their workspace; reps and
+      // viewers only approved creatives. Their client query must include
+      // `status == 'approved'`, otherwise the list is denied.
+      allow read: if isSuperAdmin()
+        || isWsAdmin(resource.data.workspaceId)
+        || ((isWsRep(resource.data.workspaceId)
+             || (inWorkspace(resource.data.workspaceId) && role() == 'viewer'))
+            && resource.data.status == 'approved');
+
+      // A draft is always born as 'draft'. `createdBy` must be the caller's
+      // own users.id, resolved from memberships/{request.auth.uid}: a client
+      // cannot sign a draft as somebody else. `workspaceId` must be one the
+      // caller administers (super_admin excepted, by design).
+      allow create: if validDraftShape()
+        && request.resource.data.status == 'draft'
+        && request.resource.data.createdBy == myUserId()
+        && !request.resource.data.keys().hasAny(['approvedBy', 'approvedAt'])
+        && (isSuperAdmin() || isWsAdmin(request.resource.data.workspaceId));
+
+      // Editing and approving: admins and managers of that workspace.
+      // Archiving: client_admin only. Approval cannot smuggle a change of
+      // workspace or author because draftImmutablesKept() blocks it.
+      allow update: if validDraftShape()
+        && draftImmutablesKept()
+        && (
+          isSuperAdmin()
+          || (isWsAdmin(resource.data.workspaceId)
+              && (request.resource.data.status != 'archived'
+                  || isWsClientAdmin(resource.data.workspaceId)))
+        );
+
+      allow delete: if isSuperAdmin() || isWsClientAdmin(resource.data.workspaceId);
+    }
+
     // ------------------------------------------------------------------- leads
     match /leads/{leadId} {
       // Admins/managers/viewers read the whole workspace; reps only their own.
