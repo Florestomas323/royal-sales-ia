@@ -924,32 +924,104 @@ export const t = {
     onRoadmap: (title: string) => `${title} está en la hoja de ruta`,
     mediaBuyer: {
       title: 'Media Buyer IA',
-      description:
-        'Asignación autónoma de presupuesto y optimización de creativos en las plataformas de anuncios.',
-      blurb:
-        'El Media Buyer IA reasignará continuamente la inversión hacia las campañas con mejor ROAS y detectará el desgaste creativo antes de que afecte el rendimiento.',
-      features: [
-        {
-          title: 'Presupuesto automático',
-          description:
-            'Mueve la inversión hacia los conjuntos ganadores de Meta, Google y TikTok casi en tiempo real.',
+      description: 'Analiza el rendimiento real de tus campañas y detecta oportunidades de optimización.',
+      analysisOnly: 'Solo análisis',
+      analysisOnlyNotice: 'Modo análisis — Royal Sales IA no realizará cambios en tus campañas.',
+      refresh: 'Actualizar datos',
+      refreshing: 'Actualizando…',
+      lastUpdated: (when: string) => `Última actualización: ${when}`,
+      loading: 'Cargando datos de Meta…',
+      states: {
+        noCampaigns: 'Sin campañas conectadas',
+        noCampaignsHint: 'Asigna campañas de Meta a este workspace desde Integraciones → Administrar Meta.',
+        noData: 'Sin datos para este periodo',
+        noDataHint: 'Meta no devolvió inversión ni impresiones para las campañas asignadas en estas fechas.',
+        forbidden: 'Tu rol no tiene acceso al análisis de Meta Ads.',
+      },
+      summary: {
+        spend: 'Inversión',
+        crmLeads: 'Prospectos CRM',
+        metaLeads: 'Leads Meta',
+        cplCrm: 'CPL CRM',
+        sales: 'Ventas',
+        revenue: 'Ingresos',
+        roas: 'ROAS',
+        ctr: 'CTR',
+        noData: 'Sin datos',
+      },
+      campaigns: {
+        title: 'Campañas',
+        description: 'Datos de Meta Insights unidos a los prospectos y ventas reales del CRM.',
+        objective: { sales: 'Clientes', recruiting: 'Candidatos' },
+        health: {
+          excellent: 'Excelente',
+          healthy: 'Saludable',
+          attention: 'Atención',
+          critical: 'Crítica',
+          insufficient: 'Sin datos suficientes',
         },
-        {
-          title: 'Alertas de desgaste creativo',
-          description:
-            'Detecta caídas de CTR y picos de frecuencia para rotar creativos a tiempo.',
+        labels: {
+          spend: 'Inversión',
+          crmLeads: 'Prospectos CRM',
+          metaLeads: 'Leads Meta',
+          cplCrm: 'CPL CRM',
+          cplMeta: 'CPL Meta',
+          ctr: 'CTR',
+          cpc: 'CPC',
+          cpm: 'CPM',
+          impressions: 'Impresiones',
+          reach: 'Alcance',
+          frequency: 'Frecuencia',
+          sales: 'Ventas',
+          revenue: 'Ingresos',
+          roas: 'ROAS',
+          leadToSale: 'Prospecto → venta',
+          vsPrevious: 'vs periodo anterior',
         },
-        {
-          title: 'Estrategia de puja',
-          description:
-            'Recomienda topes de puja y ampliaciones de segmentación según la tendencia del CPL.',
+        linkedWithoutData: (n: number) =>
+          n === 1 ? '1 campaña asignada sin datos de Meta en este periodo' : `${n} campañas asignadas sin datos de Meta en este periodo`,
+        unlinked: (n: number) =>
+          n === 1
+            ? '1 campaña de la cuenta publicitaria no está asignada a ningún workspace y no se muestra.'
+            : `${n} campañas de la cuenta publicitaria no están asignadas a ningún workspace y no se muestran.`,
+      },
+      recommendations: {
+        title: 'Recomendaciones de Media Buyer',
+        description: 'Basadas únicamente en los datos de este periodo y en la comparación entre tus propias campañas.',
+        empty: 'No hay recomendaciones: las campañas se comportan de forma homogénea o no hay datos suficientes.',
+        priority: { high: 'Prioridad alta', medium: 'Prioridad media', low: 'Prioridad baja' },
+        confidence: { high: 'Confianza alta', medium: 'Confianza media', low: 'Confianza baja' },
+        finding: 'Hallazgo',
+        evidence: 'Evidencia',
+        recommendation: 'Recomendación',
+        impact: 'Impacto esperado',
+        engine: 'Motor analítico determinista. Ningún modelo de IA está conectado todavía.',
+      },
+      findings: {
+        title: 'Hallazgos',
+        categories: {
+          delivery: 'Entrega',
+          cost: 'Costo',
+          engagement: 'Interacción',
+          lead_generation: 'Generación de prospectos',
+          conversion: 'Conversión',
+          revenue: 'Ingresos',
+          data_quality: 'Calidad de datos',
         },
-        {
-          title: 'Límites de control',
-          description:
-            'Define techos de inversión y pisos de ROAS que la IA debe respetar por cliente.',
+      },
+      dataQuality: {
+        title: 'Calidad de datos',
+        description: 'Diferencias entre Meta y el CRM que conviene revisar. No son errores.',
+        empty: 'No se detectaron inconsistencias en este periodo.',
+        kinds: {
+          campaign_without_crm_leads: 'Campañas con inversión pero sin prospectos en el CRM',
+          crm_leads_without_insights: 'Prospectos con campaña de Meta sin datos de Insights',
+          campaign_without_workspace: 'Campañas sin workspace asignado',
+          leads_without_campaign: 'Prospectos sin campaña ni atribución',
+          meta_vs_crm_gap: 'Diferencia relevante entre leads de Meta y prospectos CRM',
+          linked_without_data: 'Campañas asignadas sin datos de Meta',
         },
-      ],
+      },
     },
     contentLab: {
       title: 'Laboratorio de Contenido',
