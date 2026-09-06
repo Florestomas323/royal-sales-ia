@@ -126,35 +126,49 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "quota_exceeded", quota: quota.kind }, { status: 429 })
   }
 
-  // Variants mode: change exactly one variable of an existing creative.
-  const variable = body.variable
-  if (typeof variable === "string") {
-    if (!VARIABLES.includes(variable as VariantVariable)) {
-      return NextResponse.json({ error: "invalid_variable" }, { status: 400 })
-    }
-    const baseline = asString(body.baseline, 400).trim()
-    if (!baseline) return NextResponse.json({ error: "invalid_baseline" }, { status: 400 })
-    const variants = await generateVariants(brief, variable as VariantVariable, baseline)
-    // The reservation becomes a completed generation only for real AI output;
-    // otherwise it goes straight back to the pool. Settling always names the
-    // exact reservation, so an expired one can never be counted.
-    if (variants.source === "ai") await confirmGeneration(workspaceId, quota.reservationId)
+  // From here on, the daily reservation is LIVE. Every exit path — an early
+  // 400/404 return, a normal response or an unexpected exception — must
+  // settle it exactly once. `settle` is idempotent (confirm/release already
+  // are), and the `finally` below is the backstop: any return inside `try`
+  // that forgot to settle still gets released, and a thrown error can never
+  // leave the reservation occupying a slot until it expires.
+  let settled = false
+  const settle = async (source: "ai" | "template") => {
+    if (settled) return
+    settled = true
+    if (source === "ai") await confirmGeneration(workspaceId, quota.reservationId)
     else await releaseReservation(workspaceId, quota.reservationId)
-    return NextResponse.json({ ok: true, kind: "variants", ...variants, aiConfigured: isAiConfigured() })
   }
 
-  let context: CampaignContext | null = null
-  const campaignId = asString(body.sourceCampaignId, 128).trim()
-  if (campaignId) {
-    context = await readCampaignContext(campaignId, workspaceId)
-    if (!context) {
-      await releaseReservation(workspaceId, quota.reservationId) // nothing was generated
-      return NextResponse.json({ error: "campaign_not_found" }, { status: 404 })
+  try {
+    // Variants mode: change exactly one variable of an existing creative.
+    const variable = body.variable
+    if (typeof variable === "string") {
+      if (!VARIABLES.includes(variable as VariantVariable)) {
+        return NextResponse.json({ error: "invalid_variable" }, { status: 400 })
+      }
+      const baseline = asString(body.baseline, 400).trim()
+      if (!baseline) return NextResponse.json({ error: "invalid_baseline" }, { status: 400 })
+      const variants = await generateVariants(brief, variable as VariantVariable, baseline)
+      await settle(variants.source)
+      return NextResponse.json({ ok: true, kind: "variants", ...variants, aiConfigured: isAiConfigured() })
     }
-  }
 
-  const creative = await generateCreative(brief, context)
-  if (creative.source === "ai") await confirmGeneration(workspaceId, quota.reservationId)
-  else await releaseReservation(workspaceId, quota.reservationId)
-  return NextResponse.json({ ok: true, kind: "creative", ...creative, aiConfigured: isAiConfigured() })
+    let context: CampaignContext | null = null
+    const campaignId = asString(body.sourceCampaignId, 128).trim()
+    if (campaignId) {
+      context = await readCampaignContext(campaignId, workspaceId)
+      if (!context) return NextResponse.json({ error: "campaign_not_found" }, { status: 404 })
+    }
+
+    const creative = await generateCreative(brief, context)
+    await settle(creative.source)
+    return NextResponse.json({ ok: true, kind: "creative", ...creative, aiConfigured: isAiConfigured() })
+  } catch (err) {
+    // Never let an unexpected error leave the reservation dangling.
+    console.error("[content-lab] unexpected error:", err instanceof Error ? err.message : "unknown")
+    return NextResponse.json({ error: "internal_error" }, { status: 500 })
+  } finally {
+    if (!settled) await releaseReservation(workspaceId, quota.reservationId)
+  }
 }
