@@ -17,7 +17,14 @@ import {
 import { db } from "./client"
 import { useWorkspace } from "./workspace-context"
 import { PIPELINES } from "@/lib/constants"
-import { isStageOf, leadTypeOf, normalizePhone } from "@/lib/leads"
+import {
+  closedFieldsFor,
+  isStageOf,
+  isValidClosedValue,
+  leadTypeOf,
+  normalizePhone,
+  requiresClosedValue,
+} from "@/lib/leads"
 import { stageActivity, type ActorContext } from "./activities"
 import { STAGE_LABELS } from "@/lib/constants"
 import type {
@@ -95,16 +102,26 @@ export async function countLeads(scope: LeadsScope): Promise<number> {
  * code path means a single activity per real change.
  */
 export async function updateLeadStage(
-  lead: Pick<Lead, "id" | "workspaceId" | "leadType" | "stage">,
+  lead: Pick<Lead, "id" | "workspaceId" | "leadType" | "stage" | "closedValue" | "closedAt">,
   stage: PipelineStage,
   actor: ActorContext,
+  /** Real amount confirmed by the person; required to close a SALE. */
+  confirmedValue?: number,
 ): Promise<void> {
   if (!isStageOf(leadTypeOf(lead), stage)) {
     throw new LeadValidationError("stage", "La etapa no corresponde al tipo de prospecto.")
   }
   if (lead.stage === stage) return
+  // A sale is only closed with an amount a person confirmed. `potentialValue`
+  // is never promoted to revenue on its own.
+  if (requiresClosedValue(lead, stage) && !isValidClosedValue(confirmedValue)) {
+    throw new LeadValidationError("closedValue", "Confirma el importe real de la venta.")
+  }
   const batch = writeBatch(db)
-  batch.update(doc(leadsCol, lead.id), { stage })
+  batch.update(doc(leadsCol, lead.id), {
+    stage,
+    ...closedFieldsFor(lead, stage, confirmedValue),
+  })
   stageActivity(batch, lead, actor, {
     type: "stage_change",
     payload: {
@@ -122,7 +139,15 @@ export async function updateLeadStage(
  * pipeline so the lead never carries a stage of the other pipeline.
  */
 export async function updateLeadType(id: string, leadType: LeadType) {
-  await updateDoc(doc(leadsCol, id), { leadType, stage: PIPELINES[leadType].initial })
+  // The stage resets to the new pipeline's initial one, so the lead is no
+  // longer won: closing data must be cleared in the same write (Rules enforce
+  // that a lead outside its won stage holds none).
+  await updateDoc(doc(leadsCol, id), {
+    leadType,
+    stage: PIPELINES[leadType].initial,
+    closedValue: null,
+    closedAt: null,
+  })
 }
 
 /**
@@ -155,6 +180,8 @@ export async function recordContact(
 /** Fields a person may change from the edit form. Nothing else is accepted. */
 export interface LeadPatch {
   name?: string
+  /** Confirmed revenue; only accepted when the lead is moving to `sale`. */
+  closedValue?: number
   phone?: string
   email?: string
   potentialValue?: number
@@ -184,7 +211,8 @@ export class LeadValidationError extends Error {
  */
 export async function updateLead(
   id: string,
-  current: Pick<Lead, "leadType"> & Partial<Pick<Lead, "id" | "workspaceId" | "stage" | "assignedToId">>,
+  current: Pick<Lead, "leadType"> &
+    Partial<Pick<Lead, "id" | "workspaceId" | "stage" | "assignedToId" | "closedValue" | "closedAt">>,
   patch: LeadPatch,
   /** When present, stage/assignment changes are audited in the same batch. */
   audit?: { actor: ActorContext; memberName?: (userId: string) => string },
@@ -216,6 +244,19 @@ export async function updateLead(
       throw new LeadValidationError("stage", "La etapa no corresponde al tipo de prospecto.")
     }
     data.stage = patch.stage
+    // Entering / leaving the won stage also writes (or clears) the closed fields.
+    if (current.stage !== undefined) {
+      const lead = {
+        leadType: current.leadType,
+        stage: current.stage,
+        closedValue: current.closedValue,
+        closedAt: current.closedAt,
+      }
+      if (requiresClosedValue(lead, patch.stage) && !isValidClosedValue(patch.closedValue)) {
+        throw new LeadValidationError("closedValue", "Confirma el importe real de la venta.")
+      }
+      Object.assign(data, closedFieldsFor(lead, patch.stage, patch.closedValue))
+    }
   }
   if (patch.assignedToId !== undefined) data.assignedToId = patch.assignedToId
   if (patch.nextAction !== undefined) data.nextAction = patch.nextAction.trim()
