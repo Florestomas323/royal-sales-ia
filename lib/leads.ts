@@ -304,3 +304,69 @@ export function canMoveLeadTo(
   if (!isStageOf(leadTypeOf(lead), stage)) return false
   return lead.stage !== stage
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Closed revenue (Phase F)                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Revenue only exists for SALES. `rec_hired` is a hire: it records `closedAt`
+ * so we know when it happened, but never a `closedValue`.
+ */
+export function isRevenueStage(leadType: LeadType, stage: PipelineStage): boolean {
+  return leadType === "sales" && stage === PIPELINES.sales.won
+}
+
+/** Moving here must ask the person to confirm the real amount. */
+export function requiresClosedValue(
+  lead: Pick<Lead, "leadType" | "stage">,
+  nextStage: PipelineStage,
+): boolean {
+  return isRevenueStage(leadTypeOf(lead), nextStage) && lead.stage !== nextStage
+}
+
+export interface ClosedFields {
+  closedValue?: number | null
+  closedAt?: string | null
+}
+
+/**
+ * Fields to write when a lead changes stage.
+ *   → sale        : { closedValue: <confirmed>, closedAt: now }
+ *   → rec_hired   : { closedAt: now }            (no revenue)
+ *   leaving won   : { closedValue: null, closedAt: null }  — a deal later lost
+ *                   must stop counting as closed.
+ *   anything else : {}
+ */
+export function closedFieldsFor(
+  lead: Pick<Lead, "leadType" | "stage" | "closedValue" | "closedAt">,
+  nextStage: PipelineStage,
+  confirmedValue?: number,
+): ClosedFields {
+  const type = leadTypeOf(lead)
+  const wonStage = PIPELINES[type].won
+  const enteringWon = nextStage === wonStage && lead.stage !== wonStage
+  const leavingWon = lead.stage === wonStage && nextStage !== wonStage
+
+  if (enteringWon) {
+    const now = new Date().toISOString()
+    return isRevenueStage(type, nextStage)
+      ? { closedValue: confirmedValue, closedAt: now }
+      : { closedAt: now }
+  }
+  if (leavingWon) {
+    // Clear both, even for recruiting, so nothing lingers as "closed".
+    return { closedValue: null, closedAt: null }
+  }
+  return {}
+}
+
+/** A confirmed amount must be a real, positive number. */
+export function isValidClosedValue(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+}
+
+/** Won sales that predate Phase F have no amount: never counted as revenue. */
+export function hasClosedAmount(lead: Pick<Lead, "closedValue">): boolean {
+  return isValidClosedValue(lead.closedValue)
+}
