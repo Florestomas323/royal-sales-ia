@@ -51,10 +51,17 @@ export function CommandCenter() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/*
+        The page header already renders the description; repeating it here
+        duplicated the same sentence on screen. Only the workspace scope note
+        (super admin viewing everything) and the period filter stay.
+      */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-muted-foreground">
-          {isSuperAdmin && !workspaceId ? t.leads.allWorkspaces : t.overview.description}
-        </p>
+        {isSuperAdmin && !workspaceId ? (
+          <p className="text-sm text-muted-foreground">{t.leads.allWorkspaces}</p>
+        ) : (
+          <span aria-hidden="true" />
+        )}
         <PeriodFilter value={periodKey} onChange={setPeriodKey} />
       </div>
 

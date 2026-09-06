@@ -4,7 +4,7 @@ import { useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useUsersForWorkspace, useUsers } from "@/lib/firebase/collections"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
-import { computeRepPerformance, type Period } from "@/lib/metrics"
+import { computeRepPerformance, UNASSIGNED_OWNER, type Period } from "@/lib/metrics"
 import { formatCurrency, formatNumber } from "@/lib/format"
 import { t } from "@/lib/i18n"
 import type { Lead } from "@/types"
@@ -43,11 +43,9 @@ export function RepPerformanceTable({ leads, period }: { leads: Lead[]; period: 
         ) : (
           <ul className="flex flex-col divide-y">
             {visible.map((row) => (
-              <li key={row.userId || "unassigned"} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
+              <li key={row.userId} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className="truncate text-sm font-medium">
-                    {names[row.userId] ?? t.overview.table.unassigned}
-                  </span>
+                  <span className="truncate text-sm font-medium">{ownerLabel(row.userId, names)}</span>
                   <span className="shrink-0 font-mono text-sm tabular-nums">
                     {formatNumber(row.leads)} {t.overview.table.leads.toLowerCase()}
                   </span>
@@ -77,6 +75,19 @@ export function RepPerformanceTable({ leads, period }: { leads: Lead[]; period: 
       </CardContent>
     </Card>
   )
+}
+
+/**
+ * "Sin asignar" is reserved for the single unowned bucket. A lead assigned to
+ * a profile we cannot resolve (deleted, or outside the visible workspace) is
+ * labelled distinctly with a short id, so two different owners never render
+ * as the same row.
+ */
+function ownerLabel(userId: string, names: Record<string, string>): string {
+  if (userId === UNASSIGNED_OWNER) return t.overview.table.unassigned
+  const name = names[userId]
+  if (name) return name
+  return t.overview.table.unknownOwner(userId.slice(-6))
 }
 
 function Cell({ label, value }: { label: string; value: string }) {

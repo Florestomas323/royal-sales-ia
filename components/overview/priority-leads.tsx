@@ -11,12 +11,20 @@ import { PlatformMark } from "@/components/shared/platform-badge"
 import { LeadTypeBadge } from "@/components/shared/lead-type-badge"
 import { LeadDetailSheet } from "@/components/leads/lead-detail-sheet"
 import { useLeads } from "@/lib/firebase/leads"
-import { isOpen, leadTypeOf } from "@/lib/leads"
+import { isOpen, leadAmount, leadTypeOf } from "@/lib/leads"
 import { formatCurrency } from "@/lib/format"
 import { t } from "@/lib/i18n"
 import type { Lead } from "@/types"
 
-/** Top open leads by score — real data from the active workspace. */
+/**
+ * OPERATIONAL QUEUE, not a period metric.
+ *
+ * It answers "who should I work today", so it deliberately IGNORES the
+ * dashboard's period filter: a lead created 40 days ago that still needs a
+ * call belongs here. Only open leads (not won, not lost) are listed, ordered
+ * by score. The card description states this so the number is never read as
+ * "leads created today".
+ */
 export function PriorityLeads() {
   const { leads, loading } = useLeads("all")
   const [selected, setSelected] = useState<Lead | null>(null)
@@ -78,7 +86,7 @@ export function PriorityLeads() {
             </div>
             {leadTypeOf(lead) === "sales" && (
               <div className="hidden shrink-0 text-right text-xs text-muted-foreground sm:block">
-                {formatCurrency(lead.potentialValue, true)}
+                {formatCurrency(leadAmount(lead).amount ?? 0, true)}
               </div>
             )}
             <ScoreBadge score={lead.score} temperature={lead.temperature} />
