@@ -51,6 +51,16 @@ type SortKey = "score" | "value" | "recent"
 const FILTER_TRIGGER =
   "h-11 w-full justify-between text-sm lg:h-8 lg:w-auto lg:min-w-40 [&_[data-slot=select-value]]:truncate"
 
+/**
+ * Amount used when sorting by value. Mirrors `leadAmount`: a legacy won sale
+ * has no honest figure, so it sorts last (-1) rather than showing up with its
+ * potential value.
+ */
+function sortableAmount(lead: Lead): number {
+  const value = leadAmount(lead)
+  return value.legacyWonWithoutAmount ? -1 : (value.amount ?? 0)
+}
+
 /** Matches Tailwind's `lg` breakpoint, used only to pick the placeholder copy. */
 function useIsNarrow(): boolean {
   const [narrow, setNarrow] = useState(false)
@@ -148,7 +158,11 @@ export function LeadsView({
     })
     return rows.sort((a, b) => {
       if (sort === "score") return b.score - a.score
-      if (sort === "value") return b.potentialValue - a.potentialValue
+      // Same source of truth as every money surface (leadAmount): a closed
+      // sale sorts by its CONFIRMED amount, an open lead by its potential
+      // value, and a legacy sale with no amount sorts last instead of
+      // borrowing `potentialValue`.
+      if (sort === "value") return sortableAmount(b) - sortableAmount(a)
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     })
   }, [leads, query, stage, platform, temp, sort, showArchived])
