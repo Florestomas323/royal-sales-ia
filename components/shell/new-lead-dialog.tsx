@@ -161,6 +161,8 @@ export function NewLeadDialog({
         campaignName: campaign?.name,
         clientId: campaign?.clientId,
         recruiting,
+        // Writes a `lead_created` activity in the same batch as the lead.
+        ...(membership?.userId && role ? { actor: { userId: membership.userId, role } } : {}),
       })
       toast.success(t.leads.createdTitle, {
         description: t.leads.createdDescription(name),
