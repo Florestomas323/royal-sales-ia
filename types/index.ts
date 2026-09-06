@@ -462,11 +462,20 @@ export interface Client {
  * Only what is known is written; external ids are never invented.
  */
 export interface Attribution {
+  /**
+   * Copy of the lead's `source` at creation time. Kept for compatibility, but
+   * it is NOT the source of truth for display: old documents may contradict
+   * `Lead.source`. Use `attributionView()` in lib/leads.ts instead.
+   */
   platform: Platform
-  campaign: string
-  adSet: string
-  ad: string
-  creative: string
+  /**
+   * Only present when there is real attribution. A manual entry leaves these
+   * absent rather than storing placeholders like "Entrada manual" or "—".
+   */
+  campaign?: string
+  adSet?: string
+  ad?: string
+  creative?: string
   /** Platform-side identifiers (Meta / TikTok / Google / Indeed). Future. */
   externalCampaignId?: string
   externalAdSetId?: string
