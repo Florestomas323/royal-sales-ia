@@ -11,6 +11,11 @@ import { isVideoFormat } from "./types"
  * NEVER sent: lead names, phones, emails or ids; Meta tokens; the Firebase
  * service account; auth uids; other workspaces' data; any server secret.
  * The workspace name itself is not sent either — the model does not need it.
+ *
+ * Field-level guidance (exact counts, what each field means) lives in the
+ * JSON Schema's `description`s (see schema.ts), not duplicated here — the
+ * schema is sent on every call regardless, so restating it in prose here
+ * would cost tokens twice for the same instruction.
  */
 
 const TONE_LABEL: Record<string, string> = {
@@ -121,19 +126,12 @@ export function buildUserPrompt(brief: CreativeBrief, context: CampaignContext |
     "",
     context ? campaignBlock(context) : "Sin campaña de referencia: crea desde cero.",
     "",
-    "Entrega:",
-    "- strategy: objetivo, público sugerido, intención y ángulo creativo principal.",
-    "- angles: exactamente 3 ángulos distintos (por ejemplo problema, transformación, curiosidad).",
-    "- hooks: exactamente 5 ganchos cortos.",
-    "- copy: texto principal listo para publicar.",
-    "- description: descripción breve de apoyo para el anuncio.",
-    "- headline: 1 titular principal y 2 variantes.",
-    "- ctas: entre 2 y 3 llamadas a la acción.",
+    // Field-by-field guidance lives in the JSON Schema descriptions; only the
+    // one instruction the schema cannot express (video vs. non-video) is
+    // repeated here, since it depends on `format`, not on the field itself.
     video
-      ? "- script: guion con los tramos 0-3s, 3-10s, 10-20s, 20-30s y CTA, cada uno con texto hablado, texto en pantalla y acción visual.\n- shotList: lista de tomas necesarias."
-      : "- script: array vacío.\n- shotList: array vacío.",
-    "- visualConcept: escena, protagonista, ambiente, composición, iluminación, elementos, texto en pantalla y estilo.",
-    "- visualPrompt: un prompt profesional en inglés para un generador de imágenes, describiendo únicamente la escena visual.",
+      ? "Este formato es video: completa script y shotList."
+      : "Este formato no es video: deja script y shotList como arrays vacíos.",
   ]
   return parts.filter((p): p is string => p !== null).join("\n")
 }

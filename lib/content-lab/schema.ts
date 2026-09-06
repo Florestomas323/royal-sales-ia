@@ -11,6 +11,13 @@ import type { CreativeOutput, VariantSet } from "./types"
 const str = { type: "string" } as const
 const strArr = { type: "array", items: str } as const
 
+/**
+ * Field guidance lives HERE, in the schema `description`s, instead of being
+ * repeated as freeform bullet points in the user prompt (prompt.ts). The
+ * schema travels in every request either way, so writing the instruction
+ * once — as a short description — costs less than writing it twice: once in
+ * prose in the prompt, and implicitly again through the field itself.
+ */
 export const CREATIVE_OUTPUT_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -23,10 +30,16 @@ export const CREATIVE_OUTPUT_SCHEMA = {
       type: "object",
       additionalProperties: false,
       required: ["objective", "audience", "intent", "mainAngle"],
-      properties: { objective: str, audience: str, intent: str, mainAngle: str },
+      properties: {
+        objective: { ...str, description: "Objetivo comercial de este creativo, en una frase." },
+        audience: { ...str, description: "Público sugerido al que se dirige." },
+        intent: { ...str, description: "Intención principal, en tus propias palabras." },
+        mainAngle: { ...str, description: "Ángulo creativo principal elegido." },
+      },
     },
     angles: {
       type: "array",
+      description: "Exactamente 3 ángulos distintos (por ejemplo problema, transformación, curiosidad).",
       items: {
         type: "object",
         additionalProperties: false,
@@ -34,23 +47,33 @@ export const CREATIVE_OUTPUT_SCHEMA = {
         properties: { name: str, description: str },
       },
     },
-    hooks: strArr,
-    copy: str,
-    description: str,
+    hooks: { ...strArr, description: "Exactamente 5 ganchos cortos, listos para usar como primera línea." },
+    copy: { ...str, description: "Texto principal del anuncio, listo para publicar." },
+    description: { ...str, description: "Descripción breve de apoyo para el anuncio." },
     headline: {
       type: "object",
       additionalProperties: false,
       required: ["main", "variants"],
-      properties: { main: str, variants: strArr },
+      properties: {
+        main: { ...str, description: "Titular principal." },
+        variants: { ...strArr, description: "Exactamente 2 variantes adicionales del titular." },
+      },
     },
-    ctas: strArr,
+    ctas: { ...strArr, description: "Entre 2 y 3 llamadas a la acción distintas." },
     script: {
       type: "array",
+      description:
+        "SOLO si el formato es video (Reel/Historia): tramos 0-3s, 3-10s, 10-20s, 20-30s y CTA. Si no es video, array vacío.",
       items: {
         type: "object",
         additionalProperties: false,
         required: ["window", "spoken", "onScreen", "visual"],
-        properties: { window: str, spoken: str, onScreen: str, visual: str },
+        properties: {
+          window: { ...str, description: "Tramo de tiempo, p. ej. '0-3s'." },
+          spoken: { ...str, description: "Texto hablado en ese tramo." },
+          onScreen: { ...str, description: "Texto en pantalla en ese tramo." },
+          visual: { ...str, description: "Acción visual sugerida en ese tramo." },
+        },
       },
     },
     visualConcept: {
@@ -58,12 +81,21 @@ export const CREATIVE_OUTPUT_SCHEMA = {
       additionalProperties: false,
       required: ["scene", "protagonist", "setting", "composition", "lighting", "elements", "onScreenText", "style"],
       properties: {
-        scene: str, protagonist: str, setting: str, composition: str,
-        lighting: str, elements: strArr, onScreenText: str, style: str,
+        scene: { ...str, description: "Escena general." },
+        protagonist: { ...str, description: "Quién protagoniza la escena." },
+        setting: { ...str, description: "Ambiente o locación." },
+        composition: { ...str, description: "Composición del encuadre." },
+        lighting: { ...str, description: "Iluminación sugerida." },
+        elements: { ...strArr, description: "Elementos visuales principales." },
+        onScreenText: { ...str, description: "Texto en pantalla, si aplica." },
+        style: { ...str, description: "Estilo visual general." },
       },
     },
-    shotList: strArr,
-    visualPrompt: str,
+    shotList: { ...strArr, description: "SOLO si el formato es video: lista de tomas necesarias. Si no, array vacío." },
+    visualPrompt: {
+      ...str,
+      description: "Prompt en INGLÉS para un generador de imágenes, describiendo únicamente la escena visual.",
+    },
   },
 } as const
 
