@@ -121,19 +121,19 @@ export type ClientStatus = 'active' | 'onboarding' | 'paused'
 export type InsightType = 'opportunity' | 'warning' | 'performance' | 'action'
 export type InsightPriority = 'high' | 'medium' | 'low'
 
+/**
+ * Audit trail types. Every one except `note` must accompany a real change to
+ * the lead in the same batch (enforced by Security Rules).
+ */
 export type ActivityType =
-  | 'lead_received'
+  | 'lead_created'
   | 'whatsapp'
   | 'call'
-  | 'email'
-  | 'appointment'
-  | 'note'
   | 'stage_change'
-  | 'sale'
-  | 'demo'
-  | 'interview'
-  | 'orientation'
-  | 'hired'
+  | 'assignment_change'
+  | 'note'
+  | 'archived'
+  | 'restored'
 
 export type Period = 'today' | '7d' | '30d' | 'custom'
 
@@ -586,22 +586,44 @@ export interface Appointment {
   status: 'scheduled' | 'completed' | 'no_show'
 }
 
+export interface ActivityPayload {
+  /** stage_change / assignment_change: previous and new raw values. */
+  from?: string
+  to?: string
+  /** Human labels resolved when written (stage / member names). */
+  fromLabel?: string
+  toLabel?: string
+  /** note only. */
+  note?: string
+}
+
 /**
- * Activity / history entry. Not persisted yet (future collection `activities`,
- * one document per event, always with `workspaceId`). The lead timeline
- * currently derives a single "received" entry from the lead itself.
+ * `leads/{leadId}/activities/{activityId}` — immutable audit trail.
+ *
+ * `createdAtServer` (serverTimestamp) is the SOURCE OF TRUTH for ordering and
+ * display; `createdAt` (ISO from the browser) is kept for compatibility with
+ * the rest of the model and as a fallback while the server value resolves.
+ *
+ * The actor's NAME is never stored: it is resolved from `users/{actorId}` when
+ * rendering, so a client cannot sign an activity as somebody else.
  */
 export interface Activity {
   id: string
+  workspaceId: string
   leadId: string
-  workspaceId?: string
-  /** users.id of the person who performed it; absent for system events. */
-  userId?: string
   type: ActivityType
-  title: string
-  description: string
-  actor: string
-  timestamp: string
+  /** users.id of whoever performed it. Rules force it to equal the caller. */
+  actorId: string
+  /**
+   * Audit snapshot of the actor's role. Rules force it to equal the caller's
+   * real role in `memberships/{uid}`, so it cannot be faked. Used to label the
+   * super admin, whose `users` profile lives outside any workspace.
+   */
+  actorRole: UserRole
+  createdAt: string
+  /** Firestore Timestamp; Rules force it to equal request.time. */
+  createdAtServer: { toDate: () => Date } | null
+  payload?: ActivityPayload
 }
 
 export interface AIInsight {
