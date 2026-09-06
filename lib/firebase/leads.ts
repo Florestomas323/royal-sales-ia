@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react"
 import {
-  addDoc,
   collection,
   doc,
   getCountFromServer,
@@ -11,12 +10,16 @@ import {
   query,
   updateDoc,
   where,
+  writeBatch,
+  type DocumentData,
   type QueryConstraint,
 } from "firebase/firestore"
 import { db } from "./client"
 import { useWorkspace } from "./workspace-context"
 import { PIPELINES } from "@/lib/constants"
 import { isStageOf, leadTypeOf, normalizePhone } from "@/lib/leads"
+import { stageActivity, type ActorContext } from "./activities"
+import { STAGE_LABELS } from "@/lib/constants"
 import type {
   Attribution,
   Lead,
@@ -86,9 +89,32 @@ export async function countLeads(scope: LeadsScope): Promise<number> {
   return snap.data().count
 }
 
-/** Move a lead to a new pipeline stage (persisted, realtime). */
-export async function updateLeadStage(id: string, stage: PipelineStage) {
-  await updateDoc(doc(leadsCol, id), { stage })
+/**
+ * Move a lead to a new pipeline stage AND record it, atomically.
+ * Used by the board (drag & "Mover a") and by the detail sheet, so a single
+ * code path means a single activity per real change.
+ */
+export async function updateLeadStage(
+  lead: Pick<Lead, "id" | "workspaceId" | "leadType" | "stage">,
+  stage: PipelineStage,
+  actor: ActorContext,
+): Promise<void> {
+  if (!isStageOf(leadTypeOf(lead), stage)) {
+    throw new LeadValidationError("stage", "La etapa no corresponde al tipo de prospecto.")
+  }
+  if (lead.stage === stage) return
+  const batch = writeBatch(db)
+  batch.update(doc(leadsCol, lead.id), { stage })
+  stageActivity(batch, lead, actor, {
+    type: "stage_change",
+    payload: {
+      from: lead.stage,
+      to: stage,
+      fromLabel: STAGE_LABELS[lead.stage as PipelineStage] ?? lead.stage,
+      toLabel: STAGE_LABELS[stage],
+    },
+  })
+  await batch.commit()
 }
 
 /**
@@ -97,6 +123,29 @@ export async function updateLeadStage(id: string, stage: PipelineStage) {
  */
 export async function updateLeadType(id: string, leadType: LeadType) {
   await updateDoc(doc(leadsCol, id), { leadType, stage: PIPELINES[leadType].initial })
+}
+
+/**
+ * Records a contact attempt (WhatsApp / phone) and refreshes `lastContactAt`
+ * in the SAME batch — Rules reject the activity unless `lastContactAt` really
+ * changed. Opening WhatsApp is not proof a message was sent, so the activity
+ * only means "iniciado".
+ *
+ * `lastContactAt` stays `string | null` (ISO): the model is unchanged. The
+ * audit order relies on the activity's server timestamp, not on this value.
+ */
+export async function recordContact(
+  lead: Pick<Lead, "id" | "workspaceId" | "lastContactAt">,
+  kind: "whatsapp" | "call",
+  actor: ActorContext,
+): Promise<void> {
+  const now = new Date().toISOString()
+  // Guarantee a real change even on two contacts within the same millisecond.
+  const lastContactAt = now === lead.lastContactAt ? new Date(Date.now() + 1).toISOString() : now
+  const batch = writeBatch(db)
+  batch.update(doc(leadsCol, lead.id), { lastContactAt })
+  stageActivity(batch, lead, actor, { type: kind })
+  await batch.commit()
 }
 
 /* -------------------------------------------------------------------------- */
@@ -135,8 +184,10 @@ export class LeadValidationError extends Error {
  */
 export async function updateLead(
   id: string,
-  current: Pick<Lead, "leadType">,
+  current: Pick<Lead, "leadType"> & Partial<Pick<Lead, "id" | "workspaceId" | "stage" | "assignedToId">>,
   patch: LeadPatch,
+  /** When present, stage/assignment changes are audited in the same batch. */
+  audit?: { actor: ActorContext; memberName?: (userId: string) => string },
 ): Promise<void> {
   const data: Partial<Lead> = {}
   const type = leadTypeOf(current)
@@ -170,16 +221,67 @@ export async function updateLead(
   if (patch.nextAction !== undefined) data.nextAction = patch.nextAction.trim()
 
   if (Object.keys(data).length === 0) return
-  await updateDoc(doc(leadsCol, id), data)
+
+  const workspaceId = current.workspaceId
+  const canAudit = Boolean(audit && workspaceId)
+  if (!canAudit) {
+    await updateDoc(doc(leadsCol, id), data as DocumentData)
+    return
+  }
+
+  const lead = { id, workspaceId: workspaceId as string }
+  const batch = writeBatch(db)
+  batch.update(doc(leadsCol, id), data as DocumentData)
+
+  if (data.stage !== undefined && current.stage !== undefined && data.stage !== current.stage) {
+    stageActivity(batch, lead, audit!.actor, {
+      type: "stage_change",
+      payload: {
+        from: current.stage,
+        to: data.stage,
+        fromLabel: STAGE_LABELS[current.stage] ?? current.stage,
+        toLabel: STAGE_LABELS[data.stage],
+      },
+    })
+  }
+  if (
+    data.assignedToId !== undefined &&
+    current.assignedToId !== undefined &&
+    data.assignedToId !== current.assignedToId
+  ) {
+    const label = audit!.memberName
+    stageActivity(batch, lead, audit!.actor, {
+      type: "assignment_change",
+      payload: {
+        from: current.assignedToId,
+        to: data.assignedToId,
+        fromLabel: label?.(current.assignedToId),
+        toLabel: label?.(data.assignedToId),
+      },
+    })
+  }
+  await batch.commit()
 }
 
-/** Archive: hidden from lists and counts, never deleted. */
-export async function archiveLead(id: string): Promise<void> {
-  await updateDoc(doc(leadsCol, id), { archived: true, archivedAt: new Date().toISOString() })
+/** Archive: hidden from lists and counts, never deleted. Audited atomically. */
+export async function archiveLead(
+  lead: Pick<Lead, "id" | "workspaceId">,
+  actor: ActorContext,
+): Promise<void> {
+  const batch = writeBatch(db)
+  batch.update(doc(leadsCol, lead.id), { archived: true, archivedAt: new Date().toISOString() })
+  stageActivity(batch, lead, actor, { type: "archived" })
+  await batch.commit()
 }
 
-export async function restoreLead(id: string): Promise<void> {
-  await updateDoc(doc(leadsCol, id), { archived: false, archivedAt: null })
+export async function restoreLead(
+  lead: Pick<Lead, "id" | "workspaceId">,
+  actor: ActorContext,
+): Promise<void> {
+  const batch = writeBatch(db)
+  batch.update(doc(leadsCol, lead.id), { archived: false, archivedAt: null })
+  stageActivity(batch, lead, actor, { type: "restored" })
+  await batch.commit()
 }
 
 export interface NewLeadInput {
@@ -197,6 +299,8 @@ export interface NewLeadInput {
   /** Optional attribution details known at creation (UTMs, landing page…). */
   attribution?: Partial<Omit<Attribution, "platform">>
   recruiting?: RecruitingProfile
+  /** When present, a `lead_created` activity is written in the same batch. */
+  actor?: ActorContext
 }
 
 function stripUndefined<T extends object>(obj: T): T {
@@ -240,7 +344,18 @@ export async function createLead(input: NewLeadInput) {
       ? { recruiting: stripUndefined(input.recruiting) }
       : {}),
   }
-  const ref = await addDoc(leadsCol, lead)
+  // The lead and its `lead_created` activity are born in the same batch:
+  // Rules use getAfter() so the activity can reference a lead that does not
+  // exist yet, and reject `lead_created` on a lead that already existed.
+  const ref = doc(leadsCol)
+  const batch = writeBatch(db)
+  batch.set(ref, lead)
+  if (input.actor) {
+    stageActivity(batch, { id: ref.id, workspaceId: input.workspaceId }, input.actor, {
+      type: "lead_created",
+    })
+  }
+  await batch.commit()
   return ref.id
 }
 
