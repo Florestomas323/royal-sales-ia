@@ -1,6 +1,6 @@
 import { PIPELINES, RECRUITING_ONLY_SOURCES, SOURCES_BY_LEAD_TYPE } from "@/lib/constants"
 import { t } from "@/lib/i18n"
-import type { Campaign, Lead, LeadType, MemberStatus, PipelineStage, Platform, UserRole } from "@/types"
+import type { Attribution, Campaign, Lead, LeadType, MemberStatus, PipelineStage, Platform, UserRole } from "@/types"
 
 /**
  * Pure helpers shared by UI and data layers. No Firestore access here.
@@ -430,4 +430,112 @@ export function columnAmount(
     total += value.amount ?? 0
   }
   return { total, closed, missingAmounts: missing }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Attribution display (corrección de producción)                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Sources that can carry real ad attribution. `manual`, `referral` and the
+ * like are entered by a person: they never come from an ad platform.
+ */
+const AD_PLATFORMS: readonly Platform[] = [
+  "meta",
+  "facebook",
+  "instagram",
+  "tiktok",
+  "google",
+  "youtube",
+  "indeed",
+] as const
+
+/**
+ * Real, platform-side identifiers. A stored `attribution.platform` is NOT one
+ * of these: it is a duplicate of `source` written at creation time, so it can
+ * be stale or plainly wrong on old documents and must never be trusted on its
+ * own.
+ */
+export function hasExternalIds(
+  attribution: Partial<Attribution> | undefined,
+): boolean {
+  if (!attribution) return false
+  return Boolean(
+    attribution.externalCampaignId ||
+      attribution.externalAdSetId ||
+      attribution.externalAdId ||
+      attribution.externalCreativeId ||
+      attribution.externalFormId ||
+      attribution.externalPageId ||
+      attribution.metaLeadId ||
+      attribution.clickId,
+  )
+}
+
+/** Marketing context the person typed or that came with a real campaign. */
+export function hasMarketingContext(
+  lead: Pick<Lead, "campaignId"> & { attribution?: Partial<Attribution> },
+): boolean {
+  const a = lead.attribution
+  return Boolean(
+    lead.campaignId ||
+      a?.utmSource ||
+      a?.utmMedium ||
+      a?.utmCampaign ||
+      a?.utmContent ||
+      a?.utmTerm ||
+      a?.landingPage ||
+      a?.referrer,
+  )
+}
+
+export interface AttributionView {
+  /** Ad platform to display, or null when there is no real attribution. */
+  platform: Platform | null
+  /** True when the lead has no attribution worth showing. */
+  empty: boolean
+  campaign: string | null
+  adSet: string | null
+  ad: string | null
+  creative: string | null
+}
+
+/** Placeholders written by older versions of `createLead`. Never displayed. */
+const PLACEHOLDERS = new Set(["—", "-", "", "Entrada manual"])
+
+function realValue(value: string | undefined): string | null {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 && !PLACEHOLDERS.has(trimmed) ? trimmed : null
+}
+
+/**
+ * What the Atribución tab should show.
+ *
+ * SOURCE OF TRUTH: `lead.source` (the real origin) plus the presence of real
+ * external identifiers — never the stored `attribution.platform`, which is a
+ * redundant copy. A lead with `source: "manual"` and a stale
+ * `attribution.platform: "indeed"` and no external ids resolves to EMPTY.
+ *
+ * No platform is ever inferred: if the source is not an ad platform, the
+ * answer is "sin atribución", full stop.
+ */
+export function attributionView(
+  lead: Pick<Lead, "source" | "campaignId" | "campaignName"> & { attribution?: Partial<Attribution> },
+): AttributionView {
+  const a = lead.attribution
+  const external = hasExternalIds(a)
+  const fromAdPlatform = AD_PLATFORMS.includes(lead.source)
+  // A platform is shown only when the lead really came from an ad platform.
+  // External ids alone do not invent one: they still need an ad source.
+  const platform = fromAdPlatform ? lead.source : null
+  const campaign = realValue(a?.campaign) ?? realValue(lead.campaignName)
+  const adSet = realValue(a?.adSet)
+  const ad = realValue(a?.ad)
+  const creative = realValue(a?.creative)
+
+  const empty =
+    platform === null && !external && !hasMarketingContext(lead) && campaign === null
+
+  return { platform, empty, campaign, adSet, ad, creative }
 }

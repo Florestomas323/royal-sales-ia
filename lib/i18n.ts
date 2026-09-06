@@ -617,7 +617,10 @@ export const t = {
       landingPage: 'Página de destino',
       referrer: 'Referente',
       externalIds: 'Identificadores externos',
-      noAttribution: 'Sin datos de atribución adicionales todavía. Se completarán cuando se conecten las plataformas publicitarias.',
+      noAttribution:
+        'Este prospecto no tiene atribución publicitaria: se registró manualmente o su origen no proviene de una plataforma de anuncios.',
+      noAttributionTitle: 'Sin atribución',
+      attributionSourceHint: 'La plataforma se determina por el origen real del prospecto, no por datos heredados.',
     },
   },
 
