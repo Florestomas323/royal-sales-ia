@@ -41,6 +41,7 @@ import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
 import { LEAD_TYPE_SINGULAR, PIPELINES, PLATFORM_LABELS, STAGE_LABELS, TEMPERATURE_LABELS } from "@/lib/constants"
 import {
+  attributionView,
   canEditLead,
   displayStage,
   leadAmount,
@@ -93,14 +94,20 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
   const workspaceName = workspaces.find((w) => w.id === lead.workspaceId)?.name ?? lead.workspaceId
   const rec = lead.recruiting
   const hasExtraAttribution = Boolean(
-    lead.attribution.utmSource ||
-      lead.attribution.utmMedium ||
-      lead.attribution.utmCampaign ||
-      lead.attribution.landingPage ||
-      lead.attribution.referrer ||
-      lead.attribution.externalCampaignId ||
-      lead.attribution.externalAdId,
+    lead.attribution?.utmSource ||
+      lead.attribution?.utmMedium ||
+      lead.attribution?.utmCampaign ||
+      lead.attribution?.landingPage ||
+      lead.attribution?.referrer ||
+      lead.attribution?.externalCampaignId ||
+      lead.attribution?.externalAdId,
   )
+  /**
+   * What to show under Atribución. Derived from the lead's REAL source and
+   * from real external ids — never from the stored `attribution.platform`,
+   * which is a redundant copy that old documents may contradict.
+   */
+  const attribution = attributionView(lead)
 
   const nextType: LeadType = isRecruiting ? "sales" : "recruiting"
   const tel = telHref(lead.phone)
@@ -476,44 +483,72 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
 
               <TabsContent value="attribution" className="pt-4">
                 <div className="flex flex-col gap-4">
-                  <InfoRow
-                    label={t.leads.detail.platform}
-                    value={<PlatformBadge platform={lead.attribution.platform} />}
-                  />
-                  <InfoRow label={t.leads.detail.campaign} value={lead.attribution.campaign} />
-                  <InfoRow label={t.leads.detail.adSet} value={lead.attribution.adSet} />
-                  <InfoRow label={t.leads.detail.ad} value={lead.attribution.ad} />
-                  <InfoRow
-                    label={t.leads.detail.creative}
-                    value={
-                      <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                        {lead.attribution.creative}
-                      </code>
-                    }
-                  />
+                  {attribution.empty ? (
+                    <div className="flex flex-col gap-1 rounded-lg border border-dashed px-4 py-6 text-center">
+                      <p className="text-sm font-medium">{t.leads.detail.noAttributionTitle}</p>
+                      <p className="text-xs text-pretty text-muted-foreground">
+                        {t.leads.detail.noAttribution}
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      {attribution.platform ? (
+                        <InfoRow
+                          label={t.leads.detail.platform}
+                          value={<PlatformBadge platform={attribution.platform} />}
+                        />
+                      ) : (
+                        <InfoRow
+                          label={t.leads.detail.platform}
+                          value={
+                            <span className="text-muted-foreground">
+                              {t.leads.detail.noAttributionTitle}
+                            </span>
+                          }
+                        />
+                      )}
+                      {attribution.campaign && (
+                        <InfoRow label={t.leads.detail.campaign} value={attribution.campaign} />
+                      )}
+                      {attribution.adSet && (
+                        <InfoRow label={t.leads.detail.adSet} value={attribution.adSet} />
+                      )}
+                      {attribution.ad && <InfoRow label={t.leads.detail.ad} value={attribution.ad} />}
+                      {attribution.creative && (
+                        <InfoRow
+                          label={t.leads.detail.creative}
+                          value={
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                              {attribution.creative}
+                            </code>
+                          }
+                        />
+                      )}
+                    </>
+                  )}
                   {hasExtraAttribution ? (
                     <>
                       <Separator />
                       {(lead.attribution.utmSource || lead.attribution.utmMedium || lead.attribution.utmCampaign) && (
                         <InfoRow
                           label={t.leads.detail.utm}
-                          value={[lead.attribution.utmSource, lead.attribution.utmMedium, lead.attribution.utmCampaign]
+                          value={[lead.attribution?.utmSource, lead.attribution?.utmMedium, lead.attribution?.utmCampaign]
                             .filter(Boolean)
                             .join(" / ")}
                         />
                       )}
-                      {lead.attribution.landingPage && (
-                        <InfoRow label={t.leads.detail.landingPage} value={lead.attribution.landingPage} />
+                      {lead.attribution?.landingPage && (
+                        <InfoRow label={t.leads.detail.landingPage} value={lead.attribution?.landingPage ?? ""} />
                       )}
-                      {lead.attribution.referrer && (
-                        <InfoRow label={t.leads.detail.referrer} value={lead.attribution.referrer} />
+                      {lead.attribution?.referrer && (
+                        <InfoRow label={t.leads.detail.referrer} value={lead.attribution?.referrer ?? ""} />
                       )}
-                      {(lead.attribution.externalCampaignId || lead.attribution.externalAdId) && (
+                      {(lead.attribution?.externalCampaignId || lead.attribution?.externalAdId) && (
                         <InfoRow
                           label={t.leads.detail.externalIds}
                           value={
                             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                              {[lead.attribution.externalCampaignId, lead.attribution.externalAdSetId, lead.attribution.externalAdId]
+                              {[lead.attribution?.externalCampaignId, lead.attribution?.externalAdSetId, lead.attribution?.externalAdId]
                                 .filter(Boolean)
                                 .join(" · ")}
                             </code>
@@ -521,9 +556,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                         />
                       )}
                     </>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">{t.leads.detail.noAttribution}</p>
-                  )}
+                  ) : null}
                 </div>
               </TabsContent>
             </Tabs>
