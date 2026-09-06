@@ -9,7 +9,14 @@ import type { ActorContext } from "@/lib/firebase/activities"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
 import { PIPELINES, STAGE_LABELS, STAGE_TONE } from "@/lib/constants"
-import { canMoveLeadTo, canEditLead, groupLeadsByStage, requiresClosedValue } from "@/lib/leads"
+import {
+  canMoveLeadTo,
+  canEditLead,
+  columnAmount,
+  groupLeadsByStage,
+  leadAmount,
+  requiresClosedValue,
+} from "@/lib/leads"
 import { formatCurrency } from "@/lib/format"
 import type { Lead, LeadType, PipelineStage } from "@/types"
 import { PlatformMark } from "@/components/shared/platform-badge"
@@ -35,6 +42,29 @@ import { t } from "@/lib/i18n"
  *
  * Archived leads are never rendered; a restored lead reappears in its column.
  */
+/**
+ * Money on a card. A closed sale shows its CONFIRMED amount; a legacy sale
+ * without one shows "Sin importe" instead of borrowing `potentialValue`.
+ */
+function LeadMoney({ lead }: { lead: Lead }) {
+  const value = leadAmount(lead)
+  if (value.legacyWonWithoutAmount) {
+    return (
+      <span className="text-xs text-muted-foreground" title={t.leads.detail.noAmount}>
+        {t.leads.detail.noAmountShort}
+      </span>
+    )
+  }
+  return (
+    <span
+      className="font-mono text-xs font-medium tabular-nums"
+      title={value.closed ? t.leads.detail.closedAmount : t.leads.detail.potentialAmount}
+    >
+      {formatCurrency(value.amount ?? 0, true)}
+    </span>
+  )
+}
+
 export function PipelineBoard({ leads, leadType }: { leads: Lead[]; leadType: LeadType }) {
   const { role, membership, isSuperAdmin, workspaceId, workspaces } = useWorkspace()
   const editor = useMemo(
@@ -132,7 +162,9 @@ export function PipelineBoard({ leads, leadType }: { leads: Lead[]; leadType: Le
       <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain px-4 pb-[max(env(safe-area-inset-bottom),1rem)] sm:mx-0 sm:snap-none sm:gap-4 sm:px-0">
         {pipeline.stages.map((stage) => {
           const stageLeads = byStage[stage] ?? []
-          const total = stageLeads.reduce((sum, l) => sum + l.potentialValue, 0)
+          // The won column totals CONFIRMED amounts; other columns total
+          // potential value. A legacy sale without amount contributes 0.
+          const column = columnAmount(stageLeads)
           const isOver = overStage === stage
           return (
             <div
@@ -161,7 +193,10 @@ export function PipelineBoard({ leads, leadType }: { leads: Lead[]; leadType: Le
                 </div>
                 {showValue && (
                   <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
-                    {formatCurrency(total, true)}
+                    {formatCurrency(column.total, true)}
+                    {column.missingAmounts > 0 && (
+                      <span title={t.leads.detail.noAmount}> +{column.missingAmounts}?</span>
+                    )}
                   </span>
                 )}
               </div>
@@ -224,9 +259,7 @@ export function PipelineBoard({ leads, leadType }: { leads: Lead[]; leadType: Le
                               <TemperatureDot temperature={lead.temperature} />
                             </div>
                             {showValue ? (
-                              <span className="font-mono text-xs font-medium tabular-nums">
-                                {formatCurrency(lead.potentialValue, true)}
-                              </span>
+                              <LeadMoney lead={lead} />
                             ) : (
                               <span className="truncate text-xs text-muted-foreground">
                                 {lead.recruiting?.city ?? lead.recruiting?.jobTitle ?? ""}
