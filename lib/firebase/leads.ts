@@ -351,13 +351,18 @@ function stripUndefined<T extends object>(obj: T): T {
 /** Create a new lead with sensible defaults for the fields the UI omits. */
 export async function createLead(input: NewLeadInput) {
   const now = new Date().toISOString()
-  const campaignName = input.campaignName ?? "Entrada manual"
+  const campaignName = input.campaignName ?? ""
+  /**
+   * Attribution is only written when there is something REAL to record.
+   *
+   * A manual entry has no campaign, ad set, ad or creative: filling them with
+   * "Entrada manual" and "—" produced fake attribution that later read as a
+   * genuine ad platform. Now those fields are simply absent, and `source`
+   * remains the single source of truth for the lead's origin.
+   */
   const attribution: Attribution = stripUndefined({
     platform: input.source,
-    campaign: campaignName,
-    adSet: "—",
-    ad: "—",
-    creative: "—",
+    ...(campaignName ? { campaign: campaignName } : {}),
     ...input.attribution,
   })
 
