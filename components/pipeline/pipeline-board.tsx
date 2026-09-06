@@ -9,13 +9,14 @@ import type { ActorContext } from "@/lib/firebase/activities"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
 import { PIPELINES, STAGE_LABELS, STAGE_TONE } from "@/lib/constants"
-import { canMoveLeadTo, canEditLead, groupLeadsByStage } from "@/lib/leads"
+import { canMoveLeadTo, canEditLead, groupLeadsByStage, requiresClosedValue } from "@/lib/leads"
 import { formatCurrency } from "@/lib/format"
 import type { Lead, LeadType, PipelineStage } from "@/types"
 import { PlatformMark } from "@/components/shared/platform-badge"
 import { ScoreBadge, TemperatureDot } from "@/components/shared/score-badge"
 import { LeadDetailSheet } from "@/components/leads/lead-detail-sheet"
 import { MoveLeadSheet } from "@/components/pipeline/move-lead-sheet"
+import { CloseSaleDialog } from "@/components/leads/close-sale-dialog"
 import { Badge } from "@/components/ui/badge"
 import { t } from "@/lib/i18n"
 
@@ -56,6 +57,8 @@ export function PipelineBoard({ leads, leadType }: { leads: Lead[]; leadType: Le
   const [moving, setMoving] = useState<Lead | null>(null)
   /** Optimistic stage per lead while its write is in flight. */
   const [pending, setPending] = useState<Record<string, PipelineStage>>({})
+  /** Move to `sale` waiting for the person to confirm the real amount. */
+  const [closing, setClosing] = useState<{ lead: Lead; stage: PipelineStage } | null>(null)
   const inFlight = useRef(new Set<string>())
 
   const pipeline = PIPELINES[leadType]
@@ -71,10 +74,15 @@ export function PipelineBoard({ leads, leadType }: { leads: Lead[]; leadType: Le
   const byStage = useMemo(() => groupLeadsByStage(leads, leadType, pending), [leads, leadType, pending])
 
   const moveLead = useCallback(
-    async (lead: Lead, stage: PipelineStage) => {
+    async (lead: Lead, stage: PipelineStage, confirmedValue?: number) => {
       if (inFlight.current.has(lead.id)) return // double-move guard
       if (!canMoveLeadTo(editor, lead, stage)) {
         if (!canEditLead(editor, lead)) toast.error(t.pipeline.readOnly)
+        return
+      }
+      // Closing a sale always goes through the amount confirmation first.
+      if (requiresClosedValue(lead, stage) && confirmedValue === undefined) {
+        setClosing({ lead, stage })
         return
       }
       if (!actor) return
@@ -84,9 +92,10 @@ export function PipelineBoard({ leads, leadType }: { leads: Lead[]; leadType: Le
         // Single audited path shared by drag & drop and "Mover a": the stage
         // and its activity commit in one batch, so no duplicates and no
         // "stage saved without activity".
-        await updateLeadStage(lead, stage, actor)
+        await updateLeadStage(lead, stage, actor, confirmedValue)
         toast.success(t.pipeline.moved(lead.name, STAGE_LABELS[stage]))
         setMoving(null)
+        setClosing(null)
       } catch (err) {
         // Firestore rejected it: the card goes back to its real column.
         toast.error(t.pipeline.moveError, { description: describeError(err).message })
@@ -250,6 +259,16 @@ export function PipelineBoard({ leads, leadType }: { leads: Lead[]; leadType: Le
           )
         })}
       </div>
+
+      <CloseSaleDialog
+        lead={closing?.lead ?? null}
+        open={closing !== null}
+        onOpenChange={(open) => !open && setClosing(null)}
+        busy={closing !== null && pending[closing.lead.id] !== undefined}
+        onConfirm={(amount) => {
+          if (closing) void moveLead(closing.lead, closing.stage, amount)
+        }}
+      />
 
       <MoveLeadSheet
         lead={moving}
