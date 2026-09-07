@@ -725,7 +725,7 @@ export const t = {
       activated: (name: string) => `${name} vuelve a estar activo.`,
       statusError: 'No se pudo cambiar el estado',
       deactivateNotice:
-        'Desactivar quita a la persona de las listas de asignación. No cierra su sesión: para retirarle el acceso, elimina su membresía.',
+        'Desactivar bloquea el acceso de esta persona a Royal Sales IA y la quita de las listas de asignación.',
       onlyClientAdmin: 'Solo el administrador del workspace puede cambiar roles.',
       selfLocked: 'No puedes cambiar tu propio rol ni desactivarte.',
       invitedLocked: 'Esta persona todavía no acepta la invitación.',
