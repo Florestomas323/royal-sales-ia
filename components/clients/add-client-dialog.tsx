@@ -110,7 +110,9 @@ export function AddClientDialog() {
               <FieldLabel>{t.clients.statusLabel}</FieldLabel>
               <Select value={status} onValueChange={(v) => setStatus(v as ClientStatus)}>
                 <SelectTrigger className="w-full">
-                  <SelectValue />
+                  <SelectValue>
+                    {(v: string) => STATUS_OPTIONS.find((s) => s.value === v)?.label ?? v}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {STATUS_OPTIONS.map((s) => (
