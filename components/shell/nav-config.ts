@@ -30,7 +30,28 @@ export interface NavSection {
   items: NavItem[]
 }
 
-export const navSections: NavSection[] = [
+/**
+ * Routes kept OUT of the menu for the MVP. The pages, code and data all stay:
+ * a distributor should only meet what is finished, and re-showing a module is
+ * one line here. Nothing in this list is deleted.
+ *
+ *   /inbox, /reports, /automations → placeholders, not built yet
+ *   /analytics                      → duplicate of the command center
+ *   /clients                        → commercial accounts for attribution,
+ *                                     confusing for a distributor
+ *   /customers                      → Fase K (end customers), out of MVP scope
+ */
+export const MVP_HIDDEN: ReadonlySet<string> = new Set([
+  '/inbox',
+  '/reports',
+  '/automations',
+  '/analytics',
+  '/clients',
+  '/customers',
+])
+
+/** Every section and item, before the MVP filter. Kept for reactivation. */
+const allNavSections: NavSection[] = [
   {
     label: t.nav.sections.overview,
     items: [{ label: t.nav.items.commandCenter, href: '/', icon: LayoutDashboard }],
@@ -78,3 +99,8 @@ export const navSections: NavSection[] = [
     ],
   },
 ]
+
+/** What the sidebar renders: hidden items removed, empty sections dropped. */
+export const navSections: NavSection[] = allNavSections
+  .map((section) => ({ ...section, items: section.items.filter((i) => !MVP_HIDDEN.has(i.href)) }))
+  .filter((section) => section.items.length > 0)
