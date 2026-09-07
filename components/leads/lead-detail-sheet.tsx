@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { toast } from "sonner"
-import { Phone, Mail, MessageCircle, CalendarPlus, Target, Clock, ArrowRightLeft, Pencil, Archive, ArchiveRestore } from "lucide-react"
+import { BadgeDollarSign, Phone, Mail, MessageCircle, CalendarPlus, Target, Clock, ArrowRightLeft, Pencil, Archive, ArchiveRestore } from "lucide-react"
 import type { Lead, LeadType, PipelineStage } from "@/types"
 import {
   Sheet,
@@ -26,6 +26,8 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { EditLeadDialog } from "@/components/leads/edit-lead-dialog"
 import { CloseSaleDialog } from "@/components/leads/close-sale-dialog"
 import { ScheduleDialog } from "@/components/appointments/schedule-dialog"
+import { RegisterSaleDialog } from "@/components/sales/register-sale-dialog"
+import { canRegisterSale } from "@/lib/sales"
 import { LeadAppointments } from "@/components/appointments/lead-appointments"
 import { canSchedule } from "@/lib/appointments"
 import { Badge } from "@/components/ui/badge"
@@ -75,6 +77,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
   const [changingStage, setChangingStage] = useState(false)
   const [closingStage, setClosingStage] = useState<PipelineStage | null>(null)
   const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [saleOpen, setSaleOpen] = useState(false)
   const [contacting, setContacting] = useState(false)
   const { activities, loading: activityLoading, error: activityError } = useLeadActivities(lead?.id ?? null)
   if (!lead) return null
@@ -290,6 +293,21 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
               <CalendarPlus className="size-3.5" data-icon="inline-start" />
               {t.leads.detail.book}
             </Button>
+
+            {/* Only a SALES lead becomes a purchase; a candidate is a hire.
+                The Rules enforce the same thing server-side. */}
+            {canRegisterSale(lead) && (
+              <Button
+                size="sm"
+                className="col-span-2 h-11 gap-1.5 sm:h-8"
+                disabled={!canEdit || Boolean(lead.customerId)}
+                title={lead.customerId ? t.sales.alreadyRegistered : undefined}
+                onClick={() => setSaleOpen(true)}
+              >
+                <BadgeDollarSign className="size-3.5" data-icon="inline-start" />
+                {t.sales.register}
+              </Button>
+            )}
           </div>
           {!lead.phone && (
             <p className="text-xs text-muted-foreground">{t.leads.detail.noPhone}</p>
@@ -575,6 +593,10 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
       </SheetContent>
 
       {canEdit && <EditLeadDialog lead={lead} open={editOpen} onOpenChange={setEditOpen} />}
+
+      {canRegisterSale(lead) && (
+        <RegisterSaleDialog lead={lead} open={saleOpen} onOpenChange={setSaleOpen} />
+      )}
 
       {canBook && (
         <ScheduleDialog
