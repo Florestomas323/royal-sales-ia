@@ -230,6 +230,152 @@ service cloud.firestore {
       allow delete: if isSuperAdmin() || isWsClientAdmin(resource.data.workspaceId);
     }
 
+    // ----------------------------------------------------------- appointments
+    // Operational calendar. An appointment belongs to exactly ONE workspace
+    // and always references a real lead. Mirrors the lead permissions: admins
+    // and managers act on their whole workspace, a rep only on meetings
+    // assigned to them, a viewer reads and never writes.
+    match /appointments/{appointmentId} {
+
+      function validAppointmentStatus(v) {
+        return v in ['scheduled', 'completed', 'no_show', 'cancelled'];
+      }
+
+      function validAppointmentType(v) {
+        return v in ['demo', 'follow_up', 'closing', 'interview', 'orientation', 'other'];
+      }
+
+      /**
+       * Meeting types per pipeline. Must stay in sync with APPOINTMENT_TYPES
+       * in lib/appointments.ts: a sales lead can never hold an interview and a
+       * candidate can never hold a product demo.
+       */
+      function salesAppointmentTypes() {
+        return ['demo', 'follow_up', 'closing', 'other'];
+      }
+
+      function recruitingAppointmentTypes() {
+        return ['interview', 'orientation', 'follow_up', 'other'];
+      }
+
+      function typeMatchesLeadType(leadType, type) {
+        return (leadType == 'sales' && type in salesAppointmentTypes())
+            || (leadType == 'recruiting' && type in recruitingAppointmentTypes());
+      }
+
+      /**
+       * Tenant, lead link, authorship and the lead snapshot never change after
+       * creation. `leadType` and `leadName` are frozen too: they were verified
+       * against the real lead at creation time, so letting them drift later
+       * would defeat that check.
+       */
+      function apptImmutablesKept() {
+        return !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['workspaceId', 'leadId', 'createdBy', 'createdAt', 'leadType', 'leadName']);
+      }
+
+      function validAppointmentShape() {
+        return request.resource.data.keys().hasAll([
+              'workspaceId', 'leadId', 'leadName', 'leadType', 'assignedToId',
+              'scheduledAt', 'durationMinutes', 'type', 'status', 'createdBy',
+              'createdAt', 'updatedAt'
+            ])
+          && request.resource.data.keys().hasOnly([
+              'workspaceId', 'leadId', 'leadName', 'leadType', 'assignedToId',
+              'scheduledAt', 'durationMinutes', 'type', 'status', 'notes',
+              'createdBy', 'createdAt', 'updatedAt'
+            ])
+          && request.resource.data.workspaceId is string
+          && request.resource.data.workspaceId.size() > 0
+          && request.resource.data.leadId is string
+          && request.resource.data.leadId.size() > 0
+          && request.resource.data.leadName is string
+          && validLeadType(request.resource.data.leadType)
+          && request.resource.data.assignedToId is string
+          && request.resource.data.scheduledAt is string
+          && request.resource.data.scheduledAt.size() > 0
+          && request.resource.data.durationMinutes is number
+          && request.resource.data.durationMinutes > 0
+          && validAppointmentType(request.resource.data.type)
+          && validAppointmentStatus(request.resource.data.status)
+          && request.resource.data.createdBy is string;
+      }
+
+      /** The lead this appointment points at, read server-side. */
+      function referencedLead() {
+        return get(/databases/$(database)/documents/leads/$(request.resource.data.leadId)).data;
+      }
+
+      /**
+       * The referenced lead must really exist AND live in the same workspace.
+       * Read server-side, so a tampered body cannot attach a meeting to
+       * another distributor's lead.
+       */
+      function leadIsInSameWorkspace() {
+        return exists(/databases/$(database)/documents/leads/$(request.resource.data.leadId))
+          && referencedLead().workspaceId == request.resource.data.workspaceId;
+      }
+
+      /**
+       * The appointment must describe the lead it really points at: the whole
+       * snapshot is verified against the real document — `leadName` and
+       * `leadType` must match it, and `type` must belong to that pipeline.
+       * `leadName` matters because the agenda renders it without reading the
+       * lead (a rep cannot read leads that are not theirs), so an unverified
+       * name would be a label nobody could contradict.
+       */
+      function appointmentMatchesLead() {
+        return request.resource.data.leadName == referencedLead().name
+          && request.resource.data.leadType == referencedLead().get('leadType', 'sales')
+          && typeMatchesLeadType(request.resource.data.leadType, request.resource.data.type);
+      }
+
+      /**
+       * A rep may only schedule on a lead that is actually theirs. Without
+       * this, knowing a colleague's leadId would be enough to attach meetings
+       * to leads they cannot even read.
+       */
+      function repOwnsReferencedLead() {
+        return referencedLead().assignedToId == myUserId();
+      }
+
+      // Admins/managers/viewers see the whole workspace; a rep only their own.
+      // (A rep's client query includes `assignedToId == myUserId`, so the list
+      // is permitted; an unfiltered query from a rep is denied.)
+      allow read: if isSuperAdmin()
+        || (inWorkspace(resource.data.workspaceId) && role() in ['client_admin', 'manager', 'viewer'])
+        || (isWsRep(resource.data.workspaceId) && resource.data.assignedToId == myUserId());
+
+      // Always born as 'scheduled', signed by its creator, pointing at a real
+      // lead of that same workspace. A viewer can never create.
+      allow create: if validAppointmentShape()
+        && request.resource.data.status == 'scheduled'
+        && request.resource.data.createdBy == myUserId()
+        && leadIsInSameWorkspace()
+        && appointmentMatchesLead()
+        && (
+          isSuperAdmin()
+          || isWsAdmin(request.resource.data.workspaceId)
+          || (isWsRep(request.resource.data.workspaceId)
+              && request.resource.data.assignedToId == myUserId()
+              && repOwnsReferencedLead())
+        );
+
+      // Reschedule, cancel, complete. A rep may only touch their own meetings
+      // and may not hand them to somebody else.
+      allow update: if validAppointmentShape()
+        && apptImmutablesKept()
+        && (
+          isSuperAdmin()
+          || isWsAdmin(resource.data.workspaceId)
+          || (isWsRep(resource.data.workspaceId)
+              && resource.data.assignedToId == myUserId()
+              && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['assignedToId']))
+        );
+
+      allow delete: if isSuperAdmin() || isWsClientAdmin(resource.data.workspaceId);
+    }
+
     // ---------------------------------------------------------- contentDrafts
     // Laboratorio de Contenido. A draft belongs to exactly ONE workspace and
     // is never readable from another. Internal drafts (strategy, angles,
