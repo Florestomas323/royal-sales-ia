@@ -40,6 +40,7 @@ import { useCampaigns, useUsers } from '@/lib/firebase/collections'
 import { useCan, useWorkspace } from '@/lib/firebase/workspace-context'
 import { describeError } from '@/lib/firebase/errors'
 import { cn } from '@/lib/utils'
+import { memberLabel } from '@/lib/team'
 import { t } from '@/lib/i18n'
 import type { LeadType, Platform, RecruitingProfile } from '@/types'
 
@@ -271,7 +272,9 @@ export function NewLeadDialog({
                 <FieldLabel>{t.leads.source}</FieldLabel>
                 <Select value={source} onValueChange={(v) => setSource((v ?? 'manual') as Platform)}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder={t.leads.sourcePlaceholder} />
+                    <SelectValue placeholder={t.leads.sourcePlaceholder}>
+                      {(v: string) => PLATFORM_LABELS[v as Platform] ?? t.leads.sourcePlaceholder}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {sources.map((p) => (
@@ -289,7 +292,13 @@ export function NewLeadDialog({
                 <FieldLabel>{t.leads.campaign}</FieldLabel>
                 <Select value={campaignId} onValueChange={handleCampaignChange}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder={t.leads.campaignPlaceholder} />
+                    <SelectValue placeholder={t.leads.campaignPlaceholder}>
+                      {(v: string) => {
+                        if (v === NO_CAMPAIGN) return t.leads.noCampaign
+                        const c = matchingCampaigns.find((x) => x.id === v)
+                        return c ? `${c.name} · ${PLATFORM_LABELS[c.platform]}` : t.leads.campaignPlaceholder
+                      }}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={NO_CAMPAIGN}>{t.leads.noCampaign}</SelectItem>
@@ -310,13 +319,21 @@ export function NewLeadDialog({
                 onValueChange={(v) => setAssignedToId(v ?? '')}
                 disabled={isRep}
               >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder={t.leads.assignPlaceholder} />
+                <SelectTrigger className="h-11 w-full sm:h-9">
+                  {/* Base UI prints the raw `value` unless a render function
+                      is given, which is how a users/{id} was reaching the
+                      screen as if it were a person's name. */}
+                  <SelectValue placeholder={t.leads.assignPlaceholder}>
+                    {(v: string) => {
+                      const owner = activeReps.find((u) => u.id === v)
+                      return owner ? memberLabel(owner) : t.leads.assignPlaceholder
+                    }}
+                  </SelectValue>
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-[60svh]">
                   {activeReps.map((u) => (
                     <SelectItem key={u.id} value={u.id}>
-                      {u.name}
+                      {memberLabel(u)}
                       {u.status === 'invited' && ` · ${t.leads.editDialog.assignInvitedSuffix}`}
                     </SelectItem>
                   ))}
