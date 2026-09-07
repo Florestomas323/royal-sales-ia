@@ -60,6 +60,12 @@ export async function authenticateRequest(request: Request): Promise<AuthResult>
   }
   if (!snap.exists) return { ok: false, status: 403, error: "no_membership" }
   const membership = { ...(snap.data() as Omit<Membership, "authUid">), authUid: uid }
+  // A deactivated member is refused here too, so a valid ID token is not
+  // enough to reach the API routes. The super admin has no workspace
+  // membership to deactivate and is never affected.
+  if (membership.role !== "super_admin" && membership.status === "inactive") {
+    return { ok: false, status: 403, error: "membership_inactive" }
+  }
   return { ok: true, user: { uid, email, membership } }
 }
 

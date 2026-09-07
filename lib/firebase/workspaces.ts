@@ -8,9 +8,11 @@ import {
   documentId,
   onSnapshot,
   query,
+  deleteField,
   serverTimestamp,
   updateDoc,
   where,
+  type DocumentData,
 } from "firebase/firestore"
 import { db } from "./client"
 import type { Workspace } from "@/types"
@@ -79,10 +81,27 @@ export async function createWorkspace(input: NewWorkspaceInput): Promise<string>
 }
 
 /**
- * Renames a workspace. Security Rules only allow `name`, `logoColor`,
- * `ownerEmail` and `updatedAt` here, and only for super_admin or the
- * workspace's client_admin — a manager or viewer is rejected server-side.
+ * Saves the company profile. Security Rules whitelist exactly these keys and
+ * only for super_admin or the workspace's client_admin — a manager or viewer
+ * is rejected server-side, so the screen must not pretend otherwise.
+ *
+ * A `null` clears the field for real: writing an empty string would leave a
+ * hollow value that reads like data the distributor never entered.
  */
-export async function updateWorkspaceName(workspaceId: string, name: string): Promise<void> {
-  await updateDoc(doc(workspacesCol, workspaceId), { name: name.trim(), updatedAt: serverTimestamp() })
+export async function updateWorkspaceSettings(
+  workspaceId: string,
+  patch: {
+    name: string
+    phone: string | null
+    ownerEmail: string | null
+    city: string | null
+    state: string | null
+    timezone: string | null
+  },
+): Promise<void> {
+  const data: DocumentData = { name: patch.name.trim(), updatedAt: serverTimestamp() }
+  for (const key of ["phone", "ownerEmail", "city", "state", "timezone"] as const) {
+    data[key] = patch[key] === null ? deleteField() : patch[key]
+  }
+  await updateDoc(doc(workspacesCol, workspaceId), data)
 }

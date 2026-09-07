@@ -51,6 +51,7 @@ export type ResolveOutcome =
   | { status: "ready"; identity: ResolvedIdentity }
   | { status: "no_membership" }
   | { status: "unverified_email"; invitationId: string }
+  | { status: "deactivated" }
 
 const membershipsCol = collection(db, "memberships")
 const usersCol = collection(db, "users")
@@ -143,6 +144,15 @@ export async function resolveIdentity(authUser: AuthUser): Promise<ResolveOutcom
 
   if (membership.role !== "super_admin" && !membership.workspaceId) {
     throw new TenancyError("missing_workspace", "La membresía no tiene workspace.")
+  }
+
+  // A deactivated member is shown a clear screen instead of a wall of
+  // permission errors. This is COURTESY, not the control: Security Rules
+  // already deny every workspace read and write for them, so a client that
+  // skipped this check would still get nothing. The super admin never has a
+  // workspace membership to deactivate, so they cannot be locked out here.
+  if (membership.role !== "super_admin" && membership.status === "inactive") {
+    return { status: "deactivated" }
   }
 
   return { status: "ready", identity: { membership, profile, workspace } }

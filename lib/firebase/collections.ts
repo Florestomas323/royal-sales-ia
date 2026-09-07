@@ -5,17 +5,19 @@ import {
   addDoc,
   collection,
   doc,
+  getDocs,
   onSnapshot,
   query,
   serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
   type Query,
   type DocumentData,
 } from "firebase/firestore"
 import { db } from "./client"
 import { useWorkspace } from "./workspace-context"
-import type { Campaign, Client, LeadType, User } from "@/types"
+import type { Campaign, Client, LeadType, MemberStatus, User, UserRole } from "@/types"
 
 /* -------------------------------------------------------------------------- */
 /*  Generic workspace-scoped realtime hook                                    */
@@ -251,6 +253,58 @@ export async function updateOwnProfile(
   if (typeof patch.name === "string") data.name = patch.name.trim()
   if (typeof patch.avatarColor === "string") data.avatarColor = patch.avatarColor
   await updateDoc(doc(collection(db, "users"), userId), data)
+}
+
+/**
+ * Changes a member's role.
+ *
+ * Two documents describe a role: the TEAM PROFILE (`users/{id}`, what the
+ * screens read) and the MEMBERSHIP (`memberships/{authUid}`, what actually
+ * authorises a signed-in session). Writing only the first would show a new
+ * role while the person kept their old permissions, so both move together in
+ * a single batch: either the change lands everywhere or nowhere.
+ *
+ * Rules reject `super_admin` and any move to another workspace, so a tampered
+ * call cannot widen access. Only a client_admin (or super_admin) may write a
+ * membership, which is why the UI offers this action to nobody else.
+ */
+export async function updateMemberRole(userId: string, role: UserRole): Promise<void> {
+  const batch = writeBatch(db)
+  batch.update(doc(collection(db, "users"), userId), { role, updatedAt: serverTimestamp() })
+
+  // The member may not have signed in yet: an invitation has no membership.
+  const memberships = await getDocs(
+    query(collection(db, "memberships"), where("userId", "==", userId)),
+  )
+  for (const m of memberships.docs) {
+    batch.update(m.ref, { role })
+  }
+  await batch.commit()
+}
+
+/**
+ * Activates or deactivates a member, revoking or restoring real access.
+ *
+ * The status is written to BOTH the team profile (what the screens read) and
+ * the membership (what Security Rules read on every request). Writing only
+ * the profile would leave a deactivated person able to keep working with the
+ * session they already had, so the two move together in one batch.
+ *
+ * Only a client_admin or super_admin may write a membership, which is why the
+ * UI offers this action to nobody else.
+ */
+export async function setMemberStatus(userId: string, status: MemberStatus): Promise<void> {
+  const batch = writeBatch(db)
+  batch.update(doc(collection(db, "users"), userId), { status, updatedAt: serverTimestamp() })
+
+  // An invited person has no membership yet; there is nothing to revoke.
+  const memberships = await getDocs(
+    query(collection(db, "memberships"), where("userId", "==", userId)),
+  )
+  for (const m of memberships.docs) {
+    batch.update(m.ref, { status })
+  }
+  await batch.commit()
 }
 
 /* -------------------------------------------------------------------------- */

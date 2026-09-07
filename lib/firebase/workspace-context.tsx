@@ -30,6 +30,8 @@ export type WorkspaceStatus =
   | "ready"
   | "no_membership"
   | "unverified_email"
+  /** Access revoked from Equipo. Security Rules deny everything anyway. */
+  | "deactivated"
   | "error"
 
 export interface DisplayUser {
@@ -321,6 +323,8 @@ function TenancyGate({
   const copy =
     status === "no_membership"
       ? { title: t.tenancy.noMembershipTitle, body: t.tenancy.noMembershipBody(email) }
+      : status === "deactivated"
+        ? { title: t.tenancy.deactivatedTitle, body: t.tenancy.deactivatedBody(email) }
       : status === "unverified_email"
         ? { title: t.tenancy.unverifiedTitle, body: t.tenancy.unverifiedBody(email) }
         : { title: t.tenancy.errorTitle, body: error?.message ?? t.tenancy.errorBody }
