@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Loader2 } from "lucide-react"
+import { CheckCircle2, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
@@ -16,11 +16,14 @@ import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { createAppointment, updateAppointment } from "@/lib/firebase/appointments"
 import { describeError } from "@/lib/firebase/errors"
 import { eligibleAssignees } from "@/lib/leads"
+import { AddressFields } from "@/components/appointments/address-fields"
+import { AddToCalendar } from "@/components/appointments/add-to-calendar"
 import {
-  DURATIONS, defaultScheduledAt, fromLocalInput, hasErrors, toLocalInput, typesFor, validateDraft,
+  DURATIONS, EMPTY_LOCATION, defaultScheduledAt, fromLocalInput, hasErrors, isBlankLocation,
+  normalizeLocation, requiresLocation, toLocalInput, typesFor, validateDraft, type LocationErrors,
 } from "@/lib/appointments"
 import { t } from "@/lib/i18n"
-import type { Appointment, AppointmentType, LeadType } from "@/types"
+import type { Appointment, AppointmentLocation, AppointmentType, LeadType } from "@/types"
 
 const d = t.modules.calendar.dialog
 const NO_OWNER = "__none__"
@@ -72,8 +75,12 @@ export function ScheduleDialog({
   const [type, setType] = useState<AppointmentType>(types[0])
   const [ownerId, setOwnerId] = useState<string>("")
   const [notes, setNotes] = useState("")
+  const [location, setLocation] = useState<AppointmentLocation>(EMPTY_LOCATION)
   const [saving, setSaving] = useState(false)
-  const [errors, setErrors] = useState<{ scheduledAt?: string; type?: string }>({})
+  const [errors, setErrors] = useState<{ scheduledAt?: string; type?: string; location?: LocationErrors }>({})
+  /** Set once the appointment exists, so the export button has real data. */
+  const [saved, setSaved] = useState<Appointment | null>(null)
+  const locationRequired = requiresLocation(leadType, type)
 
   useEffect(() => {
     if (!open) return
@@ -84,6 +91,10 @@ export function ScheduleDialog({
     // Prefill the owner from the appointment, else from the lead. Never guess.
     setOwnerId(appointment?.assignedToId ?? target.assignedToId ?? "")
     setNotes(appointment?.notes ?? "")
+    // Rescheduling loads the address stored ON THE APPOINTMENT, so it can be
+    // edited here without ever touching the lead's own address.
+    setLocation(appointment?.location ?? EMPTY_LOCATION)
+    setSaved(null)
   }, [open, appointment, target.assignedToId, types])
 
   const owners = eligibleAssignees(users, target.workspaceId)
@@ -93,15 +104,26 @@ export function ScheduleDialog({
   async function handleSave() {
     if (saving) return
     const scheduledAt = fromLocalInput(when)
-    const problems = validateDraft({ scheduledAt, leadType, type, durationMinutes: duration })
+    const problems = validateDraft({ scheduledAt, leadType, type, durationMinutes: duration, location })
     if (hasErrors(problems)) {
       setErrors({
         scheduledAt: problems.scheduledAt ? d.invalidDate : undefined,
         type: problems.type ? d.invalidType : undefined,
+        location: problems.location,
       })
+      if (problems.location) {
+        toast.error(locationRequired ? t.modules.calendar.address.incomplete : t.modules.calendar.address.incompletePartial)
+      }
       return
     }
     if (!membership?.userId) return
+    // A blank optional address is stored as absent, never as empty strings.
+    const blank = isBlankLocation(location)
+    const storedLocation = blank ? undefined : normalizeLocation(location)
+    // On update, `null` tells the data layer to REMOVE a previously stored
+    // address; `undefined` would just leave the old one in place. A sales demo
+    // never reaches this point blank: validateDraft already stopped it.
+    const locationPatch = blank ? null : normalizeLocation(location)
     setSaving(true)
     try {
       if (appointment) {
@@ -110,11 +132,13 @@ export function ScheduleDialog({
           durationMinutes: duration,
           type,
           notes: notes.trim() || undefined,
+          location: locationPatch,
           ...(canReassign ? { assignedToId: ownerId } : {}),
         })
         toast.success(d.updated)
+        onOpenChange(false)
       } else {
-        await createAppointment({
+        const id = await createAppointment({
           workspaceId: target.workspaceId,
           leadId: target.leadId,
           leadName: target.leadName,
@@ -124,11 +148,30 @@ export function ScheduleDialog({
           durationMinutes: duration,
           type,
           notes: notes.trim() || undefined,
+          location: storedLocation,
           createdBy: membership.userId,
         })
         toast.success(d.created)
+        // The dialog switches to a success step offering the export. The
+        // appointment already exists: this step can be dismissed freely.
+        setSaved({
+          id,
+          workspaceId: target.workspaceId,
+          leadId: target.leadId,
+          leadName: target.leadName,
+          leadType,
+          assignedToId: ownerId,
+          scheduledAt: scheduledAt as string,
+          durationMinutes: duration,
+          type,
+          status: "scheduled",
+          notes: notes.trim() || undefined,
+          location: storedLocation,
+          createdBy: membership.userId,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        })
       }
-      onOpenChange(false)
     } catch (err) {
       toast.error(d.error, { description: describeError(err).message })
     } finally {
@@ -139,6 +182,28 @@ export function ScheduleDialog({
   return (
     <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-md">
+        {saved ? (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <CheckCircle2 className="size-5 text-success" />
+                {t.modules.calendar.created.title}
+              </DialogTitle>
+              <DialogDescription className="text-pretty">
+                {t.modules.calendar.created.description}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-3">
+              <AddToCalendar appointment={saved} className="h-12 w-full justify-center gap-1.5 sm:h-10" />
+            </div>
+            <DialogFooter>
+              <Button className="h-11 w-full sm:h-9 sm:w-auto" onClick={() => onOpenChange(false)}>
+                {t.modules.calendar.created.close}
+              </Button>
+            </DialogFooter>
+          </>
+        ) : (
+        <>
         <DialogHeader>
           <DialogTitle>{isEdit ? d.titleEdit : d.titleNew}</DialogTitle>
           <DialogDescription className="text-pretty">
@@ -229,6 +294,17 @@ export function ScheduleDialog({
             />
           </Field>
 
+          <AddressFields
+            value={location}
+            errors={errors.location}
+            required={locationRequired}
+            disabled={saving}
+            onChange={(next) => {
+              setLocation(next)
+              if (errors.location) setErrors((p) => ({ ...p, location: undefined }))
+            }}
+          />
+
           <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
             {d.pipelineNotice}
           </p>
@@ -243,6 +319,8 @@ export function ScheduleDialog({
             {saving ? d.saving : isEdit ? d.saveEdit : d.save}
           </Button>
         </DialogFooter>
+        </>
+        )}
       </DialogContent>
     </Dialog>
   )
