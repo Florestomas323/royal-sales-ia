@@ -2,13 +2,16 @@
 
 import { useEffect, useState } from "react"
 import {
-  addDoc, collection, doc, onSnapshot, query, updateDoc, where,
+  addDoc, deleteField, collection, doc, onSnapshot, query, updateDoc, where,
   type DocumentData, type Query,
 } from "firebase/firestore"
+import type { FieldValue } from "firebase/firestore"
 import { db } from "./client"
 import { useWorkspace } from "./workspace-context"
 import { sortForAgenda } from "@/lib/appointments"
-import type { Appointment, AppointmentStatus, AppointmentType, LeadType } from "@/types"
+import type {
+  Appointment, AppointmentLocation, AppointmentStatus, AppointmentType, LeadType,
+} from "@/types"
 
 /**
  * `appointments` CRUD, same multi-tenant pattern as clients/campaigns.
@@ -31,6 +34,8 @@ export interface NewAppointment {
   durationMinutes: number
   type: AppointmentType
   notes?: string
+  /** Physical address of the meeting; a snapshot, never the lead's own. */
+  location?: AppointmentLocation
   createdBy: string
 }
 
@@ -50,9 +55,21 @@ export async function createAppointment(input: NewAppointment): Promise<string> 
 /** Reschedule or edit. `workspaceId`, `leadId` and `createdBy` never change. */
 export async function updateAppointment(
   id: string,
-  patch: Partial<Pick<Appointment, "scheduledAt" | "durationMinutes" | "type" | "notes" | "assignedToId">>,
+  patch: Partial<Pick<Appointment, "scheduledAt" | "durationMinutes" | "type" | "notes" | "assignedToId">>
+    // `undefined` means "leave the stored address alone"; `null` means
+    // "remove it". Without that distinction stripUndefined would silently keep
+    // the old address whenever somebody cleared the fields.
+    & { location?: AppointmentLocation | null },
 ): Promise<void> {
-  await updateDoc(doc(appointmentsCol, id), stripUndefined({ ...patch, updatedAt: new Date().toISOString() }))
+  const { location, ...rest } = patch
+  const payload: Record<string, FieldValue | string | number | AppointmentLocation> =
+    stripUndefined({ ...rest, updatedAt: new Date().toISOString() })
+  if (location !== undefined) {
+    // deleteField() actually removes the key; writing empty strings would
+    // leave a fake address behind that the Rules would still accept.
+    payload.location = location === null ? deleteField() : location
+  }
+  await updateDoc(doc(appointmentsCol, id), payload)
 }
 
 export async function setAppointmentStatus(id: string, status: AppointmentStatus): Promise<void> {
