@@ -602,6 +602,23 @@ export interface PlatformMetrics {
 
 export type AppointmentStatus = 'scheduled' | 'completed' | 'no_show' | 'cancelled'
 
+/**
+ * Where the meeting happens. Royal Prestige demos are held at the customer's
+ * home, so this is a physical postal address, not a meeting link.
+ *
+ * It is a SNAPSHOT stored on the appointment: editing it never touches the
+ * lead's own address, and two meetings with the same lead may legitimately
+ * happen at different places.
+ */
+export interface AppointmentLocation {
+  addressLine1: string
+  /** Apartment, unit, suite. */
+  addressLine2?: string
+  city: string
+  state: string
+  postalCode: string
+}
+
 /** What the meeting is for. Labels differ per pipeline (see lib/appointments.ts). */
 export type AppointmentType =
   | 'demo'
@@ -635,6 +652,11 @@ export interface Appointment {
   type: AppointmentType
   status: AppointmentStatus
   notes?: string
+  /**
+   * Physical address of the meeting. REQUIRED for a sales demo, optional for
+   * every other type (see requiresLocation in lib/appointments.ts).
+   */
+  location?: AppointmentLocation
   /** users.id of whoever created it; Rules pin it to the caller. */
   createdBy: string
   createdAt: string
