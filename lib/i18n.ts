@@ -932,7 +932,15 @@ export const t = {
       colorDescription: 'Se usa en el equipo, el embudo y las asignaciones.',
       saved: 'Tu perfil se actualizó.',
       noProfile:
-        'Tu cuenta no tiene un perfil de equipo en este workspace, así que no hay nada que editar aquí.',
+        'Tu cuenta todavía no tiene un perfil. Pídele a un administrador de tu workspace que te invite.',
+      createTitle: 'Crea tu perfil',
+      createBody:
+        'Como super admin no perteneces a ningún workspace, así que tu perfil no se crea solo. Créalo aquí para poder poner tu nombre y tu color.',
+      create: 'Crear mi perfil',
+      creating: 'Creando…',
+      created: 'Perfil creado',
+      createdDescription: 'Ya puedes editar tu nombre y tu color.',
+      createError: 'No se pudo crear tu perfil',
     },
     notifications: {
       title: 'Notificaciones',
