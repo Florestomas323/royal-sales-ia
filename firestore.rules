@@ -264,6 +264,44 @@ service cloud.firestore {
       }
 
       /**
+       * A Royal Prestige demo happens at the customer's home, so a sales demo
+       * cannot exist without a physical address. Every other type may have one
+       * or not. Must stay in sync with requiresLocation in lib/appointments.ts.
+       */
+      function locationIsRequired() {
+        return request.resource.data.leadType == 'sales'
+            && request.resource.data.type == 'demo';
+      }
+
+      function hasLocation() {
+        return request.resource.data.keys().hasAny(['location']);
+      }
+
+      /**
+       * A stored address is complete or it is not stored at all: half an
+       * address helps nobody find the house.
+       */
+      function validLocationShape() {
+        return !hasLocation() || (
+          request.resource.data.location is map
+          && request.resource.data.location.keys().hasAll(['addressLine1', 'city', 'state', 'postalCode'])
+          && request.resource.data.location.keys().hasOnly(['addressLine1', 'addressLine2', 'city', 'state', 'postalCode'])
+          && request.resource.data.location.addressLine1 is string
+          && request.resource.data.location.addressLine1.size() > 0
+          && request.resource.data.location.city is string
+          && request.resource.data.location.city.size() > 0
+          && request.resource.data.location.state is string
+          && request.resource.data.location.state.size() > 0
+          && request.resource.data.location.postalCode is string
+          && request.resource.data.location.postalCode.size() > 0
+        );
+      }
+
+      function locationRuleMet() {
+        return validLocationShape() && (!locationIsRequired() || hasLocation());
+      }
+
+      /**
        * Tenant, lead link, authorship and the lead snapshot never change after
        * creation. `leadType` and `leadName` are frozen too: they were verified
        * against the real lead at creation time, so letting them drift later
@@ -282,7 +320,7 @@ service cloud.firestore {
             ])
           && request.resource.data.keys().hasOnly([
               'workspaceId', 'leadId', 'leadName', 'leadType', 'assignedToId',
-              'scheduledAt', 'durationMinutes', 'type', 'status', 'notes',
+              'scheduledAt', 'durationMinutes', 'type', 'status', 'notes', 'location',
               'createdBy', 'createdAt', 'updatedAt'
             ])
           && request.resource.data.workspaceId is string
@@ -297,7 +335,13 @@ service cloud.firestore {
           && request.resource.data.durationMinutes is number
           && request.resource.data.durationMinutes > 0
           && validAppointmentType(request.resource.data.type)
+          // The type must belong to its own pipeline in EVERY write, not just
+          // on create: `leadType` is immutable, so checking the incoming body
+          // is enough and it closes the door to turning a sales demo into a
+          // recruiting interview through an update.
+          && typeMatchesLeadType(request.resource.data.leadType, request.resource.data.type)
           && validAppointmentStatus(request.resource.data.status)
+          && locationRuleMet()
           && request.resource.data.createdBy is string;
       }
 
