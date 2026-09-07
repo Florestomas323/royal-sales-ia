@@ -152,6 +152,13 @@ export interface Workspace {
   createdAt: string
   /** Optional: email of the person who owns/administers the workspace. */
   ownerEmail?: string
+  /** Contact phone of the distributor's company. */
+  phone?: string
+  city?: string
+  /** State/province, free text: distributors operate in MX and the US. */
+  state?: string
+  /** IANA zone (e.g. "America/Mexico_City"). Drives how dates are read. */
+  timezone?: string
 }
 
 /**
@@ -169,6 +176,14 @@ export interface Membership {
   userId: string
   email: string
   createdAt: string
+  /**
+   * Access flag, mirrored from the team profile. Lives HERE because the
+   * membership is the document Security Rules already read on every request:
+   * deactivating must revoke access server-side, not merely hide buttons.
+   *
+   * Absent means active — legacy memberships predate this field.
+   */
+  status?: MemberStatus
 }
 
 /**
