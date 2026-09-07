@@ -2,12 +2,13 @@
 
 import { useState } from "react"
 import { toast } from "sonner"
-import { MoreHorizontal } from "lucide-react"
+import { Check, MoreHorizontal } from "lucide-react"
 import { setMemberStatus, updateMemberRole, useUsers } from "@/lib/firebase/collections"
 import { describeError } from "@/lib/firebase/errors"
 import { useCan, useWorkspace } from "@/lib/firebase/workspace-context"
 import { ASSIGNABLE_ROLES, canManageMember, canToggleStatus, isSelf, memberLabel, nextStatus } from "@/lib/team"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -51,13 +52,20 @@ const ROLE_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
  * client_admin may write a membership — so a manager sees the team but does
  * not get an action that Rules would reject halfway through.
  */
+interface MemberContext {
+  role: ReturnType<typeof useWorkspace>["role"]
+  workspaceId: string | null
+  isSuperAdmin: boolean
+  userId: string | null
+}
+
 function MemberActions({
   member,
   ctx,
   canChangeRole,
 }: {
   member: User
-  ctx: { role: ReturnType<typeof useWorkspace>["role"]; workspaceId: string | null; isSuperAdmin: boolean; userId: string | null }
+  ctx: MemberContext
   canChangeRole: boolean
 }) {
   const [busy, setBusy] = useState(false)
@@ -71,7 +79,9 @@ function MemberActions({
     if (role === member.role) return
     setBusy(true)
     try {
-      await updateMemberRole(member.id, role)
+      // The workspace comes from the member's own loaded document, so the
+      // memberships query is bounded exactly as the Rules require.
+      await updateMemberRole(member.id, role, member.workspaceId || null)
       toast.success(t.team.manage.roleUpdated, {
         description: t.team.manage.roleUpdatedDescription(label, ROLE_LABELS[role]),
       })
@@ -86,7 +96,7 @@ function MemberActions({
     const target = nextStatus(member.status as MemberStatus)
     setBusy(true)
     try {
-      await setMemberStatus(member.id, target)
+      await setMemberStatus(member.id, target, member.workspaceId || null)
       toast.success(t.team.manage.statusUpdated, {
         description: target === "inactive"
           ? t.team.manage.deactivated(label)
@@ -114,11 +124,12 @@ function MemberActions({
           <>
             <DropdownMenuLabel>{t.team.manage.changeRole}</DropdownMenuLabel>
             {ASSIGNABLE_ROLES.map((r) => (
-              <DropdownMenuItem
-                key={r}
-                disabled={busy || r === member.role}
-                onClick={() => changeRole(r)}
-              >
+              // The current role is ticked, not disabled: a greyed-out line
+              // reads like a broken option instead of "this is the one".
+              <DropdownMenuItem key={r} disabled={busy} onClick={() => changeRole(r)}>
+                <Check
+                  className={cn("size-4", r === member.role ? "opacity-100" : "opacity-0")}
+                />
                 {ROLE_LABELS[r]}
               </DropdownMenuItem>
             ))}
@@ -140,6 +151,59 @@ function MemberActions({
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+/**
+ * Phone layout. A six-column table cannot fit an iPhone without pushing the
+ * page sideways, so each member becomes a card: identity on top, role and
+ * status as badges, the three counters in a row, actions within thumb reach.
+ */
+function MemberCard({
+  user,
+  ctx,
+  canChangeRole,
+}: {
+  user: User
+  ctx: MemberContext
+  canChangeRole: boolean
+}) {
+  const counters: [string, number][] = [
+    [t.team.table.leads, user.assignedLeads],
+    [t.team.table.appointments, user.appointments],
+    [t.team.table.sales, user.sales],
+  ]
+
+  return (
+    <Card className="gap-0 py-4">
+      <CardContent className="flex flex-col gap-3 px-4">
+        <div className="flex items-start gap-3">
+          <UserAvatar name={memberLabel(user)} color={user.avatarColor} />
+          {/* min-w-0 lets a long name truncate instead of widening the row. */}
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-medium leading-tight">{memberLabel(user)}</p>
+            <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+          </div>
+          <MemberActions member={user} ctx={ctx} canChangeRole={canChangeRole} />
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Badge variant={ROLE_VARIANT[user.role] ?? "outline"}>{ROLE_LABELS[user.role]}</Badge>
+          <Badge variant={STATUS_VARIANT[user.status] ?? "outline"}>
+            {MEMBER_STATUS_LABELS[user.status as MemberStatus] ?? user.status}
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 border-t pt-3">
+          {counters.map(([label, value]) => (
+            <div key={label} className="flex flex-col">
+              <span className="text-xs text-muted-foreground">{label}</span>
+              <span className="font-mono text-sm font-semibold tabular-nums">{value || "—"}</span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -209,10 +273,17 @@ export function TeamLive() {
       {!workspaceId && !isSuperAdmin && (
         <p className="text-sm text-muted-foreground">{t.team.manage.noWorkspace}</p>
       )}
-      {/* Deactivating is an assignment flag, not a session kill: say so. */}
+      {/* Deactivating really revokes access (Rules + server-auth): say so. */}
       <p className="text-xs text-muted-foreground text-pretty">{t.team.manage.deactivateNotice}</p>
 
-      <Card className="overflow-x-auto py-0">
+      {/* Phone: one card per member, nothing to scroll sideways. */}
+      <div className="flex flex-col gap-3 md:hidden">
+        {users.map((user) => (
+          <MemberCard key={user.id} user={user} ctx={ctx} canChangeRole={isClientAdmin} />
+        ))}
+      </div>
+
+      <Card className="hidden py-0 md:block">
         <Table>
           <TableHeader>
             <TableRow>
