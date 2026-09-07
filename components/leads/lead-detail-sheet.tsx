@@ -25,6 +25,9 @@ import { LeadAiAssistant } from "@/components/leads/lead-ai-assistant"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { EditLeadDialog } from "@/components/leads/edit-lead-dialog"
 import { CloseSaleDialog } from "@/components/leads/close-sale-dialog"
+import { ScheduleDialog } from "@/components/appointments/schedule-dialog"
+import { LeadAppointments } from "@/components/appointments/lead-appointments"
+import { canSchedule } from "@/lib/appointments"
 import { Badge } from "@/components/ui/badge"
 import {
   Select,
@@ -71,6 +74,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
   const [archiving, setArchiving] = useState(false)
   const [changingStage, setChangingStage] = useState(false)
   const [closingStage, setClosingStage] = useState<PipelineStage | null>(null)
+  const [scheduleOpen, setScheduleOpen] = useState(false)
   const [contacting, setContacting] = useState(false)
   const { activities, loading: activityLoading, error: activityError } = useLeadActivities(lead?.id ?? null)
   if (!lead) return null
@@ -108,6 +112,13 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
    * which is a redundant copy that old documents may contradict.
    */
   const attribution = attributionView(lead)
+  /** Viewer cannot schedule; everybody else with a workspace seat can. */
+  const canBook = canSchedule({
+    role,
+    userId: membership?.userId ?? null,
+    workspaceId: membership?.workspaceId ?? null,
+    isSuperAdmin,
+  })
 
   const nextType: LeadType = isRecruiting ? "sales" : "recruiting"
   const tel = telHref(lead.phone)
@@ -267,13 +278,14 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                 {t.leads.detail.call}
               </Button>
             )}
+            {/* Agendar is live now: it opens the real scheduling dialog. */}
             <Button
               size="sm"
               variant="outline"
               className="col-span-2 h-11 gap-1.5 sm:col-span-1 sm:h-8"
-              disabled
-              title={t.leads.detail.bookPending}
-              aria-describedby="book-pending"
+              disabled={!canBook}
+              title={canBook ? undefined : t.modules.calendar.readOnly}
+              onClick={() => setScheduleOpen(true)}
             >
               <CalendarPlus className="size-3.5" data-icon="inline-start" />
               {t.leads.detail.book}
@@ -282,9 +294,6 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
           {!lead.phone && (
             <p className="text-xs text-muted-foreground">{t.leads.detail.noPhone}</p>
           )}
-          <p id="book-pending" className="text-xs text-muted-foreground">
-            {t.leads.detail.bookPending}
-          </p>
           {canEdit ? (
             <div className="grid w-full min-w-0 grid-cols-2 gap-2">
               <Button
@@ -470,6 +479,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
 
               <TabsContent value="timeline" className="pt-4">
                 <div className="flex flex-col gap-4">
+                  <LeadAppointments leadId={lead.id} workspaceId={lead.workspaceId} />
                   {actor && canEdit && <AddNoteForm lead={lead} actor={actor} />}
                   {activityError ? (
                     <p className="text-sm text-destructive">{t.leads.detail.activityError}</p>
@@ -565,6 +575,20 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
       </SheetContent>
 
       {canEdit && <EditLeadDialog lead={lead} open={editOpen} onOpenChange={setEditOpen} />}
+
+      {canBook && (
+        <ScheduleDialog
+          target={{
+            leadId: lead.id,
+            leadName: lead.name,
+            workspaceId: lead.workspaceId,
+            leadType: type,
+            assignedToId: lead.assignedToId ?? "",
+          }}
+          open={scheduleOpen}
+          onOpenChange={setScheduleOpen}
+        />
+      )}
 
       <CloseSaleDialog
         lead={lead}
