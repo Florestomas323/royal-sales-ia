@@ -10,15 +10,21 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  runTransaction,
   updateDoc,
   where,
-  writeBatch,
+  type DocumentReference,
+  type Transaction,
   type Query,
   type DocumentData,
 } from "firebase/firestore"
 import { db } from "./client"
 import { useWorkspace } from "./workspace-context"
 import type { Campaign, Client, LeadType, MemberStatus, User, UserRole } from "@/types"
+import {
+  hasFreeSeat, holdsSeat, isSeatRole, normalizeSeats, seatsFromMembers, withSeat, withoutSeat,
+  type SeatOp, type SeatRole, type Seats,
+} from "@/lib/seats"
 
 /* -------------------------------------------------------------------------- */
 /*  Generic workspace-scoped realtime hook                                    */
@@ -211,6 +217,38 @@ export interface NewUserInput {
  * account the first time they sign in with this email (see membership.ts).
  * `super_admin` cannot be granted from here (Rules reject it).
  */
+/**
+ * Reads the seat ledger inside a transaction, building it on first use for a
+ * legacy workspace. The pre-transaction member list is used ONLY when the
+ * ledger is absent; once it exists the ledger is the truth.
+ */
+async function seatsInTx(
+  tx: Transaction,
+  workspaceRef: DocumentReference,
+  legacyMembers: () => Promise<{ id: string; role: UserRole; status: MemberStatus }[]>,
+): Promise<{ seats: Seats; wasMissing: boolean }> {
+  const snap = await tx.get(workspaceRef)
+  if (!snap.exists()) throw new Error("workspace_not_found")
+  const raw = (snap.data() as { seats?: unknown }).seats
+  if (raw && typeof raw === "object") return { seats: normalizeSeats(raw as Record<string, unknown>), wasMissing: false }
+  return { seats: seatsFromMembers(await legacyMembers()), wasMissing: true }
+}
+
+async function membersOf(workspaceId: string) {
+  const snap = await getDocs(query(collection(db, "users"), where("workspaceId", "==", workspaceId)))
+  return snap.docs.map((d) => {
+    const u = d.data() as { role: UserRole; status: MemberStatus }
+    return { id: d.id, role: u.role, status: u.status }
+  })
+}
+
+export class SeatLimitError extends Error {
+  constructor(public readonly role: SeatRole) {
+    super("seat_limit_reached")
+    this.name = "SeatLimitError"
+  }
+}
+
 export async function createUser(input: NewUserInput) {
   const user: Omit<User, "id"> = {
     workspaceId: input.workspaceId,
@@ -224,7 +262,27 @@ export async function createUser(input: NewUserInput) {
     appointments: 0,
     sales: 0,
   }
-  const ref = await addDoc(collection(db, "users"), user)
+  if (!isSeatRole(input.role)) throw new Error("role_not_invitable")
+  const role = input.role
+  const workspaceRef = doc(collection(db, "workspaces"), input.workspaceId)
+  const ref = doc(collection(db, "users"))
+  // The member list is read BEFORE the transaction only as a fallback for a
+  // legacy workspace without ledger; the ledger itself decides afterwards.
+  const legacy = () => membersOf(input.workspaceId)
+
+  // A transaction, not a batch: whether the seat is free depends on a read,
+  // and two admins inviting at once must serialise on the workspace document
+  // so the third Distribuidor is refused instead of slipping in.
+  await runTransaction(db, async (tx) => {
+    const { seats } = await seatsInTx(tx, workspaceRef, legacy)
+    if (!hasFreeSeat(seats, role)) throw new SeatLimitError(role)
+    tx.update(workspaceRef, {
+      seats: withSeat(seats, role, ref.id),
+      seatOps: [{ kind: "add", role, userId: ref.id }],
+      updatedAt: serverTimestamp(),
+    })
+    tx.set(ref, user)
+  })
   return ref.id
 }
 
@@ -335,13 +393,40 @@ export async function updateMemberRole(
   role: UserRole,
   workspaceId: string | null,
 ): Promise<void> {
-  const batch = writeBatch(db)
-  batch.update(doc(collection(db, "users"), userId), { role, updatedAt: serverTimestamp() })
+  if (!isSeatRole(role)) throw new Error("role_not_assignable")
+  if (!workspaceId) throw new Error("workspace_required")
+  const userRef = doc(collection(db, "users"), userId)
+  const workspaceRef = doc(collection(db, "workspaces"), workspaceId)
+  const memberships = await membershipsOf(userId, workspaceId)
+  const legacy = () => membersOf(workspaceId)
 
-  for (const m of (await membershipsOf(userId, workspaceId)).docs) {
-    batch.update(m.ref, { role })
-  }
-  await batch.commit()
+  await runTransaction(db, async (tx) => {
+    const userSnap = await tx.get(userRef)
+    if (!userSnap.exists()) throw new Error("user_not_found")
+    const current = userSnap.data() as { role: UserRole; status: MemberStatus }
+    if (current.role === role) return
+
+    const { seats } = await seatsInTx(tx, workspaceRef, legacy)
+    // Moving to a full role is refused; an inactive member holds no seat and
+    // keeps holding none, so their role can change freely.
+    const occupies = holdsSeat(current.status)
+    const next = occupies
+      ? withSeat(withoutSeat(seats, userId), role, userId)
+      : withoutSeat(seats, userId)
+    if (occupies && !hasFreeSeat(withoutSeat(seats, userId), role)) throw new SeatLimitError(role)
+
+    const seatOps: SeatOp[] = occupies
+      ? [
+          ...(isSeatRole(current.role) ? [{ kind: "remove" as const, role: current.role, userId }] : []),
+          { kind: "add" as const, role, userId },
+        ]
+      : []
+    if (seatOps.length > 0) {
+      tx.update(workspaceRef, { seats: next, seatOps, updatedAt: serverTimestamp() })
+    }
+    tx.update(userRef, { role, updatedAt: serverTimestamp() })
+    for (const m of memberships.docs) tx.update(m.ref, { role })
+  })
 }
 
 /**
@@ -360,13 +445,39 @@ export async function setMemberStatus(
   status: MemberStatus,
   workspaceId: string | null,
 ): Promise<void> {
-  const batch = writeBatch(db)
-  batch.update(doc(collection(db, "users"), userId), { status, updatedAt: serverTimestamp() })
+  if (!workspaceId) throw new Error("workspace_required")
+  const userRef = doc(collection(db, "users"), userId)
+  const workspaceRef = doc(collection(db, "workspaces"), workspaceId)
+  const memberships = await membershipsOf(userId, workspaceId)
+  const legacy = () => membersOf(workspaceId)
 
-  for (const m of (await membershipsOf(userId, workspaceId)).docs) {
-    batch.update(m.ref, { status })
-  }
-  await batch.commit()
+  await runTransaction(db, async (tx) => {
+    const userSnap = await tx.get(userRef)
+    if (!userSnap.exists()) throw new Error("user_not_found")
+    const current = userSnap.data() as { role: UserRole; status: MemberStatus }
+    const { seats } = await seatsInTx(tx, workspaceRef, legacy)
+
+    if (isSeatRole(current.role)) {
+      if (status === "inactive") {
+        // Deactivating frees the seat.
+        tx.update(workspaceRef, {
+          seats: withoutSeat(seats, userId),
+          seatOps: [{ kind: "remove", role: current.role, userId }],
+          updatedAt: serverTimestamp(),
+        })
+      } else if (!holdsSeat(current.status)) {
+        // Reactivating takes a seat back — only if one is free.
+        if (!hasFreeSeat(seats, current.role, userId)) throw new SeatLimitError(current.role)
+        tx.update(workspaceRef, {
+          seats: withSeat(seats, current.role, userId),
+          seatOps: [{ kind: "add", role: current.role, userId }],
+          updatedAt: serverTimestamp(),
+        })
+      }
+    }
+    tx.update(userRef, { status, updatedAt: serverTimestamp() })
+    for (const m of memberships.docs) tx.update(m.ref, { status })
+  })
 }
 
 /* -------------------------------------------------------------------------- */

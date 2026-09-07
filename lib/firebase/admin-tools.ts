@@ -1,4 +1,6 @@
 import { collection, getDocs, query, where, writeBatch, doc, type DocumentData } from "firebase/firestore"
+import { SEAT_LIMIT, SEAT_ROLES, seatsFromMembers, type Seats } from "@/lib/seats"
+import type { MemberStatus, UserRole } from "@/types"
 import { db } from "./client"
 
 /**
@@ -165,4 +167,66 @@ export async function runPhase2Normalization(
 
   await flush()
   return done
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Seat ledger (2/2/2)                                                        */
+/* -------------------------------------------------------------------------- */
+
+export interface SeatRebuildRow {
+  workspaceId: string
+  name: string
+  seats: Seats
+  /** True when a role already holds MORE than the limit: the team must shrink. */
+  overLimit: boolean
+  hadLedger: boolean
+}
+
+/**
+ * Super admin only. Rebuilds every workspace's seat ledger from its team, so
+ * the limits apply from the first minute instead of waiting for each
+ * workspace's first team operation. Run BEFORE publishing the seat Rules.
+ *
+ * Firestore Rules give the super admin an unrestricted path on `workspaces`,
+ * which is what lets this write a ledger that may exceed the limit for a
+ * team that is already over it — that is reported, not hidden.
+ */
+export async function scanSeatLedgers(): Promise<SeatRebuildRow[]> {
+  const [wsSnap, usersSnap] = await Promise.all([
+    getDocs(collection(db, "workspaces")),
+    getDocs(collection(db, "users")),
+  ])
+  const byWorkspace = new Map<string, { id: string; role: UserRole; status: MemberStatus }[]>()
+  for (const d of usersSnap.docs) {
+    const u = d.data() as { workspaceId?: string; role: UserRole; status: MemberStatus }
+    if (!u.workspaceId) continue
+    const list = byWorkspace.get(u.workspaceId) ?? []
+    list.push({ id: d.id, role: u.role, status: u.status })
+    byWorkspace.set(u.workspaceId, list)
+  }
+  return wsSnap.docs.map((d) => {
+    const data = d.data() as { name?: string; seats?: unknown }
+    const seats = seatsFromMembers(byWorkspace.get(d.id) ?? [])
+    return {
+      workspaceId: d.id,
+      name: data.name ?? d.id,
+      seats,
+      overLimit: SEAT_ROLES.some((r) => seats[r].length > SEAT_LIMIT),
+      hadLedger: Boolean(data.seats),
+    }
+  })
+}
+
+export async function rebuildSeatLedgers(rows: SeatRebuildRow[]): Promise<number> {
+  let batch = writeBatch(db)
+  let n = 0
+  for (const row of rows) {
+    // A declared op is required by the Rules for admins; the super admin path
+    // has no such requirement, but keeping the shape uniform costs nothing.
+    batch.update(doc(db, "workspaces", row.workspaceId), { seats: row.seats })
+    n++
+    if (n % 400 === 0) { await batch.commit(); batch = writeBatch(db) }
+  }
+  await batch.commit()
+  return n
 }
