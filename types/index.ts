@@ -187,6 +187,79 @@ export interface Membership {
 }
 
 /**
+ * End customer of Royal Prestige — the person who buys.
+ *
+ * Deliberately NOT the `clients` collection: a `Client` is a commercial
+ * ACCOUNT (brand, business line, sub-distributor) that campaigns attribute to.
+ * Mixing buyers into it would collide with `Campaign.clientId`. In the UI this
+ * is called "Clientes finales" to keep the two apart.
+ *
+ * Carries no counters: revenue and sale counts are derived from `sales`.
+ */
+export interface Customer {
+  id: string
+  /** Tenant. Immutable. */
+  workspaceId: string
+  name: string
+  phone?: string
+  email?: string
+  /** Where they live — same shape the calendar uses for demo addresses. */
+  address?: AppointmentLocation
+  /**
+   * Seller responsible TODAY, reassignable. `""` means unassigned — the same
+   * convention `Lead.assignedToId` uses, so there is one representation.
+   * This is NOT who closed a sale: that is `Sale.soldById`, and it never moves.
+   */
+  assignedToId: string
+  /** users.id of whoever created it. Immutable. */
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+/**
+ * One confirmed purchase. A customer may buy many times, so this is a
+ * separate document rather than a field on the customer.
+ */
+export interface Sale {
+  /**
+   * Also the operation key: the dialog generates it ONCE and reuses it on
+   * retries, so a double tap writes the same document instead of a second sale.
+   */
+  id: string
+  /** Tenant. Immutable. */
+  workspaceId: string
+  /** Immutable. */
+  customerId: string
+  /**
+   * The lead this purchase came from, or `null` for a repeat purchase made
+   * straight from the customer's file. ALWAYS present as a key, so there is
+   * one way to say "no lead" instead of two (absent vs null). Immutable.
+   */
+  sourceLeadId: string | null
+  product: string
+  /** Confirmed amount, always > 0. Immutable in K1. */
+  amount: number
+  soldAt: string
+  /**
+   * Who actually closed THIS sale. Immutable: reassigning the customer must
+   * never rewrite history or move a commission.
+   */
+  soldById: string
+  notes?: string
+  /**
+   * K1 only ever writes 'confirmed'. Cancelling needs coherent answers about
+   * the lead's stage, closedValue and revenue, so it gets its own phase.
+   */
+  status: SaleStatus
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type SaleStatus = 'confirmed'
+
+/**
  * Shape of the future Campaign Builder wizard (prep only — no UI yet).
  * Kept here so nothing in the data model contradicts it later.
  */
@@ -569,6 +642,13 @@ export interface Lead {
    * Cleared when the lead leaves the won stage.
    */
   closedAt?: string | null
+  /**
+   * The end customer this lead became, set on its FIRST conversion. Write-once
+   * by design: a lead converts into one buyer and never into another. Absent
+   * (or "") means "not converted yet"; legacy closed leads have no link and
+   * cannot gain one from the app — that is an administrative migration.
+   */
+  customerId?: string
   /** Present only for recruiting leads. */
   recruiting?: RecruitingProfile
   /**
