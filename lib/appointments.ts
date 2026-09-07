@@ -1,5 +1,7 @@
 import { PIPELINES } from "@/lib/constants"
-import type { Appointment, AppointmentStatus, AppointmentType, LeadType, UserRole } from "@/types"
+import type {
+  Appointment, AppointmentLocation, AppointmentStatus, AppointmentType, LeadType, UserRole,
+} from "@/types"
 
 /**
  * Pure helpers for the operational calendar. No Firestore, no React.
@@ -86,10 +88,73 @@ export function defaultScheduledAt(now = new Date()): string {
   return d.toISOString()
 }
 
+/**
+ * A sales DEMO happens at the customer's home, so it cannot be scheduled
+ * without knowing where. Everything else may be filled in later.
+ */
+export function requiresLocation(leadType: LeadType, type: AppointmentType): boolean {
+  return leadType === "sales" && type === "demo"
+}
+
+export const EMPTY_LOCATION: AppointmentLocation = {
+  addressLine1: "", city: "", state: "", postalCode: "",
+}
+
+export interface LocationErrors {
+  addressLine1?: boolean
+  city?: boolean
+  state?: boolean
+  postalCode?: boolean
+}
+
+const filled = (v: string | undefined) => typeof v === "string" && v.trim().length > 0
+
+/** Which required address fields are missing. Empty object = complete. */
+export function validateLocation(location: AppointmentLocation | null | undefined): LocationErrors {
+  const errors: LocationErrors = {}
+  if (!filled(location?.addressLine1)) errors.addressLine1 = true
+  if (!filled(location?.city)) errors.city = true
+  if (!filled(location?.state)) errors.state = true
+  if (!filled(location?.postalCode)) errors.postalCode = true
+  return errors
+}
+
+export function isCompleteLocation(location: AppointmentLocation | null | undefined): boolean {
+  return Object.keys(validateLocation(location)).length === 0
+}
+
+/** True when the person typed nothing at all: an optional address stays absent. */
+export function isBlankLocation(location: AppointmentLocation | null | undefined): boolean {
+  if (!location) return true
+  return !filled(location.addressLine1) && !filled(location.addressLine2)
+    && !filled(location.city) && !filled(location.state) && !filled(location.postalCode)
+}
+
+/** Trims and drops an empty addressLine2 so no blank field is stored. */
+export function normalizeLocation(location: AppointmentLocation): AppointmentLocation {
+  const line2 = location.addressLine2?.trim()
+  return {
+    addressLine1: location.addressLine1.trim(),
+    ...(line2 ? { addressLine2: line2 } : {}),
+    city: location.city.trim(),
+    state: location.state.trim(),
+    postalCode: location.postalCode.trim(),
+  }
+}
+
+/** "123 Main St Apt 4, Irving, TX 75061" — one readable line. */
+export function formatLocation(location: AppointmentLocation | null | undefined): string {
+  if (!location) return ""
+  const street = [location.addressLine1, location.addressLine2].filter(filled).join(" ")
+  const region = [location.state, location.postalCode].filter(filled).join(" ")
+  return [street, location.city, region].filter((p) => p.trim().length > 0).join(", ")
+}
+
 export interface AppointmentDraftErrors {
   scheduledAt?: string
   type?: string
   duration?: string
+  location?: LocationErrors
 }
 
 /** Validation shared by create and reschedule. */
@@ -98,6 +163,7 @@ export function validateDraft(input: {
   leadType: LeadType
   type: AppointmentType
   durationMinutes: number
+  location?: AppointmentLocation | null
 }): AppointmentDraftErrors {
   const errors: AppointmentDraftErrors = {}
   if (!input.scheduledAt || Number.isNaN(Date.parse(input.scheduledAt))) {
@@ -106,6 +172,13 @@ export function validateDraft(input: {
   if (!isValidType(input.leadType, input.type)) errors.type = "invalid_type"
   if (!Number.isFinite(input.durationMinutes) || input.durationMinutes <= 0) {
     errors.duration = "invalid_duration"
+  }
+  // A demo needs a complete address; an optional one is either blank or
+  // complete — half an address helps nobody find the house.
+  const mandatory = requiresLocation(input.leadType, input.type)
+  if (mandatory || !isBlankLocation(input.location)) {
+    const problems = validateLocation(input.location)
+    if (Object.keys(problems).length > 0) errors.location = problems
   }
   return errors
 }
