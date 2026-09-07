@@ -9,6 +9,7 @@ import {
   onSnapshot,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
   writeBatch,
@@ -253,6 +254,45 @@ export async function updateOwnProfile(
   if (typeof patch.name === "string") data.name = patch.name.trim()
   if (typeof patch.avatarColor === "string") data.avatarColor = patch.avatarColor
   await updateDoc(doc(collection(db, "users"), userId), data)
+}
+
+/**
+ * Creates the super admin's own GLOBAL profile at `users/{authUid}`.
+ *
+ * The super admin belongs to no workspace, so nobody can invite them and no
+ * team screen would ever create their profile — which left the Perfil tab
+ * with nothing to edit. This fills that gap and nothing else:
+ *
+ *  - the document id IS the Firebase Auth uid, taken from the authenticated
+ *    session, never from anything the UI could hand over;
+ *  - `workspaceId` is empty on purpose, so the profile belongs to no tenant
+ *    and never shows up in a team list or an assignment picker (every one of
+ *    those queries filters by `workspaceId == <something>`);
+ *  - NO membership is written: this does not grant access, it only gives the
+ *    existing super admin a name and an avatar colour.
+ *
+ * `setDoc` on that exact id also makes a duplicate impossible: running it
+ * twice would overwrite one document rather than create a second.
+ */
+export async function createSuperAdminProfile(input: {
+  authUid: string
+  email: string
+  name: string
+}): Promise<string> {
+  const profile: Omit<User, "id"> = {
+    workspaceId: "",
+    authUid: input.authUid,
+    name: input.name.trim(),
+    email: input.email.trim().toLowerCase(),
+    role: "super_admin",
+    avatarColor: "var(--chart-1)",
+    status: "active",
+    assignedLeads: 0,
+    appointments: 0,
+    sales: 0,
+  }
+  await setDoc(doc(collection(db, "users"), input.authUid), profile)
+  return input.authUid
 }
 
 /**
