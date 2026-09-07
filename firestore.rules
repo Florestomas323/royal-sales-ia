@@ -60,9 +60,23 @@ service cloud.firestore {
       return hasMembership() && role() == 'super_admin';
     }
 
-    /** Caller belongs to workspace `ws` (super admin excluded on purpose). */
+    /**
+     * A deactivated member keeps their Firebase session but loses the app.
+     * The flag lives on the membership — the document these rules already
+     * read — so revoking access costs no extra document read and cannot be
+     * bypassed by a stale client. Absent means active (legacy memberships).
+     */
+    function membershipIsActive() {
+      return me().get('status', 'active') != 'inactive';
+    }
+
+    /**
+     * Caller belongs to workspace `ws` AND is still active. Super admin is
+     * excluded on purpose and never passes through here, so deactivating
+     * somebody can never lock the super admin out.
+     */
     function inWorkspace(ws) {
-      return hasMembership() && ws is string && myWorkspace() == ws;
+      return hasMembership() && ws is string && myWorkspace() == ws && membershipIsActive();
     }
 
     function isWsAdmin(ws) {
@@ -134,8 +148,14 @@ service cloud.firestore {
     match /workspaces/{wsId} {
       allow read: if isSuperAdmin() || isWsMember(wsId);
       allow create, delete: if isSuperAdmin();
+      // The company profile a distributor fills in from Configuración. The
+      // whitelist is what keeps a client_admin from touching `plan`, `status`
+      // or `createdAt`; a manager or viewer is not listed here at all.
       allow update: if isSuperAdmin()
-        || (isWsClientAdmin(wsId) && onlyChanges(['name', 'logoColor', 'ownerEmail', 'updatedAt']));
+        || (isWsClientAdmin(wsId) && onlyChanges([
+              'name', 'logoColor', 'ownerEmail', 'updatedAt',
+              'phone', 'city', 'state', 'timezone'
+            ]));
     }
 
     // ------------------------------------------------------------- memberships
