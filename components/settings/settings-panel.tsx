@@ -26,8 +26,9 @@ import {
 } from "@/components/ui/field"
 import { UserAvatar } from "@/components/shared/user-avatar"
 import { SuperAdminTools } from "@/components/settings/super-admin-tools"
+import { useAuth } from "@/lib/firebase/auth-context"
 import { useCan, useWorkspace } from "@/lib/firebase/workspace-context"
-import { AVATAR_COLORS, updateOwnProfile } from "@/lib/firebase/collections"
+import { AVATAR_COLORS, createSuperAdminProfile, updateOwnProfile } from "@/lib/firebase/collections"
 import { updateWorkspaceSettings } from "@/lib/firebase/workspaces"
 import { describeError } from "@/lib/firebase/errors"
 import { cn } from "@/lib/utils"
@@ -93,6 +94,7 @@ export function SettingsPanel() {
           name={currentUser.name}
           email={currentUser.email}
           avatarColor={currentUser.avatarColor}
+          isSuperAdmin={isSuperAdmin}
           onSaved={refreshProfile}
         />
       </TabsContent>
@@ -350,14 +352,64 @@ function WorkspaceCard({
 
 /* -------------------------------------------------------------------------- */
 
+/**
+ * The super admin has no workspace, so nobody invites them and no team screen
+ * ever creates their profile. This is the one place they can create it.
+ *
+ * Identity comes from the authenticated Firebase session, never from props or
+ * anything else the page could influence: the document id is the real uid.
+ */
+function CreateSuperAdminProfile({ onCreated }: { onCreated: () => Promise<void> }) {
+  const { user } = useAuth()
+  const [creating, setCreating] = useState(false)
+
+  async function handleCreate() {
+    if (!user?.uid || !user.email) return
+    setCreating(true)
+    try {
+      await createSuperAdminProfile({
+        authUid: user.uid,
+        email: user.email,
+        name: user.displayName?.trim() || user.email.split("@")[0],
+      })
+      toast.success(t.settings.profile.created, {
+        description: t.settings.profile.createdDescription,
+      })
+      await onCreated()
+    } catch (err) {
+      toast.error(t.settings.profile.createError, { description: describeError(err).message })
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <p className="text-sm font-medium">{t.settings.profile.createTitle}</p>
+        <p className="text-sm text-muted-foreground text-pretty">{t.settings.profile.createBody}</p>
+      </div>
+      <Button
+        onClick={handleCreate}
+        disabled={creating || !user?.uid}
+        className="h-11 w-full sm:h-9 sm:w-auto sm:self-start"
+      >
+        {creating ? t.settings.profile.creating : t.settings.profile.create}
+      </Button>
+    </div>
+  )
+}
+
 function ProfileCard({
   userId,
   name,
   email,
   avatarColor,
+  isSuperAdmin,
   onSaved,
 }: {
   userId: string | null
+  isSuperAdmin: boolean
   name: string
   email: string
   avatarColor: string
@@ -396,7 +448,11 @@ function ProfileCard({
       </CardHeader>
       <CardContent>
         {!userId ? (
-          <Notice>{t.settings.profile.noProfile}</Notice>
+          isSuperAdmin ? (
+            <CreateSuperAdminProfile onCreated={onSaved} />
+          ) : (
+            <Notice>{t.settings.profile.noProfile}</Notice>
+          )
         ) : (
           <FieldGroup>
             <div className="flex items-center gap-4">
