@@ -600,13 +600,45 @@ export interface PlatformMetrics {
   revenue: number
 }
 
+export type AppointmentStatus = 'scheduled' | 'completed' | 'no_show' | 'cancelled'
+
+/** What the meeting is for. Labels differ per pipeline (see lib/appointments.ts). */
+export type AppointmentType =
+  | 'demo'
+  | 'follow_up'
+  | 'closing'
+  | 'interview'
+  | 'orientation'
+  | 'other'
+
+/**
+ * `appointments/{id}` — a real meeting attached to a real lead.
+ *
+ * `workspaceId` is the tenant and is immutable. `leadName` is a display
+ * snapshot so the agenda renders without reading every lead (a sales_rep
+ * cannot read leads that are not theirs); the authoritative link is `leadId`.
+ */
 export interface Appointment {
   id: string
+  workspaceId: string
   leadId: string
+  /** Display snapshot of the lead's name at scheduling time. */
   leadName: string
+  /** Pipeline the lead belonged to, so labels stay coherent. */
+  leadType: LeadType
+  /** users.id of whoever the meeting belongs to. May be '' when unassigned. */
   assignedToId: string
+  /** ISO datetime of the meeting. */
   scheduledAt: string
-  status: 'scheduled' | 'completed' | 'no_show'
+  /** Minutes. */
+  durationMinutes: number
+  type: AppointmentType
+  status: AppointmentStatus
+  notes?: string
+  /** users.id of whoever created it; Rules pin it to the caller. */
+  createdBy: string
+  createdAt: string
+  updatedAt: string
 }
 
 export interface ActivityPayload {
