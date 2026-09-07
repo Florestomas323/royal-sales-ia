@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import { Building2, DatabaseZap, FlaskConical, Plus } from "lucide-react"
+import { Building2, DatabaseZap, FlaskConical, Plus, UsersRound } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,8 +24,11 @@ import {
   runPhase2Normalization,
   scanLegacyDocuments,
   scanPhase2Normalization,
+  rebuildSeatLedgers,
+  scanSeatLedgers,
   type MigrationScan,
   type NormalizationScan,
+  type SeatRebuildRow,
 } from "@/lib/firebase/admin-tools"
 import { isDemoSeedEnabled, seedDemoWorkspace } from "@/lib/firebase/seed"
 import { describeError } from "@/lib/firebase/errors"
@@ -49,6 +52,7 @@ export function SuperAdminTools() {
       <MigrationCard workspaceId={workspaceId} workspaceName={currentWorkspace?.name ?? null} />
       <NormalizationCard workspaceId={workspaceId} />
       <SeedCard workspaceId={workspaceId} workspaceName={currentWorkspace?.name ?? null} />
+          <SeatLedgerCard />
     </div>
   )
 }
@@ -304,6 +308,74 @@ function SeedCard({ workspaceId, workspaceName }: { workspaceId: string | null; 
       <CardFooter className="justify-end">
         <Button variant="outline" size="sm" onClick={handleSeed} disabled={busy || !enabled || !workspaceId}>
           {t.superAdmin.seedRun}
+        </Button>
+      </CardFooter>
+    </Card>
+  )
+}
+
+/**
+ * Rebuilds the 2/2/2 seat ledger of every workspace from its team. Meant to
+ * run once, BEFORE the seat Rules are published, so no workspace is ever
+ * caught without a ledger. Teams already over the limit are called out: the
+ * Rules will not let them invite until somebody is deactivated.
+ */
+function SeatLedgerCard() {
+  const [rows, setRows] = React.useState<SeatRebuildRow[] | null>(null)
+  const [busy, setBusy] = React.useState(false)
+
+  async function handleScan() {
+    setBusy(true)
+    try {
+      setRows(await scanSeatLedgers())
+    } catch (err) {
+      toast.error(describeError(err).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRun() {
+    if (!rows) return
+    setBusy(true)
+    try {
+      const n = await rebuildSeatLedgers(rows)
+      toast.success(t.superAdmin.seatsDone(n))
+      setRows(null)
+    } catch (err) {
+      toast.error(describeError(err).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <UsersRound className="size-4" />
+          {t.superAdmin.seatsTitle}
+        </CardTitle>
+        <CardDescription>{t.superAdmin.seatsDescription}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
+        {rows?.map((r) => (
+          <div key={r.workspaceId} className="rounded-lg border p-3 text-sm">
+            <p className="text-pretty">
+              {t.superAdmin.seatsRow(r.name, r.seats.client_admin.length, r.seats.manager.length, r.seats.sales_rep.length)}
+            </p>
+            {r.overLimit && (
+              <p className="mt-1 text-xs text-destructive text-pretty">{t.superAdmin.seatsOverLimit(r.name)}</p>
+            )}
+          </div>
+        ))}
+      </CardContent>
+      <CardFooter className="justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={handleScan} disabled={busy}>
+          {t.superAdmin.seatsScan}
+        </Button>
+        <Button size="sm" onClick={handleRun} disabled={busy || !rows || rows.length === 0}>
+          {t.superAdmin.seatsRun(rows?.length ?? 0)}
         </Button>
       </CardFooter>
     </Card>
