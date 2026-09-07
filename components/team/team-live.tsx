@@ -3,7 +3,8 @@
 import { useState } from "react"
 import { toast } from "sonner"
 import { Check, MoreHorizontal } from "lucide-react"
-import { setMemberStatus, updateMemberRole, useUsers } from "@/lib/firebase/collections"
+import { SeatLimitError, setMemberStatus, updateMemberRole, useUsers } from "@/lib/firebase/collections"
+import { SEAT_LIMIT, SEAT_ROLES, normalizeSeats, seatCount, seatsFromMembers, totalSeatsUsed } from "@/lib/seats"
 import { describeError } from "@/lib/firebase/errors"
 import { useCan, useWorkspace } from "@/lib/firebase/workspace-context"
 import { ASSIGNABLE_ROLES, canManageMember, canToggleStatus, isSelf, memberLabel, nextStatus } from "@/lib/team"
@@ -86,7 +87,11 @@ function MemberActions({
         description: t.team.manage.roleUpdatedDescription(label, ROLE_LABELS[role]),
       })
     } catch (err) {
-      toast.error(t.team.manage.roleError, { description: describeError(err).message })
+      if (err instanceof SeatLimitError) {
+        toast.error(t.team.seats.limitReached, { description: t.team.seats.full(ROLE_LABELS[err.role]) })
+      } else {
+        toast.error(t.team.manage.roleError, { description: describeError(err).message })
+      }
     } finally {
       setBusy(false)
     }
@@ -103,7 +108,11 @@ function MemberActions({
           : t.team.manage.activated(label),
       })
     } catch (err) {
-      toast.error(t.team.manage.statusError, { description: describeError(err).message })
+      if (err instanceof SeatLimitError) {
+        toast.error(t.team.seats.limitReached, { description: t.team.seats.full(ROLE_LABELS[err.role]) })
+      } else {
+        toast.error(t.team.manage.statusError, { description: describeError(err).message })
+      }
     } finally {
       setBusy(false)
     }
@@ -215,7 +224,10 @@ function MemberCard({
 
 export function TeamLive() {
   const { users, loading, error } = useUsers()
-  const { role, workspaceId, isSuperAdmin, membership } = useWorkspace()
+  const { role, workspaceId, isSuperAdmin, membership, currentWorkspace } = useWorkspace()
+  const seats = currentWorkspace?.seats
+    ? normalizeSeats(currentWorkspace.seats)
+    : seatsFromMembers(users.filter((u) => u.workspaceId === workspaceId))
   const { isClientAdmin } = useCan()
   const ctx = { role, workspaceId, isSuperAdmin, userId: membership?.userId ?? null }
 
@@ -279,6 +291,31 @@ export function TeamLive() {
       {!workspaceId && !isSuperAdmin && (
         <p className="text-sm text-muted-foreground">{t.team.manage.noWorkspace}</p>
       )}
+      {/* Seat usage per role: what the server enforces, shown up front. */}
+      {workspaceId && (
+        <Card className="py-3">
+          <CardContent className="flex flex-col gap-2 px-4">
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="text-sm font-medium">{t.team.seats.title}</p>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {t.team.seats.total(totalSeatsUsed(seats), SEAT_LIMIT * SEAT_ROLES.length)}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground text-pretty">{t.team.seats.description}</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {SEAT_ROLES.map((r) => (
+                <div key={r} className="flex items-center justify-between rounded-lg border px-3 py-2">
+                  <span className="text-sm">{ROLE_LABELS[r]}</span>
+                  <Badge variant={seatCount(seats, r) >= SEAT_LIMIT ? "secondary" : "outline"} className="tabular-nums">
+                    {t.team.seats.usage(seatCount(seats, r), SEAT_LIMIT)}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Deactivating really revokes access (Rules + server-auth): say so. */}
       <p className="text-xs text-muted-foreground text-pretty">{t.team.manage.deactivateNotice}</p>
 
