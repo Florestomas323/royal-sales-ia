@@ -1,13 +1,14 @@
 "use client"
 
 import { useState } from "react"
-import { CalendarClock, CheckCircle2, Clock, ExternalLink, RotateCcw, UserRound, XCircle } from "lucide-react"
+import { CalendarClock, CheckCircle2, Clock, ExternalLink, MapPin, RotateCcw, UserRound, XCircle } from "lucide-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { setAppointmentStatus } from "@/lib/firebase/appointments"
 import { describeError } from "@/lib/firebase/errors"
-import { isPast } from "@/lib/appointments"
+import { AddToCalendar } from "@/components/appointments/add-to-calendar"
+import { formatLocation, isPast } from "@/lib/appointments"
 import { t } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import type { Appointment, AppointmentStatus } from "@/types"
@@ -56,6 +57,7 @@ export function AppointmentCard({
 }) {
   const [busy, setBusy] = useState(false)
   const past = isPast(appointment)
+  const address = formatLocation(appointment.location)
 
   async function setStatus(status: AppointmentStatus, message: string) {
     if (busy) return
@@ -98,6 +100,15 @@ export function AppointmentCard({
         </div>
       </div>
 
+      {/* Address on its own line, up to two lines then truncated: an address
+          must never push the card sideways on a phone. */}
+      {address && (
+        <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+          <MapPin className="mt-0.5 size-3.5 shrink-0" />
+          <span className="line-clamp-2 min-w-0 break-words">{address}</span>
+        </p>
+      )}
+
       {appointment.notes && (
         <p className="text-pretty break-words text-xs text-muted-foreground">{appointment.notes}</p>
       )}
@@ -120,6 +131,9 @@ export function AppointmentCard({
           <ExternalLink className="size-3.5" />
           {c.card.openLead}
         </Button>
+        {/* Available to anyone who can see the meeting, including a viewer:
+            exporting to your own calendar is not a write. */}
+        <AddToCalendar appointment={appointment} />
         {canManage && appointment.status === "scheduled" && (
           <>
             <Button variant="outline" size="sm" className="h-11 gap-1.5 sm:h-8" disabled={busy} onClick={() => onReschedule(appointment)}>
