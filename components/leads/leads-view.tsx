@@ -44,6 +44,13 @@ import { cn } from "@/lib/utils"
 
 type SortKey = "score" | "value" | "recent"
 
+/** The trigger must read "Puntaje", never the internal key "score". */
+const SORT_LABELS: Record<SortKey, string> = {
+  score: t.leads.sortByScore,
+  value: t.leads.sortByValue,
+  recent: t.leads.sortByRecent,
+}
+
 /**
  * Filter trigger: full width and 44px tall on phones (readable, tappable),
  * compact and content-sized from lg where there is room for one row.
@@ -306,12 +313,14 @@ export function LeadsView({
           <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
             <SelectTrigger className={FILTER_TRIGGER}>
               <ArrowUpDown className="size-3.5" data-icon="inline-start" />
-              <SelectValue />
+              <SelectValue>{(v: string) => SORT_LABELS[v as SortKey] ?? v}</SelectValue>
             </SelectTrigger>
             <SelectContent className="max-h-[60svh]">
-              <SelectItem value="score">{t.leads.sortByScore}</SelectItem>
-              <SelectItem value="value">{t.leads.sortByValue}</SelectItem>
-              <SelectItem value="recent">{t.leads.sortByRecent}</SelectItem>
+              {(Object.keys(SORT_LABELS) as SortKey[]).map((k) => (
+                <SelectItem key={k} value={k}>
+                  {SORT_LABELS[k]}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

@@ -28,6 +28,7 @@ import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
 import { PIPELINES, STAGE_LABELS } from "@/lib/constants"
 import { canReassignLead, eligibleAssignees, isValidE164, leadTypeOf, splitPhone, toE164 } from "@/lib/leads"
+import { memberLabel } from "@/lib/team"
 import { t } from "@/lib/i18n"
 import type { Lead, PipelineStage } from "@/types"
 
@@ -221,7 +222,7 @@ export function EditLeadDialog({
                 <FieldLabel>{t.leads.editDialog.stageLabel}</FieldLabel>
                 <Select value={stage} onValueChange={(v) => v && setStage(v as PipelineStage)} disabled={saving}>
                   <SelectTrigger className="h-11 w-full sm:h-9">
-                    <SelectValue />
+                    <SelectValue>{(v: string) => STAGE_LABELS[v as PipelineStage] ?? v}</SelectValue>
                   </SelectTrigger>
                   <SelectContent className="max-h-[60svh]">
                     {/* Only this lead's pipeline — never the other one. */}
@@ -247,9 +248,10 @@ export function EditLeadDialog({
                       {(v: string) =>
                         v === NO_OWNER
                           ? t.common.unassigned
-                          : (members.find((m) => m.id === v)?.name ??
-                            users.find((u) => u.id === v)?.name ??
-                            t.common.unassigned)
+                          : (() => {
+                              const owner = members.find((m) => m.id === v) ?? users.find((u) => u.id === v)
+                              return owner ? memberLabel(owner) : t.common.unassigned
+                            })()
                       }
                     </SelectValue>
                   </SelectTrigger>
@@ -258,7 +260,7 @@ export function EditLeadDialog({
                     {/* value is `users/{id}` — the id leads reference, never authUid. */}
                     {members.map((m) => (
                       <SelectItem key={m.id} value={m.id}>
-                        {m.name}
+                        {memberLabel(m)}
                         {m.status === "invited" && ` · ${t.leads.editDialog.assignInvitedSuffix}`}
                       </SelectItem>
                     ))}
