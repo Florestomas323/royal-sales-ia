@@ -1,10 +1,21 @@
 "use client"
 
-import { useUsers } from "@/lib/firebase/collections"
+import { useState } from "react"
+import { toast } from "sonner"
+import { MoreHorizontal } from "lucide-react"
+import { setMemberStatus, updateMemberRole, useUsers } from "@/lib/firebase/collections"
+import { describeError } from "@/lib/firebase/errors"
+import { useCan, useWorkspace } from "@/lib/firebase/workspace-context"
+import { ASSIGNABLE_ROLES, canManageMember, canToggleStatus, isSelf, memberLabel, nextStatus } from "@/lib/team"
+import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
+  DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { UserAvatar } from "@/components/shared/user-avatar"
 import { MEMBER_STATUS_LABELS, ROLE_LABELS } from "@/lib/constants"
 import { t } from "@/lib/i18n"
-import type { MemberStatus } from "@/types"
+import type { MemberStatus, User } from "@/types"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -33,8 +44,110 @@ const ROLE_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
   viewer: "outline",
 }
 
+/**
+ * Role and status actions for ONE member.
+ *
+ * Changing a role rewrites `memberships/{authUid}` too, and only a
+ * client_admin may write a membership — so a manager sees the team but does
+ * not get an action that Rules would reject halfway through.
+ */
+function MemberActions({
+  member,
+  ctx,
+  canChangeRole,
+}: {
+  member: User
+  ctx: { role: ReturnType<typeof useWorkspace>["role"]; workspaceId: string | null; isSuperAdmin: boolean; userId: string | null }
+  canChangeRole: boolean
+}) {
+  const [busy, setBusy] = useState(false)
+  const manageable = canManageMember(ctx, member)
+  const self = isSelf(ctx, member)
+  const label = memberLabel(member)
+
+  if (!manageable || self) return null
+
+  async function changeRole(role: (typeof ASSIGNABLE_ROLES)[number]) {
+    if (role === member.role) return
+    setBusy(true)
+    try {
+      await updateMemberRole(member.id, role)
+      toast.success(t.team.manage.roleUpdated, {
+        description: t.team.manage.roleUpdatedDescription(label, ROLE_LABELS[role]),
+      })
+    } catch (err) {
+      toast.error(t.team.manage.roleError, { description: describeError(err).message })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function toggleStatus() {
+    const target = nextStatus(member.status as MemberStatus)
+    setBusy(true)
+    try {
+      await setMemberStatus(member.id, target)
+      toast.success(t.team.manage.statusUpdated, {
+        description: target === "inactive"
+          ? t.team.manage.deactivated(label)
+          : t.team.manage.activated(label),
+      })
+    } catch (err) {
+      toast.error(t.team.manage.statusError, { description: describeError(err).message })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="ghost" size="icon" disabled={busy} className="size-11 sm:size-8">
+            <MoreHorizontal className="size-4" />
+            <span className="sr-only">{t.team.manage.actions}</span>
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="end" className="w-52">
+        {canChangeRole ? (
+          <>
+            <DropdownMenuLabel>{t.team.manage.changeRole}</DropdownMenuLabel>
+            {ASSIGNABLE_ROLES.map((r) => (
+              <DropdownMenuItem
+                key={r}
+                disabled={busy || r === member.role}
+                onClick={() => changeRole(r)}
+              >
+                {ROLE_LABELS[r]}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+          </>
+        ) : (
+          <DropdownMenuLabel className="font-normal text-muted-foreground text-pretty">
+            {t.team.manage.onlyClientAdmin}
+          </DropdownMenuLabel>
+        )}
+        {canToggleStatus(member) ? (
+          <DropdownMenuItem disabled={busy} onClick={toggleStatus}>
+            {member.status === "active" ? t.team.manage.deactivate : t.team.manage.activate}
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuLabel className="font-normal text-muted-foreground text-pretty">
+            {t.team.manage.invitedLocked}
+          </DropdownMenuLabel>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 export function TeamLive() {
   const { users, loading, error } = useUsers()
+  const { role, workspaceId, isSuperAdmin, membership } = useWorkspace()
+  const { isClientAdmin } = useCan()
+  const ctx = { role, workspaceId, isSuperAdmin, userId: membership?.userId ?? null }
 
   const active = users.filter((u) => u.status === "active")
   const totalLeads = users.reduce((s, u) => s + u.assignedLeads, 0)
@@ -93,7 +206,13 @@ export function TeamLive() {
         ))}
       </div>
 
-      <Card className="overflow-hidden py-0">
+      {!workspaceId && !isSuperAdmin && (
+        <p className="text-sm text-muted-foreground">{t.team.manage.noWorkspace}</p>
+      )}
+      {/* Deactivating is an assignment flag, not a session kill: say so. */}
+      <p className="text-xs text-muted-foreground text-pretty">{t.team.manage.deactivateNotice}</p>
+
+      <Card className="overflow-x-auto py-0">
         <Table>
           <TableHeader>
             <TableRow>
@@ -103,6 +222,7 @@ export function TeamLive() {
               <TableHead className="text-right">{t.team.table.leads}</TableHead>
               <TableHead className="text-right">{t.team.table.appointments}</TableHead>
               <TableHead className="text-right">{t.team.table.sales}</TableHead>
+              <TableHead className="w-12" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -110,10 +230,11 @@ export function TeamLive() {
               <TableRow key={user.id}>
                 <TableCell>
                   <div className="flex items-center gap-3">
-                    <UserAvatar name={user.name} color={user.avatarColor} />
-                    <div>
-                      <p className="font-medium leading-tight">{user.name}</p>
-                      <p className="text-xs text-muted-foreground">{user.email}</p>
+                    <UserAvatar name={memberLabel(user)} color={user.avatarColor} />
+                    <div className="min-w-0">
+                      {/* Never the document id: a member is a person, not a key. */}
+                      <p className="truncate font-medium leading-tight">{memberLabel(user)}</p>
+                      <p className="truncate text-xs text-muted-foreground">{user.email}</p>
                     </div>
                   </div>
                 </TableCell>
@@ -135,6 +256,9 @@ export function TeamLive() {
                 </TableCell>
                 <TableCell className="text-right font-mono tabular-nums">
                   {user.sales || "—"}
+                </TableCell>
+                <TableCell className="text-right">
+                  <MemberActions member={user} ctx={ctx} canChangeRole={isClientAdmin} />
                 </TableCell>
               </TableRow>
             ))}

@@ -111,7 +111,9 @@ export function InviteMemberDialog() {
               <FieldLabel>{t.team.roleLabel}</FieldLabel>
               <Select value={role} onValueChange={(v) => setRole(v as UserRole)}>
                 <SelectTrigger className="w-full">
-                  <SelectValue />
+                  {/* Without a render function Base UI prints the raw value,
+                      so the trigger would read "sales_rep". */}
+                  <SelectValue>{(v: string) => ROLE_LABELS[v as UserRole] ?? v}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {ROLE_OPTIONS.map(([value, label]) => (
