@@ -159,6 +159,15 @@ export interface Workspace {
   state?: string
   /** IANA zone (e.g. "America/Mexico_City"). Drives how dates are read. */
   timezone?: string
+  /**
+   * Who holds each of the 2+2+2 seats (users.id). Written in the same
+   * transaction as the profile change it reflects and validated by Security
+   * Rules, since Rules cannot count documents. Absent on legacy workspaces
+   * until their first team operation builds it.
+   */
+  seats?: { client_admin: string[]; manager: string[]; sales_rep: string[] }
+  /** The last ledger change, declared so the Rules can verify it. */
+  seatOps?: { kind: 'add' | 'remove'; role: 'client_admin' | 'manager' | 'sales_rep'; userId: string }[]
 }
 
 /**
