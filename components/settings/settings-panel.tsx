@@ -15,10 +15,12 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   Field,
   FieldContent,
   FieldDescription,
+  FieldError,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field"
@@ -26,10 +28,23 @@ import { UserAvatar } from "@/components/shared/user-avatar"
 import { SuperAdminTools } from "@/components/settings/super-admin-tools"
 import { useCan, useWorkspace } from "@/lib/firebase/workspace-context"
 import { AVATAR_COLORS, updateOwnProfile } from "@/lib/firebase/collections"
-import { updateWorkspaceName } from "@/lib/firebase/workspaces"
+import { updateWorkspaceSettings } from "@/lib/firebase/workspaces"
 import { describeError } from "@/lib/firebase/errors"
 import { cn } from "@/lib/utils"
+import {
+  TIMEZONES, hasSettingsErrors, isDirty, normalizeSettings, toDraft, validateSettings,
+  type WorkspaceSettingsDraft, type WorkspaceSettingsErrors,
+} from "@/lib/workspace-settings"
 import { t } from "@/lib/i18n"
+import type { Workspace } from "@/types"
+
+/** Sentinel for "no timezone chosen": Select cannot hold an empty value. */
+const NO_TIMEZONE = "__none__"
+
+/** "Ciudad de México (America/Mexico_City)" reads better than the raw id. */
+function timezoneLabel(tz: string): string {
+  return `${tz.split("/")[1]?.replace(/_/g, " ") ?? tz} (${tz})`
+}
 
 /**
  * Settings.
@@ -66,7 +81,7 @@ export function SettingsPanel() {
       <TabsContent value="workspace">
         <WorkspaceCard
           workspaceId={workspaceId}
-          name={currentWorkspace?.name ?? ""}
+          workspace={currentWorkspace ?? null}
           plan={currentWorkspace?.plan ?? "—"}
           canEdit={isClientAdmin}
         />
@@ -120,34 +135,46 @@ export function SettingsPanel() {
 
 function WorkspaceCard({
   workspaceId,
-  name,
+  workspace,
   plan,
   canEdit,
 }: {
   workspaceId: string | null
-  name: string
+  workspace: Workspace | null
   plan: string
   canEdit: boolean
 }) {
-  const [value, setValue] = useState(name)
+  const original = toDraft(workspace)
+  const [draft, setDraft] = useState<WorkspaceSettingsDraft>(original)
+  const [errors, setErrors] = useState<WorkspaceSettingsErrors>({})
   const [saving, setSaving] = useState(false)
 
   // Follow the live workspace document (and workspace switching).
-  useEffect(() => setValue(name), [name])
+  useEffect(() => setDraft(toDraft(workspace)), [workspace])
 
-  const dirty = value.trim() !== name && value.trim().length > 0
   const editable = canEdit && Boolean(workspaceId)
+  const dirty = isDirty(draft, original)
+  const set = (patch: Partial<WorkspaceSettingsDraft>) => {
+    setDraft((prev) => ({ ...prev, ...patch }))
+    setErrors({})
+  }
 
   async function handleSave() {
     if (!workspaceId || !dirty) return
+    const problems = validateSettings(draft)
+    if (hasSettingsErrors(problems)) {
+      setErrors(problems)
+      return
+    }
     setSaving(true)
     try {
-      await updateWorkspaceName(workspaceId, value)
-      toast.success(t.settings.savedTitle, { description: t.settings.workspace.nameSaved })
+      await updateWorkspaceSettings(workspaceId, normalizeSettings(draft))
+      toast.success(t.settings.savedTitle, { description: t.settings.workspace.saved })
     } catch (err) {
-      // The rename may be denied by Rules (manager/viewer): never fake success.
+      // Rules deny a manager or viewer, and the network can fail: the toast
+      // only ever appears after Firestore really accepted the write.
       toast.error(t.settings.saveError, { description: describeError(err).message })
-      setValue(name)
+      setDraft(toDraft(workspace))
     } finally {
       setSaving(false)
     }
@@ -161,21 +188,126 @@ function WorkspaceCard({
       </CardHeader>
       <CardContent>
         <FieldGroup>
-          <Field orientation="responsive">
+          <Field orientation="responsive" data-invalid={errors.name || undefined}>
             <FieldContent>
               <FieldLabel htmlFor="ws-name">{t.settings.workspace.nameLabel}</FieldLabel>
               <FieldDescription>
                 {editable ? t.settings.workspace.nameDescription : t.settings.workspace.readOnly}
               </FieldDescription>
             </FieldContent>
+            <div className="flex flex-col gap-1 sm:max-w-xs sm:min-w-0 sm:flex-1">
+              <Input
+                id="ws-name"
+                value={draft.name}
+                disabled={!editable || saving}
+                onChange={(e) => set({ name: e.target.value })}
+                className="h-11 text-base sm:h-9 sm:text-sm"
+              />
+              {errors.name && <FieldError>{t.settings.workspace.nameRequired}</FieldError>}
+            </div>
+          </Field>
+
+          <Field orientation="responsive">
+            <FieldContent>
+              <FieldLabel htmlFor="ws-phone">{t.settings.workspace.phoneLabel}</FieldLabel>
+              <FieldDescription>{t.settings.workspace.contactDescription}</FieldDescription>
+            </FieldContent>
             <Input
-              id="ws-name"
-              value={value}
+              id="ws-phone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder={t.settings.workspace.phonePlaceholder}
+              value={draft.phone}
               disabled={!editable || saving}
-              onChange={(e) => setValue(e.target.value)}
-              className="sm:max-w-xs"
+              onChange={(e) => set({ phone: e.target.value })}
+              className="h-11 text-base sm:h-9 sm:max-w-xs sm:text-sm"
             />
           </Field>
+
+          <Field orientation="responsive" data-invalid={errors.ownerEmail || undefined}>
+            <FieldContent>
+              <FieldLabel htmlFor="ws-email">{t.settings.workspace.emailLabel}</FieldLabel>
+            </FieldContent>
+            <div className="flex flex-col gap-1 sm:max-w-xs sm:min-w-0 sm:flex-1">
+              <Input
+                id="ws-email"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                placeholder={t.settings.workspace.emailPlaceholder}
+                value={draft.ownerEmail}
+                disabled={!editable || saving}
+                onChange={(e) => set({ ownerEmail: e.target.value })}
+                className="h-11 text-base sm:h-9 sm:text-sm"
+              />
+              {errors.ownerEmail && <FieldError>{t.settings.workspace.emailInvalid}</FieldError>}
+            </div>
+          </Field>
+
+          <Field orientation="responsive">
+            <FieldContent>
+              <FieldLabel htmlFor="ws-city">{t.settings.workspace.cityLabel}</FieldLabel>
+            </FieldContent>
+            <Input
+              id="ws-city"
+              autoComplete="address-level2"
+              value={draft.city}
+              disabled={!editable || saving}
+              onChange={(e) => set({ city: e.target.value })}
+              className="h-11 text-base sm:h-9 sm:max-w-xs sm:text-sm"
+            />
+          </Field>
+
+          <Field orientation="responsive">
+            <FieldContent>
+              <FieldLabel htmlFor="ws-state">{t.settings.workspace.stateLabel}</FieldLabel>
+            </FieldContent>
+            <Input
+              id="ws-state"
+              autoComplete="address-level1"
+              value={draft.state}
+              disabled={!editable || saving}
+              onChange={(e) => set({ state: e.target.value })}
+              className="h-11 text-base sm:h-9 sm:max-w-xs sm:text-sm"
+            />
+          </Field>
+
+          <Field orientation="responsive" data-invalid={errors.timezone || undefined}>
+            <FieldContent>
+              <FieldLabel>{t.settings.workspace.timezoneLabel}</FieldLabel>
+              <FieldDescription>{t.settings.workspace.timezoneDescription}</FieldDescription>
+            </FieldContent>
+            <div className="flex flex-col gap-1 sm:max-w-xs sm:min-w-0 sm:flex-1">
+              <Select
+                value={draft.timezone || NO_TIMEZONE}
+                onValueChange={(v) => set({ timezone: v === NO_TIMEZONE ? "" : (v ?? "") })}
+                disabled={!editable || saving}
+              >
+                <SelectTrigger className="h-11 w-full sm:h-9">
+                  {/* Without a render function Base UI would print the raw
+                      value, so the zone id would leak into the trigger. */}
+                  <SelectValue>
+                    {(v: string) =>
+                      v === NO_TIMEZONE ? t.settings.workspace.timezonePlaceholder : timezoneLabel(v)
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="max-h-[60svh]">
+                  <SelectItem value={NO_TIMEZONE}>
+                    {t.settings.workspace.timezonePlaceholder}
+                  </SelectItem>
+                  {TIMEZONES.map((tz) => (
+                    <SelectItem key={tz} value={tz}>
+                      {timezoneLabel(tz)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.timezone && <FieldError>{t.settings.workspace.timezoneInvalid}</FieldError>}
+            </div>
+          </Field>
+
           <Field orientation="responsive">
             <FieldContent>
               <FieldLabel>{t.settings.workspace.planLabel}</FieldLabel>
@@ -203,7 +335,11 @@ function WorkspaceCard({
       </CardContent>
       {editable && (
         <CardFooter className="justify-end">
-          <Button onClick={handleSave} disabled={!dirty || saving}>
+          <Button
+            onClick={handleSave}
+            disabled={!dirty || saving}
+            className="h-11 w-full sm:h-9 sm:w-auto"
+          >
             {saving ? t.common.saving : t.common.saveChanges}
           </Button>
         </CardFooter>
