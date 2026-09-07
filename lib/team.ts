@@ -16,8 +16,12 @@ export function memberLabel(
   return fallback
 }
 
-/** Roles a workspace admin may grant. `super_admin` is never one of them. */
-export const ASSIGNABLE_ROLES: UserRole[] = ["client_admin", "manager", "sales_rep", "viewer"]
+/**
+ * Roles a workspace admin may grant: Distribuidor, Asistente, Telemarketing.
+ * `super_admin` is global and never one of them; `viewer` is legacy and no
+ * longer offered, though existing viewers keep working.
+ */
+export const ASSIGNABLE_ROLES: UserRole[] = ["client_admin", "manager", "sales_rep"]
 
 export function isAssignableRole(role: string): role is UserRole {
   return (ASSIGNABLE_ROLES as string[]).includes(role)

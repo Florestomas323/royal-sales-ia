@@ -68,7 +68,7 @@ export const t = {
     errorTitle: 'No pudimos cargar tu workspace',
     errorBody: 'Ocurrió un error al resolver tu acceso. Intenta de nuevo o cierra sesión.',
     dataErrorTitle: 'No se pudieron cargar los datos',
-    onlyAssignedLeads: 'Como vendedor solo ves los prospectos asignados a ti.',
+    onlyAssignedLeads: 'Como Telemarketing solo ves los prospectos asignados a ti.',
     readOnly: 'Tu rol es de solo lectura.',
   },
 
@@ -101,6 +101,14 @@ export const t = {
     seedDone: 'Datos demo sembrados en el workspace activo.',
     seedExists: 'El workspace ya tiene datos; no se sembró nada.',
     pending: (label: string, n: number) => `${label}: ${n} sin workspaceId`,
+    seatsTitle: 'Cupos por workspace (2/2/2)',
+    seatsDescription:
+      'Reconstruye el registro de cupos de todos los workspaces a partir de su equipo. Ejecútalo ANTES de publicar las Rules de cupos.',
+    seatsScan: 'Revisar workspaces',
+    seatsRun: (n: number) => `Reconstruir cupos (${n})`,
+    seatsDone: (n: number) => `Cupos reconstruidos en ${n} workspaces.`,
+    seatsOverLimit: (name: string) => `${name} ya supera el límite en algún rol: hay que desactivar a alguien antes de invitar.`,
+    seatsRow: (name: string, d: number, a: number, tm: number) => `${name}: ${d}/2 Distribuidores · ${a}/2 Asistentes · ${tm}/2 Telemarketing`,
     normalizeTitle: 'Normalización Fase 2: tipo de prospecto y objetivo de campaña',
     normalizeDescription:
       'Asigna leadType = "sales" a los prospectos del workspace activo que no lo tengan y objective a las campañas sin objetivo. Idempotente: no toca documentos ya normalizados ni datos comerciales.',
@@ -116,7 +124,7 @@ export const t = {
     sections: {
       overview: 'Resumen',
       marketing: 'Marketing',
-      sales: 'Ventas',
+      sales: 'Prospectos',
       intelligence: 'Inteligencia',
       automation: 'Automatización',
       management: 'Gestión',
@@ -290,7 +298,7 @@ export const t = {
     trend: 'Prospectos por día',
     trendDescription: 'Creación de prospectos en el periodo seleccionado',
     trendEmpty: 'No hay prospectos suficientes para dibujar una tendencia.',
-    reps: 'Rendimiento por vendedor',
+    reps: 'Rendimiento por responsable',
     repsDescription: 'Solo prospectos del workspace y del periodo seleccionados',
     repsEmpty: 'Todavía no hay prospectos asignados en este periodo.',
     campaigns: 'Rendimiento por campaña',
@@ -302,7 +310,7 @@ export const t = {
       'Cola de trabajo: prospectos abiertos con mayor puntaje, sin importar cuándo entraron ni el periodo seleccionado.',
     prioritiesEmpty: 'No hay prospectos activos en este workspace todavía.',
     table: {
-      rep: 'Vendedor',
+      rep: 'Responsable',
       campaign: 'Campaña',
       leads: 'Prospectos',
       contacted: 'Contactados',
@@ -431,7 +439,7 @@ export const t = {
     campaign: 'Campaña',
     campaignPlaceholder: 'Selecciona una campaña',
     assignTo: 'Asignar a',
-    assignPlaceholder: 'Selecciona un vendedor',
+    assignPlaceholder: 'Selecciona un responsable',
     create: 'Crear prospecto',
     createdTitle: 'Prospecto creado',
     createdDescription: (name: string) => `${name} se agregó a Nuevo prospecto.`,
@@ -551,10 +559,10 @@ export const t = {
       unknownActor: 'Usuario no disponible',
       actorByRole: {
         super_admin: 'Super admin',
-        client_admin: 'Administrador del workspace',
-        manager: 'Manager',
-        sales_rep: 'Vendedor',
-        viewer: 'Observador',
+        client_admin: 'Distribuidor',
+        manager: 'Asistente',
+        sales_rep: 'Telemarketing',
+        viewer: 'Solo lectura',
       },
       addNote: 'Agregar nota',
       notePlaceholder: 'Escribe una nota interna sobre este prospecto…',
@@ -753,6 +761,15 @@ export const t = {
     invitedDescription: (name: string, role: string) =>
       `${name} se agregó al equipo como ${role}.`,
     inviteError: 'No se pudo invitar al miembro. Inténtalo de nuevo.',
+    inviteSeatFull: (role: string) => `No quedan cupos de ${role} en este workspace.`,
+    seats: {
+      title: 'Cupos del workspace',
+      description: 'Cada workspace admite hasta 2 personas por rol. Una invitación pendiente ocupa cupo.',
+      usage: (used: number, limit: number) => `${used} de ${limit} cupos utilizados`,
+      full: (role: string) => `No quedan cupos de ${role}. Desactiva a alguien para liberar uno.`,
+      limitReached: 'Cupo lleno',
+      total: (used: number, limit: number) => `${used} de ${limit} en total`,
+    },
     manage: {
       actions: 'Acciones',
       changeRole: 'Cambiar rol',
@@ -1270,7 +1287,7 @@ export const t = {
         },
         {
           title: 'Asignación rápida',
-          description: 'Enruta conversaciones al vendedor correcto con temporizadores de SLA.',
+          description: 'Enruta conversaciones al responsable correcto con temporizadores de SLA.',
         },
         {
           title: 'Plantillas y atajos',
@@ -1418,7 +1435,7 @@ export const t = {
       description:
         'Flujos con disparadores para asignar prospectos, dar seguimiento y enviar alertas.',
       blurb:
-        'Las automatizaciones te permitirán armar flujos del tipo "si pasa esto, haz aquello" que mueven prospectos, envían mensajes y avisan a los vendedores sin trabajo manual.',
+        'Las automatizaciones te permitirán armar flujos del tipo "si pasa esto, haz aquello" que mueven prospectos, envían mensajes y avisan al equipo sin trabajo manual.',
       features: [
         {
           title: 'Constructor visual',
@@ -1432,7 +1449,7 @@ export const t = {
         {
           title: 'Asignación inteligente',
           description:
-            'Asigna prospectos por fuente, valor o rendimiento del vendedor.',
+            'Asigna prospectos por fuente, valor o rendimiento del responsable.',
         },
         {
           title: 'Alertas',

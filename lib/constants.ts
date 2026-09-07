@@ -172,12 +172,22 @@ export const SOURCES_BY_LEAD_TYPE: Record<LeadType, Platform[]> = {
 
 export const RECRUITING_ONLY_SOURCES: Platform[] = ['indeed']
 
+/**
+ * Commercial names of the roles. The internal enum stays as is: it lives in
+ * Security Rules, memberships, invitations and every stored document, and a
+ * rename there is risk without benefit. Only what the person SEES changes.
+ *
+ *   client_admin → Distribuidor   (owns the workspace)
+ *   manager      → Asistente      (runs the operation, no membership admin)
+ *   sales_rep    → Telemarketing  (works assigned prospects only)
+ *   viewer       → legacy, read-only; no longer offered on invitations
+ */
 export const ROLE_LABELS: Record<UserRole, string> = {
   super_admin: 'Super Admin',
-  client_admin: 'Admin de cliente',
-  manager: 'Gerente',
-  sales_rep: 'Vendedor',
-  viewer: 'Observador',
+  client_admin: 'Distribuidor',
+  manager: 'Asistente',
+  sales_rep: 'Telemarketing',
+  viewer: 'Solo lectura',
 }
 
 export const PLATFORM_LABELS: Record<Platform, string> = {
