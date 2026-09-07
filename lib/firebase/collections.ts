@@ -296,6 +296,28 @@ export async function createSuperAdminProfile(input: {
 }
 
 /**
+ * The membership documents of one person, if any.
+ *
+ * SECURITY / CORRECTNESS: Firestore Rules are not filters. `memberships` only
+ * allows a listing to `isSuperAdmin()` or `isWsAdmin(resource.data.workspaceId)`,
+ * so a client_admin querying by `userId` alone is denied the WHOLE query — the
+ * role change would fail for them even though the rule intends to allow it.
+ * Passing the workspace narrows the query to exactly what the rule permits.
+ *
+ * `workspaceId` must come from the member's own already-loaded document, never
+ * from user input; a super admin (no workspace) queries globally, which the
+ * rule allows.
+ */
+async function membershipsOf(userId: string, workspaceId: string | null) {
+  const col = collection(db, "memberships")
+  return getDocs(
+    workspaceId
+      ? query(col, where("userId", "==", userId), where("workspaceId", "==", workspaceId))
+      : query(col, where("userId", "==", userId)),
+  )
+}
+
+/**
  * Changes a member's role.
  *
  * Two documents describe a role: the TEAM PROFILE (`users/{id}`, what the
@@ -308,15 +330,15 @@ export async function createSuperAdminProfile(input: {
  * call cannot widen access. Only a client_admin (or super_admin) may write a
  * membership, which is why the UI offers this action to nobody else.
  */
-export async function updateMemberRole(userId: string, role: UserRole): Promise<void> {
+export async function updateMemberRole(
+  userId: string,
+  role: UserRole,
+  workspaceId: string | null,
+): Promise<void> {
   const batch = writeBatch(db)
   batch.update(doc(collection(db, "users"), userId), { role, updatedAt: serverTimestamp() })
 
-  // The member may not have signed in yet: an invitation has no membership.
-  const memberships = await getDocs(
-    query(collection(db, "memberships"), where("userId", "==", userId)),
-  )
-  for (const m of memberships.docs) {
+  for (const m of (await membershipsOf(userId, workspaceId)).docs) {
     batch.update(m.ref, { role })
   }
   await batch.commit()
@@ -333,15 +355,15 @@ export async function updateMemberRole(userId: string, role: UserRole): Promise<
  * Only a client_admin or super_admin may write a membership, which is why the
  * UI offers this action to nobody else.
  */
-export async function setMemberStatus(userId: string, status: MemberStatus): Promise<void> {
+export async function setMemberStatus(
+  userId: string,
+  status: MemberStatus,
+  workspaceId: string | null,
+): Promise<void> {
   const batch = writeBatch(db)
   batch.update(doc(collection(db, "users"), userId), { status, updatedAt: serverTimestamp() })
 
-  // An invited person has no membership yet; there is nothing to revoke.
-  const memberships = await getDocs(
-    query(collection(db, "memberships"), where("userId", "==", userId)),
-  )
-  for (const m of memberships.docs) {
+  for (const m of (await membershipsOf(userId, workspaceId)).docs) {
     batch.update(m.ref, { status })
   }
   await batch.commit()
