@@ -123,7 +123,9 @@ export function NewCampaignDialog() {
               <FieldLabel>{t.campaigns.objectiveLabel}</FieldLabel>
               <Select value={objective} onValueChange={(v) => setObjective((v ?? "sales") as LeadType)}>
                 <SelectTrigger className="w-full">
-                  <SelectValue />
+                  <SelectValue>
+                    {(v: string) => CAMPAIGN_OBJECTIVE_LABELS[v as LeadType] ?? v}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {LEAD_TYPES.map((o) => (
@@ -140,7 +142,9 @@ export function NewCampaignDialog() {
                 <FieldLabel>{t.campaigns.platformLabel}</FieldLabel>
                 <Select value={platform} onValueChange={(v) => setPlatform(v as Platform)}>
                   <SelectTrigger className="w-full">
-                    <SelectValue />
+                    <SelectValue>
+                      {(v: string) => PLATFORM_LABELS[v as Platform] ?? v}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {PLATFORM_OPTIONS[objective].map((p) => (
@@ -158,7 +162,9 @@ export function NewCampaignDialog() {
                   onValueChange={(v) => setStatus(v as Campaign["status"])}
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue />
+                    <SelectValue>
+                      {(v: string) => STATUS_OPTIONS.find((s) => s.value === v)?.label ?? v}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {STATUS_OPTIONS.map((s) => (
@@ -174,7 +180,11 @@ export function NewCampaignDialog() {
               <FieldLabel>{t.campaigns.clientLabel}</FieldLabel>
               <Select value={clientId} onValueChange={(v) => setClientId(v ?? "")}>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder={t.campaigns.clientPlaceholder} />
+                  <SelectValue placeholder={t.campaigns.clientPlaceholder}>
+                    {(v: string) =>
+                      clients.find((c) => c.id === v)?.name ?? t.campaigns.clientPlaceholder
+                    }
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {clients.map((c) => (
