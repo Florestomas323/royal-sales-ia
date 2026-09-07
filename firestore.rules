@@ -518,6 +518,235 @@ service cloud.firestore {
       allow delete: if isSuperAdmin() || isWsClientAdmin(resource.data.workspaceId);
     }
 
+    // --------------------------------------------------------------- customers
+    // End customers ("Clientes finales") — the people who buy Royal Prestige.
+    // NOT the `clients` collection, which holds commercial ACCOUNTS.
+    //
+    // `assignedToId` is the seller responsible TODAY and may be reassigned;
+    // it is never the historical credit for a sale (that is `Sale.soldById`).
+    match /customers/{customerId} {
+
+      function customerImmutablesKept() {
+        return !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['workspaceId', 'createdBy', 'createdAt']);
+      }
+
+      /**
+       * The assignee must be a real member of THIS workspace, or nobody.
+       * `''` is the single representation of "unassigned", matching leads.
+       */
+      function assigneeExists() {
+        return exists(/databases/$(database)/documents/users/$(request.resource.data.assignedToId));
+      }
+
+      function assigneeProfile() {
+        return get(/databases/$(database)/documents/users/$(request.resource.data.assignedToId)).data;
+      }
+
+      function assigneeMembershipExists() {
+        return exists(/databases/$(database)/documents/memberships/$(assigneeProfile().authUid));
+      }
+
+      function assigneeMembership() {
+        return get(/databases/$(database)/documents/memberships/$(assigneeProfile().authUid)).data;
+      }
+
+      /**
+       * Same reasoning as the seller check: a team profile is not proof of
+       * access. A pending invitation has no membership, and a membership can
+       * be revoked without the profile changing, so the membership decides.
+       */
+      function assigneeIsValid() {
+        return request.resource.data.assignedToId == ''
+          || (assigneeExists()
+              && assigneeProfile().get('authUid', null) != null
+              && assigneeProfile().workspaceId == request.resource.data.workspaceId
+              && assigneeMembershipExists()
+              && assigneeMembership().workspaceId == request.resource.data.workspaceId
+              && assigneeMembership().get('status', 'active') != 'inactive');
+      }
+
+      function validCustomerShape() {
+        return request.resource.data.keys().hasAll([
+              'workspaceId', 'name', 'assignedToId', 'createdBy', 'createdAt', 'updatedAt'
+            ])
+          && request.resource.data.keys().hasOnly([
+              'workspaceId', 'name', 'phone', 'email', 'address',
+              'assignedToId', 'createdBy', 'createdAt', 'updatedAt'
+            ])
+          && request.resource.data.workspaceId is string
+          && request.resource.data.workspaceId.size() > 0
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.assignedToId is string
+          && request.resource.data.createdBy is string;
+      }
+
+      // A rep sees only their own book. Their query must include
+      // `assignedToId == myUserId`, or Firestore denies the whole listing.
+      allow read: if isSuperAdmin()
+        || (inWorkspace(resource.data.workspaceId) && role() in ['client_admin', 'manager', 'viewer'])
+        || (isWsRep(resource.data.workspaceId) && resource.data.assignedToId == myUserId());
+
+      allow create: if validCustomerShape()
+        && request.resource.data.createdBy == myUserId()
+        && assigneeIsValid()
+        && (
+          isSuperAdmin()
+          || isWsAdmin(request.resource.data.workspaceId)
+          || (isWsRep(request.resource.data.workspaceId)
+              && request.resource.data.assignedToId == myUserId())
+        );
+
+      // A rep may correct their customer's details but never hand them over:
+      // reassignment is a manager decision.
+      allow update: if validCustomerShape()
+        && customerImmutablesKept()
+        && assigneeIsValid()
+        && (
+          isSuperAdmin()
+          || isWsAdmin(resource.data.workspaceId)
+          || (isWsRep(resource.data.workspaceId)
+              && resource.data.assignedToId == myUserId()
+              && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['assignedToId']))
+        );
+
+      allow delete: if isSuperAdmin() || isWsClientAdmin(resource.data.workspaceId);
+    }
+
+    // ------------------------------------------------------------------- sales
+    // One confirmed purchase. A customer may buy many times.
+    //
+    // `soldById` is historical credit and never moves; reassigning the customer
+    // must not rewrite who closed a past sale. In K1 a sale is effectively
+    // immutable: only `notes` may change, so `amount` can never drift away from
+    // the lead's `closedValue`.
+    match /sales/{saleId} {
+
+      function saleCustomer() {
+        return get(/databases/$(database)/documents/customers/$(resource.data.customerId)).data;
+      }
+
+      function customerAfter() {
+        return getAfter(/databases/$(database)/documents/customers/$(request.resource.data.customerId)).data;
+      }
+
+      /**
+       * The customer may be born in the SAME transaction as this sale, so
+       * `get()` would not see it: `getAfter()` is required here.
+       */
+      function customerAfterExists() {
+        return existsAfter(/databases/$(database)/documents/customers/$(request.resource.data.customerId));
+      }
+
+      function customerAfterIsInSameWorkspace() {
+        return customerAfterExists()
+          && customerAfter().workspaceId == request.resource.data.workspaceId;
+      }
+
+      /** A repeat purchase has no lead; if one is named it must be a real sales lead. */
+      function sourceLeadExists() {
+        return exists(/databases/$(database)/documents/leads/$(request.resource.data.sourceLeadId));
+      }
+
+      function sourceLead() {
+        return get(/databases/$(database)/documents/leads/$(request.resource.data.sourceLeadId)).data;
+      }
+
+      function sourceLeadIsValid() {
+        return request.resource.data.sourceLeadId == null
+          || (sourceLeadExists()
+              && sourceLead().workspaceId == request.resource.data.workspaceId
+              && sourceLead().get('leadType', 'sales') == 'sales');
+      }
+
+      function sellerProfile() {
+        return get(/databases/$(database)/documents/users/$(request.resource.data.soldById)).data;
+      }
+
+      function sellerMembership() {
+        return get(/databases/$(database)/documents/memberships/$(sellerProfile().authUid)).data;
+      }
+
+      /**
+       * A team profile alone is NOT proof of membership: a pending invitation
+       * has a profile with `authUid == null` and no membership, and a
+       * membership can be revoked without the profile changing. The membership
+       * is the authority, so it is what decides here.
+       */
+      function sellerExists() {
+        return exists(/databases/$(database)/documents/users/$(request.resource.data.soldById));
+      }
+
+      function sellerMembershipExists() {
+        return exists(/databases/$(database)/documents/memberships/$(sellerProfile().authUid));
+      }
+
+      function sellerIsValid() {
+        return sellerExists()
+          && sellerProfile().get('authUid', null) != null
+          && sellerProfile().workspaceId == request.resource.data.workspaceId
+          && sellerMembershipExists()
+          && sellerMembership().workspaceId == request.resource.data.workspaceId
+          && sellerMembership().get('status', 'active') != 'inactive'
+          && sellerMembership().role in ['client_admin', 'manager', 'sales_rep'];
+      }
+
+      function validSaleShape() {
+        return request.resource.data.keys().hasAll([
+              'workspaceId', 'customerId', 'sourceLeadId', 'product', 'amount',
+              'soldAt', 'soldById', 'status', 'createdBy', 'createdAt', 'updatedAt'
+            ])
+          && request.resource.data.keys().hasOnly([
+              'workspaceId', 'customerId', 'sourceLeadId', 'product', 'amount',
+              'soldAt', 'soldById', 'notes', 'status', 'createdBy', 'createdAt', 'updatedAt'
+            ])
+          && request.resource.data.workspaceId is string
+          && request.resource.data.workspaceId.size() > 0
+          && request.resource.data.customerId is string
+          && request.resource.data.customerId.size() > 0
+          && request.resource.data.product is string
+          && request.resource.data.product.size() > 0
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0
+          && request.resource.data.soldAt is string
+          && request.resource.data.soldAt.size() > 0
+          && request.resource.data.soldById is string
+          && request.resource.data.status == 'confirmed'
+          && request.resource.data.createdBy is string;
+      }
+
+      // The seller who currently attends the customer sees the whole history,
+      // including sales closed by whoever had them before.
+      allow read: if isSuperAdmin()
+        || (inWorkspace(resource.data.workspaceId) && role() in ['client_admin', 'manager', 'viewer'])
+        || (isWsRep(resource.data.workspaceId)
+            && saleCustomer().workspaceId == resource.data.workspaceId
+            && saleCustomer().assignedToId == myUserId());
+
+      allow create: if validSaleShape()
+        && request.resource.data.createdBy == myUserId()
+        && sellerIsValid()
+        && customerAfterIsInSameWorkspace()
+        && sourceLeadIsValid()
+        && (
+          isSuperAdmin()
+          || isWsAdmin(request.resource.data.workspaceId)
+          // A rep credits only themselves, and only on their own customer.
+          || (isWsRep(request.resource.data.workspaceId)
+              && request.resource.data.soldById == myUserId()
+              && customerAfter().assignedToId == myUserId())
+        );
+
+      // K1: notes only. `hasOnly` on the CHANGED keys freezes everything else,
+      // including any field added later.
+      allow update: if validSaleShape()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notes', 'updatedAt'])
+        && (isSuperAdmin() || isWsAdmin(resource.data.workspaceId));
+
+      allow delete: if isSuperAdmin() || isWsClientAdmin(resource.data.workspaceId);
+    }
+
     // ------------------------------------------------------------------- leads
     match /leads/{leadId} {
       // Admins/managers/viewers read the whole workspace; reps only their own.
@@ -587,6 +816,62 @@ service cloud.firestore {
         && (isWonNow() || (!hasClosedValue() && !hasClosedAt()));
       }
 
+      /**
+       * Link to the end customer. Absent or '' both mean "not converted yet";
+       * `get(..., '')` collapses them so there is one comparison.
+       */
+      function customerIdBefore() {
+        return resource.data.get('customerId', '');
+      }
+
+      function customerIdAfter() {
+        return request.resource.data.get('customerId', '');
+      }
+
+      /**
+       * Write-once: from empty to a value, never from customer A to customer B
+       * and never back to empty. A lead converts into ONE buyer, for good.
+       */
+      function customerLinkIsWriteOnce() {
+        return customerIdBefore() == customerIdAfter()
+            || (customerIdBefore() == '' && customerIdAfter().size() > 0);
+      }
+
+      /**
+       * The customer is created in the SAME transaction as this update, so
+       * `get()` would not see it yet — `getAfter()` is required.
+       */
+      function linkedCustomerExists() {
+        return existsAfter(/databases/$(database)/documents/customers/$(customerIdAfter()));
+      }
+
+      function linkedCustomer() {
+        return getAfter(/databases/$(database)/documents/customers/$(customerIdAfter())).data;
+      }
+
+      function linkedCustomerIsValid() {
+        return linkedCustomerExists()
+          && linkedCustomer().workspaceId == request.resource.data.workspaceId;
+      }
+
+      /**
+       * The link may only appear at the MOMENT of the close: not won before,
+       * won now. A lead already sitting in `sale` can never gain a customer
+       * afterwards — that path would let anyone attach an arbitrary buyer to a
+       * closed deal. Legacy closed leads without a link stay unlinked; that is
+       * an administrative migration, not something the app may do.
+       */
+      function customerLinkOnlyOnRealClose() {
+        return customerIdBefore() == customerIdAfter()
+            || (
+              customerIdBefore() == ''
+              && resource.data.stage != 'sale'
+              && request.resource.data.stage == 'sale'
+              && request.resource.data.leadType == 'sales'
+              && linkedCustomerIsValid()
+            );
+      }
+
       // New leads must declare their type AND a stage of that type's pipeline.
       // Access is still decided exclusively by workspaceId / role / assignedToId.
       // A lead is never born closed: closing data can only appear later, on a
@@ -594,6 +879,8 @@ service cloud.firestore {
       allow create: if validLeadType(request.resource.data.leadType)
         && stageMatchesType(request.resource.data.leadType, request.resource.data.stage)
         && !request.resource.data.keys().hasAny(['closedValue', 'closedAt'])
+        // A lead is never born converted: the link only appears on a close.
+        && !request.resource.data.keys().hasAny(['customerId'])
         && (
           isSuperAdmin()
           || isWsAdmin(request.resource.data.workspaceId)
@@ -613,6 +900,8 @@ service cloud.firestore {
         && stageMatchesType(request.resource.data.leadType, request.resource.data.stage)
         && !changedKeys().hasAny(['workspaceId', 'source', 'attribution', 'createdAt', 'clientId'])
         && closingInvariants()
+        && customerLinkIsWriteOnce()
+        && customerLinkOnlyOnRealClose()
         && (
           !changedKeys().hasAny(['leadType'])
           || (
