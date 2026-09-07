@@ -28,6 +28,10 @@ import { CloseSaleDialog } from "@/components/leads/close-sale-dialog"
 import { ScheduleDialog } from "@/components/appointments/schedule-dialog"
 import { RegisterSaleDialog } from "@/components/sales/register-sale-dialog"
 import { canRegisterSale } from "@/lib/sales"
+import { MVP_HIDDEN } from "@/components/shell/nav-config"
+
+/** The K sales flow follows the customers screen: hidden together, shown together. */
+const SALES_FLOW_ENABLED = !MVP_HIDDEN.has("/customers")
 import { LeadAppointments } from "@/components/appointments/lead-appointments"
 import { canSchedule } from "@/lib/appointments"
 import { Badge } from "@/components/ui/badge"
@@ -295,8 +299,10 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
             </Button>
 
             {/* Only a SALES lead becomes a purchase; a candidate is a hire.
-                The Rules enforce the same thing server-side. */}
-            {canRegisterSale(lead) && (
+                The Rules enforce the same thing server-side. Out of the MVP
+                menu for now — the flag in nav-config decides, so re-enabling
+                the whole K flow is one edit. */}
+            {SALES_FLOW_ENABLED && canRegisterSale(lead) && (
               <Button
                 size="sm"
                 className="col-span-2 h-11 gap-1.5 sm:h-8"
@@ -594,7 +600,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
 
       {canEdit && <EditLeadDialog lead={lead} open={editOpen} onOpenChange={setEditOpen} />}
 
-      {canRegisterSale(lead) && (
+      {SALES_FLOW_ENABLED && canRegisterSale(lead) && (
         <RegisterSaleDialog lead={lead} open={saleOpen} onOpenChange={setSaleOpen} />
       )}
 
