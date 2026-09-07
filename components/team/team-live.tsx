@@ -10,8 +10,8 @@ import { ASSIGNABLE_ROLES, canManageMember, canToggleStatus, isSelf, memberLabel
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
-  DropdownMenuSeparator, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
+  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { UserAvatar } from "@/components/shared/user-avatar"
 import { MEMBER_STATUS_LABELS, ROLE_LABELS } from "@/lib/constants"
@@ -122,32 +122,38 @@ function MemberActions({
       <DropdownMenuContent align="end" className="w-52">
         {canChangeRole ? (
           <>
-            <DropdownMenuLabel>{t.team.manage.changeRole}</DropdownMenuLabel>
-            {ASSIGNABLE_ROLES.map((r) => (
-              // The current role is ticked, not disabled: a greyed-out line
-              // reads like a broken option instead of "this is the one".
-              <DropdownMenuItem key={r} disabled={busy} onClick={() => changeRole(r)}>
-                <Check
-                  className={cn("size-4", r === member.role ? "opacity-100" : "opacity-0")}
-                />
-                {ROLE_LABELS[r]}
-              </DropdownMenuItem>
-            ))}
+            {/* GroupLabel is a group HEADING: Base UI throws if it is not
+                inside a Group, which crashed the menu on open. Here it does
+                label a group — the roles — so the Group is what was missing. */}
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>{t.team.manage.changeRole}</DropdownMenuLabel>
+              {ASSIGNABLE_ROLES.map((r) => (
+                // The current role is ticked, not disabled: a greyed-out line
+                // reads like a broken option instead of "this is the one".
+                <DropdownMenuItem key={r} disabled={busy} onClick={() => changeRole(r)}>
+                  <Check
+                    className={cn("size-4", r === member.role ? "opacity-100" : "opacity-0")}
+                  />
+                  {ROLE_LABELS[r]}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
           </>
         ) : (
-          <DropdownMenuLabel className="font-normal text-muted-foreground text-pretty">
+          // Plain text, not a group heading: it labels nothing.
+          <p className="px-1.5 py-1 text-xs text-muted-foreground text-pretty">
             {t.team.manage.onlyClientAdmin}
-          </DropdownMenuLabel>
+          </p>
         )}
         {canToggleStatus(member) ? (
           <DropdownMenuItem disabled={busy} onClick={toggleStatus}>
             {member.status === "active" ? t.team.manage.deactivate : t.team.manage.activate}
           </DropdownMenuItem>
         ) : (
-          <DropdownMenuLabel className="font-normal text-muted-foreground text-pretty">
+          <p className="px-1.5 py-1 text-xs text-muted-foreground text-pretty">
             {t.team.manage.invitedLocked}
-          </DropdownMenuLabel>
+          </p>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
