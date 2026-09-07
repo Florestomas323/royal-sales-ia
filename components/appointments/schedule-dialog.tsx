@@ -22,6 +22,7 @@ import {
   DURATIONS, EMPTY_LOCATION, defaultScheduledAt, fromLocalInput, hasErrors, isBlankLocation,
   normalizeLocation, requiresLocation, toLocalInput, typesFor, validateDraft, type LocationErrors,
 } from "@/lib/appointments"
+import { memberLabel } from "@/lib/team"
 import { t } from "@/lib/i18n"
 import type { Appointment, AppointmentLocation, AppointmentType, LeadType } from "@/types"
 
@@ -268,13 +269,17 @@ export function ScheduleDialog({
             >
               <SelectTrigger id="appt-owner" className="h-11 sm:h-9">
                 <SelectValue>
-                  {(v: string) => (v === NO_OWNER ? d.ownerUnassigned : owners.find((o) => o.id === v)?.name ?? d.ownerUnassigned)}
+                  {(v: string) => {
+                    if (v === NO_OWNER) return d.ownerUnassigned
+                    const owner = owners.find((o) => o.id === v)
+                    return owner ? memberLabel(owner) : d.ownerUnassigned
+                  }}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent className="max-h-[50svh]">
                 <SelectItem value={NO_OWNER}>{d.ownerUnassigned}</SelectItem>
                 {owners.map((o) => (
-                  <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                  <SelectItem key={o.id} value={o.id}>{memberLabel(o)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
