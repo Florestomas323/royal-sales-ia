@@ -146,6 +146,115 @@ service cloud.firestore {
 
     // -------------------------------------------------------------- workspaces
     match /workspaces/{wsId} {
+
+      // ---- Seat ledger: 2 Distribuidores, 2 Asistentes, 2 Telemarketing.
+      // Rules cannot count documents, so the workspace carries who holds each
+      // seat. Every change is declared in `seatOps` so it can be verified
+      // against the team profile written in the same transaction.
+
+      function seatRoles() {
+        return ['client_admin', 'manager', 'sales_rep'];
+      }
+
+      function seatsAfter() {
+        return request.resource.data.seats;
+      }
+
+      function seatsBefore() {
+        return resource.data.get('seats', {'client_admin': [], 'manager': [], 'sales_rep': []});
+      }
+
+      function hadLedger() {
+        return resource.data.keys().hasAny(['seats']);
+      }
+
+      function validSeatsShape() {
+        return seatsAfter() is map
+          && seatsAfter().keys().hasAll(seatRoles())
+          && seatsAfter().keys().hasOnly(seatRoles())
+          && seatsAfter().client_admin is list
+          && seatsAfter().manager is list
+          && seatsAfter().sales_rep is list;
+      }
+
+      /** Never more than 2 per role once a seat is being taken. */
+      function seatLimitsRespected() {
+        return seatsAfter().client_admin.size() <= 2
+          && seatsAfter().manager.size() <= 2
+          && seatsAfter().sales_rep.size() <= 2;
+      }
+
+      /** The profile this seat change is about, as it ends up after the batch. */
+      function seatUser(op) {
+        return getAfter(/databases/$(database)/documents/users/$(op.userId)).data;
+      }
+
+      function seatUserExists(op) {
+        return existsAfter(/databases/$(database)/documents/users/$(op.userId));
+      }
+
+      /**
+       * A declared op must be what really happened: an added holder ends up
+       * with that role and holding a seat (invited or active); a removed
+       * holder ends up inactive or with another role. Always in THIS workspace.
+       */
+      function seatOpIsHonest(op) {
+        return op.kind in ['add', 'remove']
+          && op.role in seatRoles()
+          && op.userId is string
+          && seatUserExists(op)
+          && seatUser(op).workspaceId == wsId
+          && (
+            (op.kind == 'add'
+              && seatsAfter()[op.role].hasAll([op.userId])
+              && seatUser(op).role == op.role
+              && seatUser(op).status in ['invited', 'active'])
+            || (op.kind == 'remove'
+              && !seatsAfter()[op.role].hasAll([op.userId])
+              && (seatUser(op).status == 'inactive' || seatUser(op).role != op.role))
+          );
+      }
+
+      /**
+       * The ledger may only change by the declared ops — at most two, which is
+       * a role change (remove from A, add to B). Each role list may differ from
+       * before by at most the declared user, so nobody can quietly drop other
+       * holders to make room.
+       */
+      function seatOpsAreHonest() {
+        return request.resource.data.seatOps is list
+          && request.resource.data.seatOps.size() >= 1
+          && request.resource.data.seatOps.size() <= 2
+          && seatOpIsHonest(request.resource.data.seatOps[0])
+          && (request.resource.data.seatOps.size() == 1
+              || seatOpIsHonest(request.resource.data.seatOps[1]));
+      }
+
+      function roleListOnlyChangedByOps(r) {
+        return seatsAfter()[r].toSet().difference(seatsBefore()[r].toSet()).size()
+              + seatsBefore()[r].toSet().difference(seatsAfter()[r].toSet()).size()
+            <= (request.resource.data.seatOps[0].role == r ? 1 : 0)
+              + (request.resource.data.seatOps.size() == 2 && request.resource.data.seatOps[1].role == r ? 1 : 0);
+      }
+
+      /**
+       * First write of the ledger on a legacy workspace: it is built from the
+       * existing team, so it may hold anything the team already had — but the
+       * declared op still has to be honest and the limits still bind whatever
+       * is being ADDED. The super admin's "recalcular cupos" tool also lands
+       * here and may exceed 2 only to reflect an already over-limit team.
+       */
+      function seatLedgerWriteIsValid() {
+        return validSeatsShape()
+          && seatOpsAreHonest()
+          && (hadLedger()
+                ? (seatLimitsRespected()
+                   && roleListOnlyChangedByOps('client_admin')
+                   && roleListOnlyChangedByOps('manager')
+                   && roleListOnlyChangedByOps('sales_rep'))
+                : true);
+      }
+
       allow read: if isSuperAdmin() || isWsMember(wsId);
       allow create, delete: if isSuperAdmin();
       // The company profile a distributor fills in from Configuración. The
@@ -155,7 +264,12 @@ service cloud.firestore {
         || (isWsClientAdmin(wsId) && onlyChanges([
               'name', 'logoColor', 'ownerEmail', 'updatedAt',
               'phone', 'city', 'state', 'timezone'
-            ]));
+            ]))
+        // Seat changes: whoever may manage the team (Distribuidor, Asistente)
+        // may move the ledger, and only through honest, declared ops.
+        || (isWsAdmin(wsId)
+            && onlyChanges(['seats', 'seatOps', 'updatedAt'])
+            && seatLedgerWriteIsValid());
     }
 
     // ------------------------------------------------------------- memberships
@@ -197,25 +311,66 @@ service cloud.firestore {
     // ------------------------------------------------------------------- users
     // Team profiles. Legacy docs (no workspaceId) → super admin only.
     match /users/{userId} {
+
+      /** The workspace ledger as it ends up after this batch. */
+      function ledgerAfter() {
+        return getAfter(/databases/$(database)/documents/workspaces/$(request.resource.data.workspaceId)).data;
+      }
+
+      function ledgerHasSeatsAfter() {
+        return ledgerAfter().keys().hasAny(['seats']);
+      }
+
+      function seatRoleAfter() {
+        return request.resource.data.role in ['client_admin', 'manager', 'sales_rep'];
+      }
+
+      /**
+       * A profile that holds a seat (invited/active, seat role) must be listed
+       * in the ledger; an inactive one must not. Checked whenever the role or
+       * status moves, so the ledger and the team can never disagree — and a
+       * plain name/colour edit skips it, which keeps legacy workspaces usable.
+       */
+      function seatConsistentAfter() {
+        return !seatRoleAfter()
+          || (request.resource.data.status == 'inactive'
+                ? (!ledgerHasSeatsAfter()
+                   || !ledgerAfter().seats[request.resource.data.role].hasAll([userId]))
+                : (ledgerHasSeatsAfter()
+                   && ledgerAfter().seats[request.resource.data.role].hasAll([userId])));
+      }
+
+      function roleOrStatusChanges() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status']);
+      }
+
       allow read: if isSuperAdmin()
         || isWsMember(resource.data.workspaceId)
         // Needed for the invitation lookup before a membership exists.
         || (signedIn() && resource.data.email == request.auth.token.email.lower());
 
+      // An invitation reserves a seat: the profile is born listed in the ledger
+      // written by the same transaction. Only the three seat roles are
+      // invitable — `viewer` is legacy and stays out of new invitations.
       allow create: if isSuperAdmin() || (
         isWsAdmin(request.resource.data.workspaceId)
         && request.resource.data.role != 'super_admin'
         && validRole(request.resource.data.role)
+        && seatRoleAfter()
+        && request.resource.data.status == 'invited'
         && request.resource.data.authUid == null
+        && seatConsistentAfter()
       );
 
       allow update: if isSuperAdmin()
         // Workspace admins manage their team, but cannot move a profile to
-        // another workspace nor escalate anyone to super_admin.
+        // another workspace nor escalate anyone to super_admin. A role or
+        // status change must be mirrored in the seat ledger.
         || (isWsAdmin(resource.data.workspaceId)
             && unchanged('workspaceId')
             && request.resource.data.role != 'super_admin'
-            && validRole(request.resource.data.role))
+            && validRole(request.resource.data.role)
+            && (!roleOrStatusChanges() || seatConsistentAfter()))
         // A member may edit their own display fields.
         || (hasMembership() && resource.data.authUid == request.auth.uid
             && onlyChanges(['name', 'avatarColor', 'updatedAt']))
@@ -231,8 +386,11 @@ service cloud.firestore {
     }
 
     // ----------------------------------------------------------------- clients
+    // Commercial accounts for campaign attribution: administrative data.
+    // Telemarketing works prospects and never needs this, so it is not listed.
     match /clients/{clientId} {
-      allow read: if isSuperAdmin() || isWsMember(resource.data.workspaceId);
+      allow read: if isSuperAdmin()
+        || (inWorkspace(resource.data.workspaceId) && role() in ['client_admin', 'manager', 'viewer']);
       allow create: if isSuperAdmin() || isWsAdmin(request.resource.data.workspaceId);
       allow update: if isSuperAdmin()
         || (isWsAdmin(resource.data.workspaceId) && unchanged('workspaceId'));
