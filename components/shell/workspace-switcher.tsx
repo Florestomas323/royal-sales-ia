@@ -4,6 +4,7 @@ import { Building2, Check, ChevronsUpDown, Globe } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -42,24 +43,30 @@ export function WorkspaceSwitcher() {
         <ChevronsUpDown className="ml-auto size-3.5 text-sidebar-foreground/60" />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="bottom" align="start" className="min-w-56">
-        <DropdownMenuLabel>{t.tenancy.switchWorkspace}</DropdownMenuLabel>
-        <DropdownMenuItem onClick={() => selectWorkspace(ALL_WORKSPACES)}>
-          <Globe />
-          {t.tenancy.allWorkspaces}
-          {!workspaceId && <Check className="ml-auto size-4" />}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        {workspaces.map((ws) => (
-          <DropdownMenuItem key={ws.id} onClick={() => selectWorkspace(ws.id)}>
-            <span
-              className="size-3 shrink-0 rounded-sm"
-              style={{ backgroundColor: ws.logoColor }}
-              aria-hidden="true"
-            />
-            <span className="truncate">{ws.name}</span>
-            {workspaceId === ws.id && <Check className="ml-auto size-4" />}
+        {/* GroupLabel is a group HEADING: Base UI THROWS if it is not inside a
+            Group, which is what crashed the page the moment this menu opened.
+            Here it does head a group — the workspaces — so the Group was the
+            missing piece. */}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>{t.tenancy.switchWorkspace}</DropdownMenuLabel>
+          <DropdownMenuItem onClick={() => selectWorkspace(ALL_WORKSPACES)}>
+            <Globe />
+            {t.tenancy.allWorkspaces}
+            {!workspaceId && <Check className="ml-auto size-4" />}
           </DropdownMenuItem>
-        ))}
+          <DropdownMenuSeparator />
+          {workspaces.map((ws) => (
+            <DropdownMenuItem key={ws.id} onClick={() => selectWorkspace(ws.id)}>
+              <span
+                className="size-3 shrink-0 rounded-sm"
+                style={{ backgroundColor: ws.logoColor }}
+                aria-hidden="true"
+              />
+              <span className="truncate">{ws.name}</span>
+              {workspaceId === ws.id && <Check className="ml-auto size-4" />}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   )

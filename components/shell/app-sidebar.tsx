@@ -24,7 +24,6 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -148,7 +147,9 @@ export function AppSidebar() {
                 align="start"
                 className="min-w-56"
               >
-                <DropdownMenuLabel className="flex items-center gap-2">
+                {/* The signed-in person's card: a heading for the menu, not a
+                    label for a group. GroupLabel throws outside a Group. */}
+                <div className="flex items-center gap-2 px-1.5 py-1">
                   <UserAvatar
                     name={displayName}
                     color={currentUser.avatarColor}
@@ -161,7 +162,7 @@ export function AppSidebar() {
                       {displayEmail}
                     </span>
                   </div>
-                </DropdownMenuLabel>
+                </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
                   <DropdownMenuItem>

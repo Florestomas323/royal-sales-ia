@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -29,7 +28,8 @@ export function NotificationsMenu() {
         <Bell className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80">
-        <DropdownMenuLabel>{t.notifications.title}</DropdownMenuLabel>
+        {/* Panel heading, not a group label: GroupLabel throws outside a Group. */}
+        <p className="px-1.5 py-1 text-sm font-medium">{t.notifications.title}</p>
         <DropdownMenuSeparator />
         <div className="flex flex-col gap-1 px-3 py-6 text-center">
           <span className="text-sm font-medium">{t.notifications.emptyTitle}</span>
