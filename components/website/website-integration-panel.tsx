@@ -170,6 +170,9 @@ export function WebsiteIntegrationPanel() {
             <CardDescription className="text-pretty">{w.keyOnce}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
+            <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-pretty">
+              {w.keySecret}
+            </p>
             <code className="block overflow-x-auto rounded-lg bg-muted px-3 py-2 font-mono text-sm">{plainKey}</code>
             <Button onClick={copyKey} className="h-11 w-full sm:h-9 sm:w-auto">
               {copied ? <Check className="size-4" data-icon="inline-start" /> : <Copy className="size-4" data-icon="inline-start" />}
@@ -189,22 +192,55 @@ export function WebsiteIntegrationPanel() {
             <p className="text-xs text-muted-foreground">{w.endpoint}</p>
             <code className="block overflow-x-auto rounded-lg bg-muted px-3 py-2 font-mono text-xs">POST {endpoint}</code>
           </div>
+          <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground text-pretty">
+            {w.noCors}
+          </p>
+          <div>
+            <p className="text-xs text-muted-foreground">{w.envTitle}</p>
+            <code className="block overflow-x-auto rounded-lg bg-muted px-3 py-2 font-mono text-xs">
+              ROYAL_SALES_INTEGRATION_KEY=TU_CLAVE
+            </code>
+          </div>
           <div>
             <p className="text-xs text-muted-foreground">{w.exampleTitle}</p>
-            <pre className="overflow-x-auto rounded-lg bg-muted px-3 py-2 font-mono text-xs leading-relaxed">{`fetch("${endpoint}", {
+            {/* The key is read from the server environment and never leaves it.
+                The browser only ever talks to the distributor's own backend. */}
+            <pre className="overflow-x-auto rounded-lg bg-muted px-3 py-2 font-mono text-xs leading-relaxed">{`// app/api/lead/route.ts — corre en TU servidor, la clave no sale de aquí
+export async function POST(request: Request) {
+  const body = await request.json()
+
+  const res = await fetch("${endpoint}", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      // Secreto de servidor: viene de la variable de entorno, nunca del navegador.
+      "X-Integration-Key": process.env.ROYAL_SALES_INTEGRATION_KEY!,
+    },
+    body: JSON.stringify({
+      name: body.name,
+      phone: body.phone,
+      email: body.email,
+      type: "sales",           // o "recruiting"
+      form: "contacto",
+      pageUrl: body.pageUrl,
+      utmSource: body.utmSource,
+    }),
+  })
+
+  return Response.json({ ok: res.ok }, { status: res.ok ? 200 : 502 })
+}`}</pre>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">{w.exampleFormTitle}</p>
+            <pre className="overflow-x-auto rounded-lg bg-muted px-3 py-2 font-mono text-xs leading-relaxed">{`// En tu página: el formulario llama a TU backend, sin ninguna clave
+fetch("/api/lead", {
   method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "X-Integration-Key": "TU_CLAVE",
-  },
+  headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
     name: "María Pérez",
     phone: "+1 682 381 1576",
     email: "maria@correo.com",
-    type: "sales",
-    form: "contacto",
     pageUrl: location.href,
-    utmSource: "google",
   }),
 })`}</pre>
           </div>
