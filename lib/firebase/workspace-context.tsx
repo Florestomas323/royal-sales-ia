@@ -153,13 +153,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [membership, isSuperAdmin, workspaces])
 
+  /**
+   * Switching workspace only changes state — it never routes, so the current
+   * screen stays put and re-picking the active workspace is a no-op.
+   *
+   * The target must be one the caller actually has: a workspace that was
+   * deleted, or an id that never belonged to them, is ignored instead of
+   * being stored. Otherwise every query would filter by a tenant with no
+   * data and the app would look empty for no visible reason. This mirrors
+   * the Security Rules, which would deny those reads anyway.
+   */
   const selectWorkspace = useCallback(
     (id: string | typeof ALL_WORKSPACES) => {
       if (!isSuperAdmin) return
+      if (id === selected) return
+      if (id !== ALL_WORKSPACES && !workspaces.some((w) => w.id === id)) return
       setSelected(id)
       storeWorkspace(id)
     },
-    [isSuperAdmin],
+    [isSuperAdmin, selected, workspaces],
   )
 
   const workspaceId = useMemo<string | null>(() => {
