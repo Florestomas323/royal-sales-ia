@@ -1,5 +1,6 @@
 'use client'
 
+import * as React from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { ChevronsUpDown, LogOut, Settings, Sparkles } from 'lucide-react'
@@ -16,6 +17,7 @@ import {
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from '@/components/ui/sidebar'
 import {
   DropdownMenu,
@@ -40,6 +42,21 @@ export function AppSidebar() {
   const router = useRouter()
   const { signOut } = useAuth()
   const { currentUser, currentWorkspace, isSuperAdmin } = useWorkspace()
+  const { isMobile, setOpenMobile } = useSidebar()
+
+  /**
+   * On a phone the sidebar is a drawer that COVERS the page, so navigating
+   * without closing it leaves the person staring at the menu while the screen
+   * they asked for sits hidden behind it. Dismiss it on the same tap.
+   *
+   * Runs for every entry, including the current route (tapping "Prospectos"
+   * while already there should still close the drawer), and does nothing on
+   * desktop, where the sidebar is permanent. Keyboard activation fires the
+   * same click, so Enter behaves identically.
+   */
+  const closeOnNavigate = React.useCallback(() => {
+    if (isMobile) setOpenMobile(false)
+  }, [isMobile, setOpenMobile])
 
   const displayName = currentUser.name
   const displayEmail = currentUser.email
@@ -83,7 +100,7 @@ export function AppSidebar() {
                       <SidebarMenuButton
                         isActive={active}
                         tooltip={item.label}
-                        render={<Link href={item.href} />}
+                        render={<Link href={item.href} onClick={closeOnNavigate} />}
                       >
                         <item.icon />
                         <span>{item.label}</span>
@@ -152,7 +169,7 @@ export function AppSidebar() {
                     {t.shell.upgradePlan}
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    render={<Link href="/settings" />}
+                    render={<Link href="/settings" onClick={closeOnNavigate} />}
                   >
                     <Settings />
                     {t.shell.workspaceSettings}
