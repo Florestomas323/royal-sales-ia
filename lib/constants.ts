@@ -49,12 +49,17 @@ export interface PipelineDefinition<S extends PipelineStage = PipelineStage> {
   initial: S
 }
 
+/**
+ * Five working stages, the flow a distributor actually runs:
+ * Prospecto nuevo → Demostración agendada → Seguimiento → Venta / No interesado.
+ *
+ * `contact`, `contacted` and `interested` are NOT listed any more, but they
+ * remain valid enum values and Security Rules still accept them: old leads keep
+ * their stage in Firestore untouched and are shown through LEGACY_STAGE_VIEW.
+ */
 export const SALES_PIPELINE: PipelineDefinition<SalesStage> = {
   stages: [
     'new_lead',
-    'contact',
-    'contacted',
-    'interested',
     'appointment',
     'follow_up',
     'sale',
@@ -65,14 +70,14 @@ export const SALES_PIPELINE: PipelineDefinition<SalesStage> = {
   initial: 'new_lead',
 }
 
+/**
+ * Nuevo candidato → Entrevista → Seguimiento → Nuevo socio / No calificó.
+ * The dropped stages stay valid in the enum and in the Rules; see above.
+ */
 export const RECRUITING_PIPELINE: PipelineDefinition<RecruitingStage> = {
   stages: [
     'rec_new',
-    'rec_contact',
-    'rec_contacted',
-    'rec_qualified',
     'rec_interview',
-    'rec_orientation',
     'rec_follow_up',
     'rec_hired',
     'rec_disqualified',
@@ -90,9 +95,30 @@ export const PIPELINES: Record<LeadType, PipelineDefinition> = {
 /** @deprecated Sales-only order kept for compatibility. Prefer PIPELINES[type].stages. */
 export const STAGE_ORDER: PipelineStage[] = SALES_PIPELINE.stages
 
+/**
+ * Where a lead stored under a retired stage is SHOWN. Display only: nothing is
+ * written to Firestore and no record is migrated, so an old lead keeps its
+ * original stage and simply appears in the closest working column instead of
+ * vanishing from the board.
+ */
+export const LEGACY_STAGE_VIEW: Partial<Record<PipelineStage, PipelineStage>> = {
+  contact: 'new_lead',
+  contacted: 'follow_up',
+  interested: 'follow_up',
+  rec_contact: 'rec_new',
+  rec_contacted: 'rec_follow_up',
+  rec_qualified: 'rec_follow_up',
+  rec_orientation: 'rec_follow_up',
+}
+
+/** The stage a lead is displayed under: itself, or its legacy mapping. */
+export function visibleStage(stage: PipelineStage): PipelineStage {
+  return LEGACY_STAGE_VIEW[stage] ?? stage
+}
+
 export const STAGE_LABELS: Record<PipelineStage, string> = {
   // Ventas
-  new_lead: 'Nuevo',
+  new_lead: 'Prospecto nuevo',
   contact: 'Contactar',
   contacted: 'Contactado',
   interested: 'Interesado',
@@ -108,8 +134,8 @@ export const STAGE_LABELS: Record<PipelineStage, string> = {
   rec_interview: 'Entrevista',
   rec_orientation: 'Orientación',
   rec_follow_up: 'Seguimiento',
-  rec_hired: 'Incorporado',
-  rec_disqualified: 'No calificado',
+  rec_hired: 'Nuevo socio',
+  rec_disqualified: 'No calificó',
 }
 
 /** Column / badge accent per stage. */

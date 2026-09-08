@@ -1,4 +1,4 @@
-import { PIPELINES, RECRUITING_ONLY_SOURCES, SOURCES_BY_LEAD_TYPE } from "@/lib/constants"
+import { PIPELINES, RECRUITING_ONLY_SOURCES, SOURCES_BY_LEAD_TYPE, visibleStage } from "@/lib/constants"
 import { t } from "@/lib/i18n"
 import type { Attribution, Campaign, Lead, LeadType, MemberStatus, PipelineStage, Platform, UserRole } from "@/types"
 
@@ -31,9 +31,19 @@ export function isStageOf(type: LeadType, stage: string): stage is PipelineStage
  * the other pipeline (e.g. a lead re-typed to recruiting that still has a
  * sales stage), it is shown in the initial column. Nothing is written.
  */
+/**
+ * The stage a lead is SHOWN under. Nothing is written: the document keeps the
+ * stage it has.
+ *
+ * A lead stored under a retired stage (`contacted`, `rec_qualified`…) maps to
+ * the closest working one, so it stays visible on the board instead of
+ * disappearing. Anything else unrecognisable falls back to the initial stage.
+ */
 export function displayStage(lead: Pick<Lead, "leadType" | "stage">): PipelineStage {
   const type = leadTypeOf(lead)
-  return isStageOf(type, lead.stage) ? lead.stage : PIPELINES[type].initial
+  if (isStageOf(type, lead.stage)) return lead.stage
+  const legacy = visibleStage(lead.stage)
+  return isStageOf(type, legacy) ? legacy : PIPELINES[type].initial
 }
 
 export function isWon(lead: Pick<Lead, "leadType" | "stage">): boolean {
