@@ -11,8 +11,7 @@ import { PlatformMark } from "@/components/shared/platform-badge"
 import { LeadTypeBadge } from "@/components/shared/lead-type-badge"
 import { LeadDetailSheet } from "@/components/leads/lead-detail-sheet"
 import { useLeads } from "@/lib/firebase/leads"
-import { isOpen, leadAmount, leadTypeOf } from "@/lib/leads"
-import { formatCurrency } from "@/lib/format"
+import { isOpen, leadTypeOf } from "@/lib/leads"
 import { t } from "@/lib/i18n"
 import type { Lead } from "@/types"
 
@@ -84,11 +83,6 @@ export function PriorityLeads() {
               </span>
               <span className="truncate text-xs text-muted-foreground">{lead.nextAction}</span>
             </div>
-            {leadTypeOf(lead) === "sales" && (
-              <div className="hidden shrink-0 text-right text-xs text-muted-foreground sm:block">
-                {formatCurrency(leadAmount(lead).amount ?? 0, true)}
-              </div>
-            )}
             <ScoreBadge score={lead.score} temperature={lead.temperature} />
           </button>
         ))}

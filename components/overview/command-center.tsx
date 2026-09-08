@@ -5,7 +5,7 @@ import { AlertTriangle } from "lucide-react"
 import { PeriodFilter } from "@/components/overview/period-filter"
 import { MetricCard } from "@/components/overview/metric-card"
 import { LeadTrendChart } from "@/components/overview/lead-trend-chart"
-import { SalesFunnel } from "@/components/overview/sales-funnel"
+import { PipelineFunnels } from "@/components/overview/pipeline-funnels"
 import { RepPerformanceTable } from "@/components/overview/rep-performance-table"
 import { CampaignPerformanceTable } from "@/components/overview/campaign-performance-table"
 import { PriorityLeads } from "@/components/overview/priority-leads"
@@ -145,7 +145,9 @@ export function CommandCenter() {
       </div>
 
       <LeadTrendChart leads={leads} period={period} />
-      <SalesFunnel leads={leads} period={period} />
+      {/* Two independent funnels: sales and recruiting are different work
+          and are never averaged together. */}
+      <PipelineFunnels leads={leads} period={period} />
       <div className="grid gap-6 xl:grid-cols-2">
         <RepPerformanceTable leads={leads} period={period} />
         <CampaignPerformanceTable leads={leads} period={period} />
