@@ -676,6 +676,16 @@ service cloud.firestore {
       allow delete: if isSuperAdmin() || isWsClientAdmin(resource.data.workspaceId);
     }
 
+    // ----------------------------------------------------- websiteIntegrations
+    // One document per workspace: the website that posts leads to it. The
+    // integration key lives here only as a SHA-256 hash and is written solely
+    // by server routes with the Admin SDK — no client write is ever allowed,
+    // so a hash, a domain or a status cannot be forged from the browser.
+    match /websiteIntegrations/{wsId} {
+      allow read: if isSuperAdmin() || isWsAdmin(wsId);
+      allow write: if false;
+    }
+
     // --------------------------------------------------------------- customers
     // End customers ("Clientes finales") — the people who buy Royal Prestige.
     // NOT the `clients` collection, which holds commercial ACCOUNTS.
