@@ -834,6 +834,8 @@ export const t = {
       keyTitle: 'Clave de integración',
       keyPrefixLabel: 'Clave activa',
       keyOnce: 'Cópiala ahora: por seguridad no volverá a mostrarse. Si la pierdes, genera una nueva.',
+      keySecret:
+        'Esta clave es un SECRETO de servidor. Guárdala como variable de entorno en el backend de tu sitio. Nunca la pongas en HTML, JavaScript del navegador, localStorage ni en un repositorio público: cualquiera que visite tu página podría verla y crear prospectos falsos en tu nombre.',
       copy: 'Copiar clave',
       copied: 'Clave copiada',
       rotate: 'Generar nueva clave',
@@ -846,9 +848,13 @@ export const t = {
       error: 'No se pudo actualizar la integración',
       howTitle: 'Cómo conectar tu formulario',
       howBody:
-        'Desde tu sitio, envía cada formulario con un POST a la dirección de abajo, incluyendo la clave en la cabecera X-Integration-Key. El prospecto se crea en la etapa inicial del flujo que indiques (sales o recruiting) con origen "Sitio web".',
-      endpoint: 'Dirección del endpoint',
-      exampleTitle: 'Ejemplo (JavaScript)',
+        'La clave nunca viaja al navegador. Tu formulario público envía los datos al backend de TU sitio; ese backend añade la cabecera X-Integration-Key desde una variable de entorno y reenvía la petición a Royal Sales IA. El prospecto se crea en la etapa inicial del flujo que indiques (sales o recruiting) con origen "Sitio web".',
+      endpoint: 'Dirección del endpoint (solo servidor a servidor)',
+      exampleTitle: 'Paso 1 — Backend de tu sitio (Next.js / Vercel, app/api/lead/route.ts)',
+      exampleFormTitle: 'Paso 2 — Tu formulario público llama a TU backend, sin clave',
+      envTitle: 'Variable de entorno en tu hosting',
+      noCors:
+        'El endpoint no acepta llamadas directas desde el navegador (sin CORS): si pegas la clave en el frontend, la petición fallará a propósito.',
       fields: 'Campos: name y phone obligatorios; email, city, form, pageUrl, referrer, utmSource, utmMedium, utmCampaign, utmContent, utmTerm y clickId opcionales; type debe ser "sales" o "recruiting".',
       dedup: 'Si el mismo teléfono o correo ya existe en este workspace, no se crea un duplicado.',
       onlyAdmins: 'Solo un Distribuidor o Asistente puede configurar esta integración.',
