@@ -4,6 +4,7 @@ import Link from "next/link"
 import { Check } from "lucide-react"
 import { INTEGRATIONS, type IntegrationDefinition } from "@/lib/integrations/catalog"
 import { useMetaConnection } from "@/lib/integrations/meta"
+import { useWebsiteIntegration } from "@/lib/integrations/website"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { PlatformMark } from "@/components/shared/platform-badge"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
@@ -20,10 +21,12 @@ import type { ConnectionStatus } from "@/types"
 export function IntegrationsGrid() {
   const { workspaceId } = useWorkspace()
   const meta = useMetaConnection(workspaceId)
+  const website = useWebsiteIntegration(workspaceId)
 
   function statusFor(def: IntegrationDefinition): ConnectionStatus | null {
     if (def.availability !== "available") return null
     if (def.provider === "meta_ads") return meta.status
+    if (def.provider === "website") return website.status
     return "not_connected"
   }
 
