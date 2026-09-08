@@ -223,16 +223,16 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                 <span className="truncate">{lead.campaignName || t.leads.noCampaign}</span>
               </SheetDescription>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                {!isRecruiting && (
+                {!isRecruiting && leadAmount(lead).closed && (
                   <span className="flex items-center gap-1">
                     <Target className="size-3.5" />
                     {(() => {
-                      // A closed sale shows its confirmed amount, not the potential one.
+                      // Only a REAL, closed sale shows money here. An open lead
+                      // has no confirmed amount, and an estimate shown next to
+                      // real revenue reads as if it were already earned.
                       const value = leadAmount(lead)
                       if (value.legacyWonWithoutAmount) return t.leads.detail.noAmount
-                      return `${formatCurrency(value.amount ?? 0)} ${
-                        value.closed ? t.leads.detail.closedAmount : t.leads.detail.potential
-                      }`
+                      return `${formatCurrency(value.amount ?? 0)} ${t.leads.detail.closedAmount}`
                     })()}
                   </span>
                 )}

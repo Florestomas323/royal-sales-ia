@@ -35,19 +35,18 @@ import {
   PLATFORM_LABELS,
   TEMPERATURE_LABELS,
 } from "@/lib/constants"
-import { displayStage, leadAmount, leadTypeOf } from "@/lib/leads"
+import { displayStage, leadTypeOf } from "@/lib/leads"
 import { t } from "@/lib/i18n"
 import { useUsersMap } from "@/lib/firebase/collections"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
-import { formatCurrency, formatRelativeTime, initials } from "@/lib/format"
+import { formatRelativeTime, initials } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-type SortKey = "score" | "value" | "recent"
+type SortKey = "score" | "recent"
 
 /** The trigger must read "Puntaje", never the internal key "score". */
 const SORT_LABELS: Record<SortKey, string> = {
   score: t.leads.sortByScore,
-  value: t.leads.sortByValue,
   recent: t.leads.sortByRecent,
 }
 
@@ -58,15 +57,6 @@ const SORT_LABELS: Record<SortKey, string> = {
 const FILTER_TRIGGER =
   "h-11 w-full justify-between text-sm lg:h-8 lg:w-auto lg:min-w-40 [&_[data-slot=select-value]]:truncate"
 
-/**
- * Amount used when sorting by value. Mirrors `leadAmount`: a legacy won sale
- * has no honest figure, so it sorts last (-1) rather than showing up with its
- * potential value.
- */
-function sortableAmount(lead: Lead): number {
-  const value = leadAmount(lead)
-  return value.legacyWonWithoutAmount ? -1 : (value.amount ?? 0)
-}
 
 /** Matches Tailwind's `lg` breakpoint, used only to pick the placeholder copy. */
 function useIsNarrow(): boolean {
@@ -156,7 +146,9 @@ export function LeadsView({
     const rows = leads.filter((l) => {
       // Archived leads are kept in Firestore but hidden unless asked for.
       if (!showArchived && l.archived === true) return false
-      if (stage !== "all" && l.stage !== stage) return false
+      // displayStage traduce un estado retirado al que se muestra hoy, así
+      // que un prospecto antiguo sigue apareciendo al filtrar.
+      if (stage !== "all" && displayStage(l) !== stage) return false
       if (platform !== "all" && l.source !== platform) return false
       if (temp !== "all" && l.temperature !== temp) return false
       if (q && !`${l.name} ${l.email} ${l.phone} ${l.campaignName}`.toLowerCase().includes(q))
@@ -165,11 +157,6 @@ export function LeadsView({
     })
     return rows.sort((a, b) => {
       if (sort === "score") return b.score - a.score
-      // Same source of truth as every money surface (leadAmount): a closed
-      // sale sorts by its CONFIRMED amount, an open lead by its potential
-      // value, and a legacy sale with no amount sorts last instead of
-      // borrowing `potentialValue`.
-      if (sort === "value") return sortableAmount(b) - sortableAmount(a)
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     })
   }, [leads, query, stage, platform, temp, sort, showArchived])
@@ -380,9 +367,6 @@ export function LeadsView({
                 <TableHead>{t.leads.table.source}</TableHead>
                 <TableHead>{t.leads.table.stage}</TableHead>
                 <TableHead className="text-right">{t.leads.table.score}</TableHead>
-                <TableHead className="hidden text-right md:table-cell">
-                  {t.leads.table.value}
-                </TableHead>
                 <TableHead className="hidden lg:table-cell">{t.leads.table.owner}</TableHead>
                 <TableHead className="hidden text-right sm:table-cell">
                   {t.leads.table.received}
@@ -435,13 +419,6 @@ export function LeadsView({
                     </TableCell>
                     <TableCell className="text-right">
                       <ScoreBadge score={lead.score} temperature={lead.temperature} className="justify-end" />
-                    </TableCell>
-                    <TableCell className="hidden text-right font-medium tabular-nums md:table-cell">
-                      {leadTypeOf(lead) !== "sales"
-                        ? t.leads.detail.notAvailable
-                        : leadAmount(lead).legacyWonWithoutAmount
-                          ? t.leads.detail.noAmountShort
-                          : formatCurrency(leadAmount(lead).amount ?? 0)}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
                       {rep && (

@@ -119,15 +119,15 @@ export function LeadCard({
           <span>{t.common.unassigned}</span>
         )}
         {type === "sales" && (() => {
-          // Confirmed amount for a closed sale; never its potential value.
+          // Money appears ONLY once there is a real, closed sale. An open
+          // lead shows no estimate: a potential value is a guess, and showing
+          // it next to real revenue made the two look equally solid.
           const value = leadAmount(lead)
+          if (!value.closed) return null
           return value.legacyWonWithoutAmount ? (
             <span title={t.leads.detail.noAmount}>{t.leads.detail.noAmountShort}</span>
           ) : (
-            <span
-              className="font-medium tabular-nums text-foreground"
-              title={value.closed ? t.leads.detail.closedAmount : t.leads.detail.potentialAmount}
-            >
+            <span className="font-medium tabular-nums text-foreground" title={t.leads.detail.closedAmount}>
               {formatCurrency(value.amount ?? 0)}
             </span>
           )

@@ -27,7 +27,7 @@ import { LeadValidationError, updateLead, type LeadPatch } from "@/lib/firebase/
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
 import { PIPELINES, STAGE_LABELS } from "@/lib/constants"
-import { canReassignLead, eligibleAssignees, isValidE164, leadTypeOf, splitPhone, toE164 } from "@/lib/leads"
+import { canReassignLead, displayStage, eligibleAssignees, isValidE164, leadTypeOf, splitPhone, toE164 } from "@/lib/leads"
 import { memberLabel } from "@/lib/team"
 import { t } from "@/lib/i18n"
 import type { Lead, PipelineStage } from "@/types"
@@ -64,9 +64,8 @@ export function EditLeadDialog({
   const [email, setEmail] = React.useState(lead.email)
   const [countryCode, setCountryCode] = React.useState(initialPhone.countryCode)
   const [national, setNational] = React.useState(initialPhone.national)
-  const [value, setValue] = React.useState(String(lead.potentialValue ?? 0))
   const [stage, setStage] = React.useState<PipelineStage>(
-    (PIPELINES[type].stages as string[]).includes(lead.stage) ? lead.stage : PIPELINES[type].initial,
+    displayStage(lead),
   )
   const [assignedToId, setAssignedToId] = React.useState(lead.assignedToId || NO_OWNER)
   const [nextAction, setNextAction] = React.useState(lead.nextAction ?? "")
@@ -82,8 +81,7 @@ export function EditLeadDialog({
     setEmail(lead.email)
     setCountryCode(p.countryCode)
     setNational(p.national)
-    setValue(String(lead.potentialValue ?? 0))
-    setStage((PIPELINES[type].stages as string[]).includes(lead.stage) ? lead.stage : PIPELINES[type].initial)
+    setStage(displayStage(lead))
     setAssignedToId(lead.assignedToId || NO_OWNER)
     setNextAction(lead.nextAction ?? "")
     setErrors({})
@@ -105,13 +103,11 @@ export function EditLeadDialog({
       setErrors({ phone: t.leads.editDialog.phoneInvalid })
       return
     }
-    const numericValue = Number(value.replace(/[^\d.]/g, "") || 0)
 
     const patch: LeadPatch = {}
     if (name.trim() !== lead.name) patch.name = name
     if (email.trim().toLowerCase() !== lead.email) patch.email = email
     if (phone !== lead.phone) patch.phone = phone
-    if (type === "sales" && numericValue !== lead.potentialValue) patch.potentialValue = numericValue
     if (stage !== lead.stage) patch.stage = stage
     if (canReassign) {
       const next = assignedToId === NO_OWNER ? "" : assignedToId
@@ -198,24 +194,6 @@ export function EditLeadDialog({
               />
               <FieldError>{errors.email}</FieldError>
             </Field>
-
-            {type === "sales" && (
-              <Field data-invalid={!!errors.potentialValue || undefined}>
-                <FieldLabel htmlFor="edit-value">{t.leads.editDialog.valueLabel}</FieldLabel>
-                <Input
-                  id="edit-value"
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  step="1"
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  disabled={saving}
-                  className="h-11 text-base sm:h-9 sm:text-sm"
-                />
-                <FieldError>{errors.potentialValue}</FieldError>
-              </Field>
-            )}
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field data-invalid={!!errors.stage || undefined}>
