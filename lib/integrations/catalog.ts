@@ -20,6 +20,16 @@ export interface IntegrationDefinition {
 
 export const INTEGRATIONS: IntegrationDefinition[] = [
   {
+    provider: "website",
+    platform: "web",
+    name: "Página web",
+    category: "social",
+    description:
+      "Conecta tu sitio oficial para recibir automáticamente los prospectos de tus formularios.",
+    availability: "available",
+    manageHref: "/integrations/website",
+  },
+  {
     provider: "meta_ads",
     platform: "meta",
     name: "Meta Ads",
