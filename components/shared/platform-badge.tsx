@@ -6,20 +6,19 @@ import { PLATFORM_COLOR, PLATFORM_LABELS, PLATFORM_MARK } from '@/lib/constants'
 import type { Platform } from '@/types'
 
 /**
- * Official logo files, dropped by hand into /public/logos/<platform>.svg from
- * each brand's own press kit. When the file is there it is shown; when it is
- * not, the lettermark in the brand's colour stays. Nothing here draws or
- * redistributes a trademark — the files come from the brand.
+ * Official logos supplied by the distributor, stored in /public/logos and
+ * cropped to the SYMBOL only — no wordmarks, so every platform occupies the
+ * same square. A platform with no file here (youtube, web) keeps the
+ * lettermark in its brand colour. Nothing is drawn or redrawn here.
  */
 const LOGO_SRC: Partial<Record<Platform, string>> = {
-  meta: '/logos/meta.svg',
-  facebook: '/logos/facebook.svg',
-  instagram: '/logos/instagram.svg',
-  tiktok: '/logos/tiktok.svg',
-  google: '/logos/google.svg',
-  youtube: '/logos/youtube.svg',
-  indeed: '/logos/indeed.svg',
-  whatsapp: '/logos/whatsapp.svg',
+  meta: '/logos/meta.png',
+  facebook: '/logos/facebook.png',
+  instagram: '/logos/instagram.png',
+  tiktok: '/logos/tiktok.png',
+  google: '/logos/google.png',
+  indeed: '/logos/indeed.png',
+  whatsapp: '/logos/whatsapp.png',
 }
 
 export function PlatformMark({
@@ -45,7 +44,12 @@ export function PlatformMark({
         <img
           src={src}
           alt=""
-          className="size-4 object-contain"
+          // Fills whatever box the caller asked for (size-6 inline, size-10 on
+          // an integration card) instead of a fixed 16px that looked lost in
+          // the larger one. `object-contain` keeps every logo at its own
+          // proportions — none is cropped or stretched — and the padding gives
+          // them the breathing room brand guidelines ask for.
+          className="size-full object-contain p-[12%]"
           onError={() => setLogoFailed(true)}
         />
       </span>
