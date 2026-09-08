@@ -56,6 +56,7 @@ export type IntegrationProvider =
   | 'google_ads'
   | 'youtube'
   | 'indeed'
+  | 'website'
 
 export type LeadTemperature = 'hot' | 'warm' | 'cold'
 
@@ -851,4 +852,48 @@ export interface Notification {
   body: string
   read: boolean
   createdAt: string
+}
+
+/**
+ * Website integration of ONE workspace: `websiteIntegrations/{workspaceId}`.
+ *
+ * The integration key is the credential a form uses to post leads. Only its
+ * SHA-256 hash is stored — the plain key is shown once, when generated, and
+ * never again — so a leaked database dump cannot forge submissions. The
+ * document is written exclusively by server routes with the Admin SDK; the
+ * client only reads it.
+ */
+export interface WebsiteIntegration {
+  workspaceId: string
+  /** Official domain the forms live on, e.g. "impact.com". */
+  domain: string
+  status: 'connected' | 'disabled'
+  /** SHA-256 of the integration key. Never the key itself. */
+  keyHash: string
+  /** First characters of the key, so the admin can recognise which one is live. */
+  keyPrefix: string
+  /** ISO timestamp of the last lead received, or null. */
+  lastReceivedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** What a public form posts to /api/website/leads. */
+export interface WebsiteLeadPayload {
+  name: string
+  phone: string
+  email?: string
+  city?: string
+  type: LeadType
+  /** Which form on the site, e.g. "contacto", "trabaja-con-nosotros". */
+  form?: string
+  pageUrl?: string
+  referrer?: string
+  utmSource?: string
+  utmMedium?: string
+  utmCampaign?: string
+  utmContent?: string
+  utmTerm?: string
+  /** fbclid / gclid / ttclid. */
+  clickId?: string
 }
