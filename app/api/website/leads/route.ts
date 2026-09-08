@@ -8,31 +8,25 @@ import type { Lead } from "@/types"
 export const runtime = "nodejs"
 
 /**
- * Public endpoint a workspace's website posts leads to.
+ * SERVER-TO-SERVER endpoint a workspace's website backend posts leads to.
  *
  * Trust model: the ONLY credential is the integration key in the
- * `X-Integration-Key` header. It is hashed and looked up; the workspace it
- * resolves to is where the lead goes. Nothing in the body can choose a
- * tenant. A disabled integration is refused like a wrong key, so a site can
- * be switched off without rotating anything.
+ * `X-Integration-Key` header. It is a SECRET: it must live in the
+ * distributor's server environment and never in a browser. Their public form
+ * posts to their own backend, which adds the header and forwards here.
  *
- * Writes use the Admin SDK, which bypasses Firestore Rules; that is why every
- * field is validated here first and the document is built by a pure helper
- * that mirrors the app's own lead shape.
+ * That is why this route sends NO CORS headers and has no OPTIONS handler: a
+ * browser preflight fails on purpose, so a key pasted into client-side code
+ * cannot work even by accident.
+ *
+ * The key is hashed and looked up; the workspace it resolves to is where the
+ * lead goes. Nothing in the body can choose a tenant. A disabled integration
+ * is refused like a wrong key. Writes use the Admin SDK, which bypasses
+ * Firestore Rules — hence every field is validated first and the document is
+ * built by a pure helper that mirrors the app's own lead shape.
  */
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, X-Integration-Key",
-  "Access-Control-Max-Age": "86400",
-}
-
-const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: CORS })
-
-export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS })
-}
+const json = (body: unknown, status = 200) => NextResponse.json(body, { status })
 
 export async function POST(request: Request) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
