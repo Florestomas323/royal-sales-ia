@@ -33,7 +33,11 @@ export async function POST(request: Request) {
   // Two buckets: per IP (a runaway script) and per key (a runaway form).
   if (!allow(`ip:${ip}`, 30)) return json({ error: "rate_limited" }, 429)
 
-  const key = request.headers.get("x-integration-key")?.trim() ?? ""
+  // The key may arrive in either header: `X-Integration-Key` is what the
+  // panel documents, `Authorization: Bearer` is what most existing backends
+  // already send. Both are server-side headers; neither is a browser concern.
+  const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? ""
+  const key = (request.headers.get("x-integration-key")?.trim() || bearer) ?? ""
   if (!keyLooksValid(key)) return json({ error: "unauthorized" }, 401)
   if (!allow(`key:${key.slice(0, 12)}`, 120)) return json({ error: "rate_limited" }, 429)
 
@@ -56,8 +60,24 @@ export async function POST(request: Request) {
     const now = new Date().toISOString()
     const draft = buildWebsiteLead(integration.workspaceId, parsed.payload, now)
 
-    // Reasonable de-duplication, always INSIDE the resolved workspace: same
-    // phone or same email. Two equality filters, no composite index.
+    // Idempotency first: a retry carrying the id the origin system already
+    // assigned must never produce a second lead, even if the person legitimately
+    // filled the form twice with different details.
+    const externalId = draft.webForm?.externalId
+    if (externalId) {
+      const prior = await leads
+        .where("workspaceId", "==", integration.workspaceId)
+        .where("webForm.externalId", "==", externalId)
+        .limit(1)
+        .get()
+      if (!prior.empty) {
+        await touchLastReceived(integration.workspaceId, now)
+        return json({ ok: true, leadId: prior.docs[0].id, duplicate: true, reason: "external_id" })
+      }
+    }
+
+    // Then reasonable de-duplication, always INSIDE the resolved workspace:
+    // same phone or same email. Two equality filters, no composite index.
     const [byPhone, byEmail] = await Promise.all([
       leads.where("workspaceId", "==", integration.workspaceId).where("phone", "==", draft.phone).limit(1).get(),
       draft.email
@@ -73,7 +93,7 @@ export async function POST(request: Request) {
         existing.ref.set({ receivedAt: now }, { merge: true }),
         touchLastReceived(integration.workspaceId, now),
       ])
-      return json({ ok: true, leadId: existing.id, duplicate: true })
+      return json({ ok: true, leadId: existing.id, duplicate: true, reason: "contact" })
     }
 
     const ref = leads.doc()
