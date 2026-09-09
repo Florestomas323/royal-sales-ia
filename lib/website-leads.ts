@@ -1,6 +1,6 @@
 import { PIPELINES } from "@/lib/constants"
 import { normalizePhone } from "@/lib/leads"
-import type { Attribution, Lead, LeadType, WebsiteLeadPayload } from "@/types"
+import type { Attribution, Lead, LeadType, WebFormSubmission, WebsiteLeadPayload } from "@/types"
 
 /**
  * Pure logic for leads that arrive from a workspace's own website. No I/O
@@ -13,7 +13,11 @@ export interface ValidationError {
   reason: "required" | "invalid" | "too_long"
 }
 
-const MAX = { name: 120, phone: 32, email: 160, city: 80, form: 80, url: 2048, utm: 200, clickId: 200 }
+const MAX = {
+  name: 120, phone: 32, email: 160, city: 80, form: 80, url: 2048, utm: 200, clickId: 200,
+  zip: 16, state: 64, gift: 160, schedule: 240, externalId: 200, answerKey: 80, answerValue: 500,
+}
+const MAX_ANSWERS = 40
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function str(v: unknown, max: number): string | null {
@@ -35,6 +39,16 @@ export function parseWebsiteLead(body: unknown): { ok: true; payload: WebsiteLea
   const b = body as Record<string, unknown>
   const errors: ValidationError[] = []
 
+  // Two shapes are accepted on purpose. The documented one is flat
+  // (`type`, `utmSource`…); a landing page may instead send `leadType` and a
+  // nested `utm` object. Both mean the same thing, and rejecting the second
+  // would only force every site to rewrite working code.
+  const utmObj = (b.utm && typeof b.utm === "object" && !Array.isArray(b.utm))
+    ? (b.utm as Record<string, unknown>) : {}
+  const metaObj = (b.meta && typeof b.meta === "object" && !Array.isArray(b.meta))
+    ? (b.meta as Record<string, unknown>) : {}
+  const pick = (...vals: unknown[]) => vals.find((v) => v !== undefined && v !== null && v !== "")
+
   const name = str(b.name, MAX.name)
   if (name === null) errors.push({ field: "name", reason: "too_long" })
   else if (!name) errors.push({ field: "name", reason: "required" })
@@ -49,7 +63,7 @@ export function parseWebsiteLead(body: unknown): { ok: true; payload: WebsiteLea
   if (email === null) errors.push({ field: "email", reason: "too_long" })
   else if (email && !EMAIL.test(email)) errors.push({ field: "email", reason: "invalid" })
 
-  const type = b.type
+  const type = pick(b.type, b.leadType)
   if (type !== "sales" && type !== "recruiting") errors.push({ field: "type", reason: "invalid" })
 
   const city = str(b.city, MAX.city)
@@ -57,11 +71,44 @@ export function parseWebsiteLead(body: unknown): { ok: true; payload: WebsiteLea
   const pageUrl = str(b.pageUrl, MAX.url)
   const referrer = str(b.referrer, MAX.url)
   const utm = {
-    utmSource: str(b.utmSource, MAX.utm), utmMedium: str(b.utmMedium, MAX.utm),
-    utmCampaign: str(b.utmCampaign, MAX.utm), utmContent: str(b.utmContent, MAX.utm),
-    utmTerm: str(b.utmTerm, MAX.utm),
+    utmSource: str(pick(b.utmSource, utmObj.source), MAX.utm),
+    utmMedium: str(pick(b.utmMedium, utmObj.medium), MAX.utm),
+    utmCampaign: str(pick(b.utmCampaign, utmObj.campaign), MAX.utm),
+    utmContent: str(pick(b.utmContent, utmObj.content), MAX.utm),
+    utmTerm: str(pick(b.utmTerm, utmObj.term), MAX.utm),
   }
-  const clickId = str(b.clickId, MAX.clickId)
+  const clickId = str(pick(b.clickId, b.fbclid, b.gclid, b.ttclid), MAX.clickId)
+
+  // Platform identifiers, when the landing page captured them.
+  const ads = {
+    adId: str(metaObj.adId, MAX.utm),
+    adsetId: str(metaObj.adsetId, MAX.utm),
+    campaignId: str(metaObj.campaignId, MAX.utm),
+  }
+
+  // Extra answers of the specific form.
+  const zip = str(b.zip, MAX.zip)
+  const state = str(b.state, MAX.state)
+  const gift = str(b.gift, MAX.gift)
+  const giftId = str(b.giftId, MAX.gift)
+  const schedulePreference = str(b.schedulePreference, MAX.schedule)
+  const externalId = str(pick(b.externalId, b.firestoreId), MAX.externalId)
+  const receivedAt = str(b.receivedAt, MAX.utm)
+  const consent = typeof b.consent === "boolean" ? b.consent : undefined
+
+  // Answers arrive as an object of short strings. Anything else is dropped
+  // rather than stored: this is untrusted input that nobody validates later.
+  let answers: Record<string, string> | undefined
+  if (b.answers && typeof b.answers === "object" && !Array.isArray(b.answers)) {
+    const entries = Object.entries(b.answers as Record<string, unknown>)
+      .filter(([k, v]) => k.length <= MAX.answerKey && (typeof v === "string" || typeof v === "number" || typeof v === "boolean"))
+      .slice(0, MAX_ANSWERS)
+      .map(([k, v]) => [k, String(v).slice(0, MAX.answerValue)] as const)
+    if (entries.length > 0) answers = Object.fromEntries(entries)
+  }
+  for (const [k, v] of Object.entries({ zip, state, gift, giftId, schedulePreference, externalId, receivedAt, ...ads })) {
+    if (v === null) errors.push({ field: k as keyof WebsiteLeadPayload, reason: "too_long" })
+  }
   for (const [k, v] of Object.entries({ city, form, pageUrl, referrer, clickId, ...utm })) {
     if (v === null) errors.push({ field: k as keyof WebsiteLeadPayload, reason: "too_long" })
   }
@@ -79,6 +126,16 @@ export function parseWebsiteLead(body: unknown): { ok: true; payload: WebsiteLea
     ...(referrer ? { referrer } : {}),
     ...(clickId ? { clickId } : {}),
     ...Object.fromEntries(Object.entries(utm).filter(([, v]) => v)),
+    ...Object.fromEntries(Object.entries(ads).filter(([, v]) => v)),
+    ...(zip ? { zip } : {}),
+    ...(state ? { state } : {}),
+    ...(gift ? { gift } : {}),
+    ...(giftId ? { giftId } : {}),
+    ...(schedulePreference ? { schedulePreference } : {}),
+    ...(externalId ? { externalId } : {}),
+    ...(receivedAt ? { receivedAt } : {}),
+    ...(consent === undefined ? {} : { consent }),
+    ...(answers ? { answers } : {}),
   }
   return { ok: true, payload }
 }
@@ -109,7 +166,27 @@ export function buildWebsiteLead(
     ...(payload.pageUrl ? { landingPage: payload.pageUrl } : {}),
     ...(payload.referrer ? { referrer: payload.referrer } : {}),
     ...(payload.form ? { externalFormId: payload.form } : {}),
+    // Platform identifiers go to the fields the model already has for them.
+    ...(payload.campaignId ? { externalCampaignId: payload.campaignId } : {}),
+    ...(payload.adsetId ? { externalAdSetId: payload.adsetId } : {}),
+    ...(payload.adId ? { externalAdId: payload.adId } : {}),
   }
+
+  // Everything the standard lead fields cannot hold, kept together.
+  const webForm: WebFormSubmission | undefined = payload.form
+    ? {
+        form: payload.form,
+        ...(payload.zip ? { zip: payload.zip } : {}),
+        ...(payload.state ? { state: payload.state } : {}),
+        ...(payload.answers ? { answers: payload.answers } : {}),
+        ...(payload.gift ? { gift: payload.gift } : {}),
+        ...(payload.giftId ? { giftId: payload.giftId } : {}),
+        ...(payload.schedulePreference ? { schedulePreference: payload.schedulePreference } : {}),
+        ...(payload.consent === undefined ? {} : { consent: payload.consent }),
+        ...(payload.externalId ? { externalId: payload.externalId } : {}),
+        ...(payload.receivedAt ? { receivedAt: payload.receivedAt } : {}),
+      }
+    : undefined
   return {
     workspaceId,
     leadType: payload.type,
@@ -119,6 +196,7 @@ export function buildWebsiteLead(
     source: "web",
     campaignId: "",
     campaignName: payload.utmCampaign ?? "",
+    ...(webForm ? { webForm } : {}),
     score: 50,
     temperature: "warm",
     stage: PIPELINES[payload.type].initial,
