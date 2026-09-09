@@ -433,6 +433,42 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                   )}
                   <InfoRow label={t.leads.detail.phone} value={lead.phone || t.leads.detail.notAvailable} />
                   <InfoRow label={t.leads.detail.email} value={lead.email} />
+                  {/* Answers a landing-page form captured. Shown here because
+                      the distributor reads them before the visit; they are
+                      absent on every lead that did not come from a web form. */}
+                  {lead.webForm && (
+                    <>
+                      <InfoRow label={t.leads.detail.webForm.form} value={lead.webForm.form} />
+                      {lead.webForm.zip && (
+                        <InfoRow label={t.leads.detail.webForm.zip} value={lead.webForm.zip} />
+                      )}
+                      {lead.webForm.state && (
+                        <InfoRow label={t.leads.detail.webForm.state} value={lead.webForm.state} />
+                      )}
+                      {lead.webForm.gift && (
+                        <InfoRow label={t.leads.detail.webForm.gift} value={lead.webForm.gift} />
+                      )}
+                      {lead.webForm.schedulePreference && (
+                        <InfoRow
+                          label={t.leads.detail.webForm.schedule}
+                          value={lead.webForm.schedulePreference}
+                        />
+                      )}
+                      {lead.webForm.consent !== undefined && (
+                        <InfoRow
+                          label={t.leads.detail.webForm.title}
+                          value={
+                            lead.webForm.consent
+                              ? t.leads.detail.webForm.consentYes
+                              : t.leads.detail.webForm.consentNo
+                          }
+                        />
+                      )}
+                      {Object.entries(lead.webForm.answers ?? {}).map(([q, a]) => (
+                        <InfoRow key={q} label={q} value={a} />
+                      ))}
+                    </>
+                  )}
                   <InfoRow
                     label={t.leads.detail.assignedTo}
                     value={rep?.name ?? t.common.unassigned}
