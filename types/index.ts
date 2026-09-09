@@ -659,6 +659,12 @@ export interface Lead {
    * cannot gain one from the app — that is an administrative migration.
    */
   customerId?: string
+  /**
+   * Extra answers a public web form captured. Present only for leads that
+   * arrived through the website integration; every other lead leaves it
+   * absent rather than storing an empty object.
+   */
+  webForm?: WebFormSubmission
   /** Present only for recruiting leads. */
   recruiting?: RecruitingProfile
   /**
@@ -896,4 +902,51 @@ export interface WebsiteLeadPayload {
   utmTerm?: string
   /** fbclid / gclid / ttclid. */
   clickId?: string
+  /** Platform identifiers, when the page captured them. */
+  campaignId?: string
+  adsetId?: string
+  adId?: string
+  /** Extra answers of the specific form. */
+  zip?: string
+  state?: string
+  answers?: Record<string, string>
+  gift?: string
+  giftId?: string
+  schedulePreference?: string
+  consent?: boolean
+  /** Id in the origin system; used for idempotency. */
+  externalId?: string
+  receivedAt?: string
+}
+
+/**
+ * What a landing page form collected beyond the standard lead fields.
+ *
+ * Kept as ONE optional object instead of scattering columns across `Lead`:
+ * these answers belong to a specific form, they vary between campaigns, and
+ * nothing in the app filters or sorts by them — they exist so the distributor
+ * can read them before the visit.
+ */
+export interface WebFormSubmission {
+  /** Which form, e.g. "experiencia-agua". */
+  form: string
+  zip?: string
+  /** State or province as the form captured it, e.g. "GA". */
+  state?: string
+  /** Free-form question/answer pairs, exactly as the form sent them. */
+  answers?: Record<string, string>
+  /** Promotion offered on the landing page. */
+  gift?: string
+  giftId?: string
+  /** When the person prefers to be visited, in their own words. */
+  schedulePreference?: string
+  /** Whether they accepted being contacted. */
+  consent?: boolean
+  /**
+   * The submission's id in the ORIGIN system. Used for idempotency: a retry
+   * carrying the same id updates nothing instead of creating a second lead.
+   */
+  externalId?: string
+  /** When the origin system received it, if it reported that. */
+  receivedAt?: string
 }
