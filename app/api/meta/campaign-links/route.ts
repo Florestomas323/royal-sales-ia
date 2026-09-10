@@ -5,7 +5,12 @@ import {
   canAccessWorkspace,
   canManageCampaignLinks,
 } from "@/lib/firebase/server-auth"
-import { deleteCampaignLink, listCampaignLinks, upsertCampaignLink } from "@/lib/meta/campaign-links"
+import {
+  deleteCampaignLink,
+  ensureLocalCampaign,
+  listCampaignLinks,
+  upsertCampaignLink,
+} from "@/lib/meta/campaign-links"
 import type { LeadType, MetaCampaignLink } from "@/types"
 
 /**
@@ -49,7 +54,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 })
   }
 
-  const links = await listCampaignLinks(getAdminDb(), scope)
+  const db = getAdminDb()
+  // Links assigned before the local mirror existed carry `campaignId: null`,
+  // so Campañas showed nothing while Media Buyer worked (it reads the link,
+  // not the local document). Reconcile them here, where the bridge already
+  // runs: find-or-create the mirror and store its id. Idempotent — a link
+  // that already points somewhere is left untouched — and it never reads or
+  // writes anything belonging to Meta itself.
+  const links = await reconcileLocalCampaigns(db, await listCampaignLinks(db, scope))
   const body: CampaignLinksResponse = { links }
   return NextResponse.json(body)
 }
@@ -124,4 +136,37 @@ export async function DELETE(request: Request) {
   await deleteCampaignLink(db, metaCampaignId)
   console.info(`[meta/campaign-links] removed ${metaCampaignId}`)
   return NextResponse.json({ ok: true })
+}
+
+/**
+ * Gives every active link a local `campaigns` document, once.
+ *
+ * A link with `campaignId` already set is skipped, so this costs one extra
+ * read only the first time and nothing afterwards. Failures are logged and
+ * swallowed: listing the links must keep working even if one mirror cannot
+ * be created.
+ */
+async function reconcileLocalCampaigns(
+  db: ReturnType<typeof getAdminDb>,
+  links: MetaCampaignLink[],
+): Promise<MetaCampaignLink[]> {
+  return Promise.all(
+    links.map(async (link) => {
+      if (!link.active || link.campaignId || !link.workspaceId) return link
+      try {
+        const campaignId = await ensureLocalCampaign(db, {
+          workspaceId: link.workspaceId,
+          metaCampaignId: link.metaCampaignId,
+          name: link.metaCampaignName ?? null,
+          objective: link.objective,
+        })
+        await db.collection("metaCampaignLinks").doc(link.metaCampaignId)
+          .set({ campaignId, updatedAt: new Date().toISOString() }, { merge: true })
+        return { ...link, campaignId }
+      } catch (err) {
+        console.error("[meta/campaign-links] reconcile failed", link.metaCampaignId, err)
+        return link
+      }
+    }),
+  )
 }
