@@ -15,6 +15,7 @@ import {
   type QueryConstraint,
 } from "firebase/firestore"
 import { db } from "./client"
+import { NOTIFICATIONS, buildNotification, recipientsFor } from "@/lib/notifications"
 import { useWorkspace } from "./workspace-context"
 import { PIPELINES } from "@/lib/constants"
 import {
@@ -34,6 +35,7 @@ import type {
   PipelineStage,
   Platform,
   RecruitingProfile,
+  User,
 } from "@/types"
 
 const leadsCol = collection(db, "leads")
@@ -305,12 +307,25 @@ export async function updateLead(
 }
 
 /** Archive: hidden from lists and counts, never deleted. Audited atomically. */
+/**
+ * Soft delete. The document stays, flagged `archived`, and every active
+ * surface (Prospectos, funnel, metrics, search) filters it out; the trash
+ * toggle in Prospectos shows it again and `restoreLead` brings it back. Who
+ * did it and when are kept on the document, and the audit trail gets its
+ * `archived` activity in the same batch.
+ */
 export async function archiveLead(
   lead: Pick<Lead, "id" | "workspaceId">,
   actor: ActorContext,
+  actorName?: string,
 ): Promise<void> {
   const batch = writeBatch(db)
-  batch.update(doc(leadsCol, lead.id), { archived: true, archivedAt: new Date().toISOString() })
+  batch.update(doc(leadsCol, lead.id), {
+    archived: true,
+    archivedAt: new Date().toISOString(),
+    archivedBy: actor.userId,
+    ...(actorName ? { archivedByName: actorName } : {}),
+  })
   stageActivity(batch, lead, actor, { type: "archived" })
   await batch.commit()
 }
@@ -320,7 +335,7 @@ export async function restoreLead(
   actor: ActorContext,
 ): Promise<void> {
   const batch = writeBatch(db)
-  batch.update(doc(leadsCol, lead.id), { archived: false, archivedAt: null })
+  batch.update(doc(leadsCol, lead.id), { archived: false, archivedAt: null, archivedBy: null, archivedByName: null })
   stageActivity(batch, lead, actor, { type: "restored" })
   await batch.commit()
 }
@@ -342,6 +357,12 @@ export interface NewLeadInput {
   recruiting?: RecruitingProfile
   /** When present, a `lead_created` activity is written in the same batch. */
   actor?: ActorContext
+  /**
+   * Team of the workspace, so "new lead" notifications for its admins (and
+   * the assignee) are written in the SAME batch as the lead. Absent means no
+   * in-app notification — never a silent partial write.
+   */
+  notify?: Pick<User, "id" | "workspaceId" | "role" | "status">[]
 }
 
 function stripUndefined<T extends object>(obj: T): T {
@@ -400,6 +421,18 @@ export async function createLead(input: NewLeadInput) {
     stageActivity(batch, { id: ref.id, workspaceId: input.workspaceId }, input.actor, {
       type: "lead_created",
     })
+  }
+  // Central "new lead" trigger, client side: one notification per recipient,
+  // in the same batch, so either the lead and its notifications all land or
+  // none do. Rules verify each recipient belongs to the lead's workspace.
+  if (input.notify) {
+    const now = new Date().toISOString()
+    for (const userId of recipientsFor({ workspaceId: input.workspaceId, assignedToId: lead.assignedToId }, input.notify)) {
+      batch.set(
+        doc(collection(db, NOTIFICATIONS)),
+        buildNotification({ ...lead, id: ref.id }, input.attribution?.externalFormId ?? null, userId, now),
+      )
+    }
   }
   await batch.commit()
   return ref.id
