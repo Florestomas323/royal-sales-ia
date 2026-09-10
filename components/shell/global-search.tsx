@@ -41,6 +41,9 @@ export function GlobalSearch() {
   const pages = navItems.filter((i) => i.label.toLowerCase().includes(q))
   const leadResults = q
     ? leads
+        // A lead in the trash is out of every active surface, search included;
+        // the trash toggle in Prospectos is the one place to find it again.
+        .filter((l) => l.archived !== true)
         .filter(
           (l) =>
             l.name.toLowerCase().includes(q) ||

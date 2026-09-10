@@ -36,6 +36,7 @@ import {
   DEFAULT_COUNTRY_CODE,
 } from '@/lib/leads'
 import { createLead } from '@/lib/firebase/leads'
+import { sendNewLeadEmail } from '@/lib/firebase/notifications'
 import { useCampaigns, useUsers } from '@/lib/firebase/collections'
 import { useCan, useWorkspace } from '@/lib/firebase/workspace-context'
 import { describeError } from '@/lib/firebase/errors'
@@ -150,7 +151,10 @@ export function NewLeadDialog({
 
     setSubmitting(true)
     try {
-      await createLead({
+      const createdId = await createLead({
+        // Central 'new lead' trigger: admins of this workspace and the
+        // assignee get an in-app notification in the same batch.
+        notify: users,
         workspaceId,
         leadType,
         source,
@@ -163,8 +167,11 @@ export function NewLeadDialog({
         clientId: campaign?.clientId,
         recruiting,
         // Writes a `lead_created` activity in the same batch as the lead.
-        ...(membership?.userId && role ? { actor: { userId: membership.userId, role } } : {}),
+        ...(membership?.userId && role ? { actor: { userId: membership.userId, role } } : {})
       })
+      // Email half of the "new lead" trigger. Best-effort: the lead and its
+      // in-app notifications are already saved; a failed email changes nothing.
+      void sendNewLeadEmail(createdId)
       toast.success(t.leads.createdTitle, {
         description: t.leads.createdDescription(name),
       })
