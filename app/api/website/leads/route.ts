@@ -3,7 +3,13 @@ import { getAdminDb, isAdminNotConfigured } from "@/lib/firebase/admin"
 import { resolveByKey, touchLastReceived } from "@/lib/website/integration-store"
 import { allow } from "@/lib/website/rate-limit"
 import { buildWebsiteLead, isSameContact, keyLooksValid, parseWebsiteLead } from "@/lib/website-leads"
+import { notifyNewLeadServer } from "@/lib/notifications/server"
 import type { Lead } from "@/types"
+
+/** Where the email's "Ver prospecto" points. Configurable; falls back to this deployment. */
+function appUrlFrom(request: Request): string {
+  return process.env.APP_URL || new URL(request.url).origin
+}
 
 export const runtime = "nodejs"
 
@@ -101,6 +107,18 @@ export async function POST(request: Request) {
       ref.set(draft, { merge: false }),
       touchLastReceived(integration.workspaceId, now),
     ])
+    // Central trigger, and only here: the two duplicate branches above return
+    // before this line, so a re-submission never announces a "new" lead.
+    // Best-effort by design — a failed notification never undoes the lead.
+    try {
+      await notifyNewLeadServer(
+        { ...draft, id: ref.id },
+        parsed.payload.form ?? null,
+        { appUrl: appUrlFrom(request) },
+      )
+    } catch (err) {
+      console.error("[website/leads] notify failed", err)
+    }
     return json({ ok: true, leadId: ref.id, duplicate: false }, 201)
   } catch (err) {
     if (isAdminNotConfigured(err)) return json({ error: "server_not_configured" }, 503)
