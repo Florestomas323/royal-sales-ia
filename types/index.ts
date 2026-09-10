@@ -674,6 +674,9 @@ export interface Lead {
    * be counted with an equality query.
    */
   archived?: boolean
+  /** users.id of whoever sent it to the trash, and their name at the time. */
+  archivedBy?: string
+  archivedByName?: string
   archivedAt?: string | null
   isDemo?: boolean
 }
@@ -949,4 +952,32 @@ export interface WebFormSubmission {
   externalId?: string
   /** When the origin system received it, if it reported that. */
   receivedAt?: string
+}
+
+/**
+ * One in-app notification for ONE person: `notifications/{id}`.
+ *
+ * Created centrally by `lib/notifications.ts` whenever a lead is really
+ * created — never on a deduplicated re-submission — and fanned out to the
+ * admins of the lead's workspace plus its assignee. The super admin holds no
+ * documents: they read every workspace's notifications through the Rules.
+ */
+export interface AppNotification {
+  id: string
+  workspaceId: string
+  /** users.id of the recipient. */
+  userId: string
+  type: 'new_lead'
+  leadId: string
+  leadType: LeadType
+  /** "Nuevo prospecto" / "Nuevo candidato". */
+  title: string
+  /** "María González · Experiencia del Agua". */
+  message: string
+  source: Platform
+  /** Form or origin label, e.g. "experiencia-agua". */
+  form: string | null
+  read: boolean
+  readAt: string | null
+  createdAt: string
 }
