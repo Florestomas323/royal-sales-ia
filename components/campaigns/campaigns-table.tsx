@@ -19,7 +19,8 @@ import { campaignObjective } from "@/lib/leads"
 import { formatCurrency, formatNumber } from "@/lib/format"
 import { CAMPAIGN_STATUS_LABELS, PLATFORM_LABELS } from "@/lib/constants"
 import { t } from "@/lib/i18n"
-import type { Campaign, CampaignStatus } from "@/types"
+import type { CampaignStatus } from "@/types"
+import type { MergedCampaign } from "@/lib/campaigns/merged"
 
 const STATUS_VARIANT: Record<CampaignStatus, "default" | "secondary" | "outline"> = {
   active: "default",
@@ -28,7 +29,16 @@ const STATUS_VARIANT: Record<CampaignStatus, "default" | "secondary" | "outline"
   ended: "outline",
 }
 
-export function CampaignsTable({ campaigns }: { campaigns: Campaign[] }) {
+/**
+ * `null` means "we cannot measure this yet", and it is shown as such. Zero is
+ * reserved for a real measurement of zero, so nobody reads an unconverted
+ * campaign as one that performed badly.
+ */
+function orNoData(value: number | null, render: (v: number) => string): string {
+  return value === null ? t.overview.noData : render(value)
+}
+
+export function CampaignsTable({ campaigns }: { campaigns: MergedCampaign[] }) {
   const [query, setQuery] = useState("")
 
   const rows = useMemo(() => {
@@ -92,26 +102,30 @@ export function CampaignsTable({ campaigns }: { campaigns: Campaign[] }) {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm tabular-nums">
-                      {formatCurrency(c.spend, true)}
+                      {orNoData(c.spend, (v) => formatCurrency(v, true))}
                     </TableCell>
                     <TableCell className="text-right font-mono tabular-nums">
                       {formatNumber(c.leads)}
                     </TableCell>
                     <TableCell className="text-right font-mono tabular-nums">
-                      {formatCurrency(c.cpl)}
+                      {orNoData(c.cpl, (v) => formatCurrency(v))}
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm tabular-nums">
-                      {formatCurrency(c.revenue, true)}
+                      {orNoData(c.revenue, (v) => formatCurrency(v, true))}
                     </TableCell>
                     <TableCell className="text-right">
-                      <span
-                        className="font-mono text-sm font-semibold tabular-nums"
-                        style={{
-                          color: c.roas >= 3 ? "var(--success)" : c.roas >= 2 ? "var(--warning)" : "var(--destructive)",
-                        }}
-                      >
-                        {c.roas.toFixed(1)}x
-                      </span>
+                      {c.roas === null ? (
+                        <span className="font-mono text-sm text-muted-foreground">{t.overview.noData}</span>
+                      ) : (
+                        <span
+                          className="font-mono text-sm font-semibold tabular-nums"
+                          style={{
+                            color: c.roas >= 3 ? "var(--success)" : c.roas >= 2 ? "var(--warning)" : "var(--destructive)",
+                          }}
+                        >
+                          {c.roas.toFixed(1)}x
+                        </span>
+                      )}
                     </TableCell>
                   </TableRow>
                 )

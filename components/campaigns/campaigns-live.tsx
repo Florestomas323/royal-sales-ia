@@ -3,27 +3,50 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { CampaignsTable } from "@/components/campaigns/campaigns-table"
+import { useMemo } from "react"
 import { useCampaigns } from "@/lib/firebase/collections"
+import { useLeads } from "@/lib/firebase/leads"
+import { useWorkspace } from "@/lib/firebase/workspace-context"
+import { useMediaBuyer } from "@/lib/media-buyer/client"
+import { analyzeCampaignPerformance } from "@/lib/media-buyer/analyzer"
+import { mergeCampaigns, mergedTotals } from "@/lib/campaigns/merged"
+import { resolvePeriod, type PeriodKey } from "@/lib/metrics"
+import type { InsightsPeriod } from "@/lib/meta/insights"
 import { formatCurrency, formatNumber } from "@/lib/format"
 import { t } from "@/lib/i18n"
 import { DataErrorState } from "@/components/shared/data-error-state"
 import { DemoRowsNotice } from "@/components/shared/demo-data-badge"
 
+/** Period used by Campañas. Same default Media Buyer opens with, so the two
+ *  screens never show the same campaign over different date ranges. */
+const PERIOD: InsightsPeriod = "30d"
+
 export function CampaignsLive() {
   const { campaigns, loading, error } = useCampaigns()
+  const { workspaceId, isSuperAdmin } = useWorkspace()
+  // The SAME service Media Buyer uses: one request per screen, already
+  // scoped to workspaces this person may see. No second Meta client, and no
+  // per-row request.
+  const { data } = useMediaBuyer(workspaceId, PERIOD, isSuperAdmin)
+  const { leads } = useLeads("all")
 
-  const totalSpend = campaigns.reduce((s, c) => s + c.spend, 0)
-  const totalLeads = campaigns.reduce((s, c) => s + c.leads, 0)
-  const totalRevenue = campaigns.reduce((s, c) => s + c.revenue, 0)
-  const blendedRoas = totalSpend > 0 ? totalRevenue / totalSpend : 0
-  const activeCount = campaigns.filter((c) => c.status === "active").length
+  // CRM side honours the period Meta was queried with, through Phase F's
+  // resolvePeriod — exactly what Media Buyer does.
+  const crmPeriod = useMemo(() => resolvePeriod(PERIOD as PeriodKey), [])
+  const metrics = useMemo(
+    () => (data ? analyzeCampaignPerformance(data.campaigns, leads, { period: crmPeriod }).campaigns : []),
+    [data, leads, crmPeriod],
+  )
+  const rows = useMemo(() => mergeCampaigns(campaigns, metrics), [campaigns, metrics])
+  const totals = useMemo(() => mergedTotals(rows), [rows])
 
+  const noData = t.overview.noData
   const stats = [
-    { label: t.campaigns.stats.spend, value: formatCurrency(totalSpend, true) },
-    { label: t.campaigns.stats.leads, value: formatNumber(totalLeads) },
-    { label: t.campaigns.stats.revenue, value: formatCurrency(totalRevenue, true) },
-    { label: t.campaigns.stats.roas, value: `${blendedRoas.toFixed(1)}x` },
-    { label: t.campaigns.stats.active, value: String(activeCount) },
+    { label: t.campaigns.stats.spend, value: totals.spend === null ? noData : formatCurrency(totals.spend, true) },
+    { label: t.campaigns.stats.leads, value: formatNumber(totals.leads) },
+    { label: t.campaigns.stats.revenue, value: totals.revenue === null ? noData : formatCurrency(totals.revenue, true) },
+    { label: t.campaigns.stats.roas, value: totals.roas === null ? noData : `${totals.roas.toFixed(1)}x` },
+    { label: t.campaigns.stats.active, value: String(totals.active) },
   ]
 
   if (loading) {
@@ -70,7 +93,7 @@ export function CampaignsLive() {
         ))}
       </div>
 
-      <CampaignsTable campaigns={campaigns} />
+      <CampaignsTable campaigns={rows} />
     </div>
   )
 }
