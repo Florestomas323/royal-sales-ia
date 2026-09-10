@@ -549,3 +549,17 @@ export function attributionView(
 
   return { platform, empty, campaign, adSet, ad, creative }
 }
+
+/**
+ * Sending a lead to the trash (and bringing it back) is an admin decision:
+ * Distribuidor, Asistente or the super admin, inside the lead's workspace.
+ * Telemarketing may edit its own leads but never remove them from the funnel.
+ */
+export function canDeleteLead(
+  editor: { role: UserRole | null; workspaceId: string | null; isSuperAdmin: boolean },
+  lead: Pick<Lead, "workspaceId">,
+): boolean {
+  if (editor.isSuperAdmin) return true
+  if (editor.workspaceId !== lead.workspaceId) return false
+  return editor.role === "client_admin" || editor.role === "manager"
+}
