@@ -51,6 +51,7 @@ import { describeError } from "@/lib/firebase/errors"
 import { LEAD_TYPE_SINGULAR, PIPELINES, PLATFORM_LABELS, STAGE_LABELS, TEMPERATURE_LABELS } from "@/lib/constants"
 import {
   attributionView,
+  canDeleteLead,
   canEditLead,
   displayStage,
   leadAmount,
@@ -72,7 +73,7 @@ interface LeadDetailSheetProps {
 export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetProps) {
   // Owner name must come from the lead's workspace (see useUsersForWorkspace).
   const usersMap = useUsersMap(lead?.workspaceId ?? null)
-  const { isSuperAdmin, workspaces, role, membership } = useWorkspace()
+  const { isSuperAdmin, workspaces, role, membership, currentUser } = useWorkspace()
   const [changingType, setChangingType] = useState(false)
   const [confirmTypeOpen, setConfirmTypeOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -97,6 +98,8 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
     isSuperAdmin,
   }
   const canEdit = canEditLead(editor, lead)
+  // Trash is an admin decision: Telemarketing edits its leads, never removes them.
+  const canDelete = canDeleteLead(editor, lead)
   const stageOptions = PIPELINES[type].stages
   const actor: ActorContext | null =
     membership?.userId && role ? { userId: membership.userId, role } : null
@@ -165,7 +168,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
         await restoreLead(lead, actor)
         toast.success(t.leads.detail.restoredToast)
       } else {
-        await archiveLead(lead, actor)
+        await archiveLead(lead, actor, currentUser.name)
         toast.success(t.leads.detail.archivedToast)
         onOpenChange(false)
       }
@@ -214,7 +217,20 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
               <div className="flex flex-wrap items-center gap-2">
                 <SheetTitle className="text-lg break-words">{lead.name}</SheetTitle>
                 <LeadTypeBadge type={type} />
-                {lead.archived && <Badge variant="secondary">{t.leads.detail.archived}</Badge>}
+                {lead.archived && (
+                  <Badge
+                    variant="secondary"
+                    title={
+                      lead.archivedAt
+                        ? lead.archivedByName
+                          ? t.leads.detail.archivedBy(lead.archivedByName, formatRelativeTime(lead.archivedAt))
+                          : t.leads.detail.archivedAt(formatRelativeTime(lead.archivedAt))
+                        : undefined
+                    }
+                  >
+                    {t.leads.detail.archived}
+                  </Badge>
+                )}
                 <TemperatureDot temperature={lead.temperature} withLabel />
               </div>
               <SheetDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -334,7 +350,8 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                 variant="ghost"
                 className="h-11 min-w-0 gap-1.5 text-muted-foreground sm:h-8"
                 onClick={() => setArchiveOpen(true)}
-                disabled={archiving}
+                disabled={archiving || !canDelete}
+                title={canDelete ? undefined : t.leads.detail.onlyAdminsDelete}
               >
                 {lead.archived ? (
                   <ArchiveRestore className="size-3.5" data-icon="inline-start" />
