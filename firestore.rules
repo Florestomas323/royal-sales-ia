@@ -686,6 +686,58 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ----------------------------------------------------------- notifications
+    // One document per recipient per event. Born in the SAME batch as the
+    // lead it announces (client path) or by the Admin SDK (server paths).
+    // A member reads only their own; the super admin reads them all. A
+    // recipient may only flip `read`/`readAt`; nothing is ever deleted.
+    match /notifications/{notificationId} {
+
+      function notifiedLead() {
+        return getAfter(/databases/$(database)/documents/leads/$(request.resource.data.leadId)).data;
+      }
+
+      function recipientProfile() {
+        return get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data;
+      }
+
+      function validNotificationShape() {
+        return request.resource.data.keys().hasAll([
+              'workspaceId', 'userId', 'type', 'leadId', 'leadType', 'title', 'message',
+              'source', 'form', 'read', 'readAt', 'createdAt'
+            ])
+          && request.resource.data.keys().hasOnly([
+              'workspaceId', 'userId', 'type', 'leadId', 'leadType', 'title', 'message',
+              'source', 'form', 'read', 'readAt', 'createdAt'
+            ])
+          && request.resource.data.type == 'new_lead'
+          && validLeadType(request.resource.data.leadType)
+          && request.resource.data.read == false
+          && request.resource.data.readAt == null
+          && request.resource.data.workspaceId is string
+          && request.resource.data.userId is string
+          && request.resource.data.leadId is string;
+      }
+
+      allow read: if isSuperAdmin()
+        || (hasMembership() && membershipIsActive() && resource.data.userId == myUserId());
+
+      // Only alongside a lead that really exists in that workspace after the
+      // batch, and only for a recipient who belongs to that same workspace.
+      allow create: if validNotificationShape()
+        && (isSuperAdmin() || isWsMember(request.resource.data.workspaceId))
+        && existsAfter(/databases/$(database)/documents/leads/$(request.resource.data.leadId))
+        && notifiedLead().workspaceId == request.resource.data.workspaceId
+        && exists(/databases/$(database)/documents/users/$(request.resource.data.userId))
+        && recipientProfile().workspaceId == request.resource.data.workspaceId;
+
+      allow update: if hasMembership()
+        && resource.data.userId == myUserId()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']);
+
+      allow delete: if false;
+    }
+
     // --------------------------------------------------------------- customers
     // End customers ("Clientes finales") — the people who buy Royal Prestige.
     // NOT the `clients` collection, which holds commercial ACCOUNTS.
