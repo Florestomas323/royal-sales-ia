@@ -281,14 +281,15 @@ export function useCan() {
   const admin = isSuperAdmin || role === "client_admin" || role === "manager"
   return {
     isSuperAdmin,
-    isClientAdmin: isSuperAdmin || role === "client_admin",
+    // Distribuidor and Asistente share every operational right in the app.
+    isClientAdmin: isSuperAdmin || role === "client_admin" || role === "manager",
     canManageWorkspace: admin,
     /**
      * Assigning a Meta campaign to a workspace decides where its leads land,
      * so it is limited to account owners. Mirrors `canManageCampaignLinks`
      * on the server, which is the real authority.
      */
-    canManageCampaignLinks: isSuperAdmin || role === "client_admin",
+    canManageCampaignLinks: isSuperAdmin || role === "client_admin" || role === "manager",
     canManageTeam: admin,
     canManageClients: admin,
     canManageCampaigns: admin,

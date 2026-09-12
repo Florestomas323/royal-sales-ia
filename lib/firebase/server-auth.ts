@@ -97,6 +97,7 @@ export function canAccessWorkspace(user: ServerUser, workspaceId: string, write:
 export function canManageCampaignLinks(user: ServerUser, workspaceId: string): boolean {
   const { role, workspaceId: own } = user.membership
   if (role === "super_admin") return true
-  if (role !== "client_admin") return false
+  // Distribuidor and Asistente share operational rights.
+  if (role !== "client_admin" && role !== "manager") return false
   return own === workspaceId
 }
