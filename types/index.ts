@@ -579,6 +579,13 @@ export interface Attribution {
   externalAdSetId?: string
   externalAdId?: string
   externalCreativeId?: string
+  /**
+   * Public link to the ad, when the platform or the landing supplied one.
+   * NEVER built from an id: Meta's URL formats change and a guessed link is
+   * worse than none. Absent means "no link", and the UI shows no button.
+   */
+  adUrl?: string
+  adPreviewUrl?: string
   /** fbclid / ttclid / gclid when captured. */
   clickId?: string
   utmSource?: string
@@ -905,10 +912,15 @@ export interface WebsiteLeadPayload {
   utmTerm?: string
   /** fbclid / gclid / ttclid. */
   clickId?: string
-  /** Platform identifiers, when the page captured them. */
+  /** Platform identifiers, names and links, when the page captured them. */
   campaignId?: string
+  campaignName?: string
   adsetId?: string
+  adsetName?: string
   adId?: string
+  adName?: string
+  adUrl?: string
+  adPreviewUrl?: string
   /** Extra answers of the specific form. */
   zip?: string
   state?: string
