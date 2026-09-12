@@ -34,32 +34,96 @@ export const runtime = "nodejs"
 
 const json = (body: unknown, status = 200) => NextResponse.json(body, { status })
 
+/**
+ * Success envelope.
+ *
+ * Two shapes on purpose. `success` + `prospectId` is what a landing page
+ * checks; `ok` + `leadId` is what earlier integrations already read. Emitting
+ * both keeps anyone who integrated against either one working, and it is the
+ * ONLY place a success body is built — so no branch can claim success with a
+ * different shape by accident.
+ */
+const ok = (
+  prospectId: string,
+  extra: { duplicate: boolean; reason?: string },
+  status = 200,
+) =>
+  json({ success: true, prospectId, ok: true, leadId: prospectId, ...extra }, status)
+
+/**
+ * One structured line per request, readable in Vercel. Never carries the key,
+ * the name or the full phone: the last four digits are enough to recognise a
+ * submission while leaving the record useless to anyone reading the logs.
+ */
+function log(stage: string, detail: Record<string, unknown> = {}) {
+  console.log(`[website/leads] ${stage}`, JSON.stringify(detail))
+}
+
+function phoneTail(phone: string | undefined): string {
+  const digits = (phone ?? "").replace(/\D/g, "")
+  return digits ? `…${digits.slice(-4)}` : "—"
+}
+
 export async function POST(request: Request) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+  log("request", { method: request.method, ip })
   // Two buckets: per IP (a runaway script) and per key (a runaway form).
-  if (!allow(`ip:${ip}`, 30)) return json({ error: "rate_limited" }, 429)
+  if (!allow(`ip:${ip}`, 30)) {
+    log("rate_limited", { scope: "ip", status: 429 })
+    return json({ error: "rate_limited" }, 429)
+  }
 
   // The key may arrive in either header: `X-Integration-Key` is what the
   // panel documents, `Authorization: Bearer` is what most existing backends
   // already send. Both are server-side headers; neither is a browser concern.
   const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? ""
   const key = (request.headers.get("x-integration-key")?.trim() || bearer) ?? ""
-  if (!keyLooksValid(key)) return json({ error: "unauthorized" }, 401)
-  if (!allow(`key:${key.slice(0, 12)}`, 120)) return json({ error: "rate_limited" }, 429)
+  if (!keyLooksValid(key)) {
+    // Never log the key. The shape alone says whether the header arrived at
+    // all, which is the difference between "not configured" and "wrong value".
+    log("auth_failed", {
+      reason: key ? "malformed_key" : "missing_key",
+      header: request.headers.get("x-integration-key") ? "x-integration-key" : request.headers.get("authorization") ? "authorization" : "none",
+      status: 401,
+    })
+    return json({ error: "unauthorized" }, 401)
+  }
+  if (!allow(`key:${key.slice(0, 12)}`, 120)) {
+    log("rate_limited", { scope: "key", status: 429 })
+    return json({ error: "rate_limited" }, 429)
+  }
 
   let body: unknown
   try {
     body = await request.json()
   } catch {
+    log("invalid_body", { status: 400 })
     return json({ error: "invalid_body" }, 400)
   }
   const parsed = parseWebsiteLead(body)
-  if (!parsed.ok) return json({ error: "validation", details: parsed.errors }, 400)
+  if (!parsed.ok) {
+    // Field NAMES and reasons only — never the values the visitor typed.
+    log("validation_failed", { fields: parsed.errors.map((e) => `${e.field}:${e.reason}`), status: 400 })
+    return json({ error: "validation", details: parsed.errors }, 400)
+  }
 
   try {
     const integration = await resolveByKey(key)
     // Same answer for "no such key" and "disabled": nothing to learn from it.
-    if (!integration || integration.status !== "connected") return json({ error: "unauthorized" }, 401)
+    if (!integration || integration.status !== "connected") {
+      log("auth_failed", {
+        reason: integration ? "integration_disabled" : "key_not_found",
+        status: 401,
+      })
+      return json({ error: "unauthorized" }, 401)
+    }
+    log("auth_ok", {
+      workspaceId: integration.workspaceId,
+      domain: integration.domain,
+      form: parsed.payload.form ?? null,
+      type: parsed.payload.type,
+      phone: phoneTail(parsed.payload.phone),
+    })
 
     const db = getAdminDb()
     const leads = db.collection("leads")
@@ -78,7 +142,8 @@ export async function POST(request: Request) {
         .get()
       if (!prior.empty) {
         await touchLastReceived(integration.workspaceId, now)
-        return json({ ok: true, leadId: prior.docs[0].id, duplicate: true, reason: "external_id" })
+        log("duplicate", { workspaceId: integration.workspaceId, prospectId: prior.docs[0].id, reason: "external_id", status: 200 })
+        return ok(prior.docs[0].id, { duplicate: true, reason: "external_id" })
       }
     }
 
@@ -99,14 +164,31 @@ export async function POST(request: Request) {
         existing.ref.set({ receivedAt: now }, { merge: true }),
         touchLastReceived(integration.workspaceId, now),
       ])
-      return json({ ok: true, leadId: existing.id, duplicate: true, reason: "contact" })
+      log("duplicate", { workspaceId: integration.workspaceId, prospectId: existing.id, reason: "contact", status: 200 })
+      return ok(existing.id, { duplicate: true, reason: "contact" })
     }
 
     const ref = leads.doc()
-    await Promise.all([
-      ref.set(draft, { merge: false }),
-      touchLastReceived(integration.workspaceId, now),
-    ])
+    await ref.set(draft, { merge: false })
+
+    // Success is only claimed once Firestore confirms the document is really
+    // there. `set()` resolving is normally enough, but this endpoint is the
+    // landing's gate to its own flow: a false success locks a visitor out of
+    // the roulette with a prospect that does not exist, so it is read back.
+    const written = await ref.get()
+    if (!written.exists) {
+      log("write_unconfirmed", { workspaceId: integration.workspaceId, status: 500 })
+      return json({ error: "write_unconfirmed" }, 500)
+    }
+    await touchLastReceived(integration.workspaceId, now)
+    log("lead_created", {
+      workspaceId: integration.workspaceId,
+      prospectId: ref.id,
+      campaignId: draft.campaignId || null,
+      campaignSource: draft.attribution?.externalFormId ?? draft.source,
+      stage: draft.stage,
+      status: 201,
+    })
     // Central trigger, and only here: the two duplicate branches above return
     // before this line, so a re-submission never announces a "new" lead.
     // Best-effort by design — a failed notification never undoes the lead.
@@ -119,10 +201,19 @@ export async function POST(request: Request) {
     } catch (err) {
       console.error("[website/leads] notify failed", err)
     }
-    return json({ ok: true, leadId: ref.id, duplicate: false }, 201)
+    return ok(ref.id, { duplicate: false }, 201)
   } catch (err) {
-    if (isAdminNotConfigured(err)) return json({ error: "server_not_configured" }, 503)
-    console.error("[website/leads]", err)
+    if (isAdminNotConfigured(err)) {
+      log("server_not_configured", { status: 503, hint: "FIREBASE_SERVICE_ACCOUNT_JSON missing or invalid" })
+      return json({ error: "server_not_configured" }, 503)
+    }
+    // The real cause, surfaced instead of being swallowed by the catch.
+    log("internal_error", {
+      status: 500,
+      name: err instanceof Error ? err.name : typeof err,
+      message: err instanceof Error ? err.message : String(err),
+    })
+    console.error("[website/leads] stack", err)
     return json({ error: "internal" }, 500)
   }
 }
