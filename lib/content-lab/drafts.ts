@@ -23,9 +23,9 @@ export function canManageDrafts(role: UserRole | null): boolean {
   return role === "super_admin" || role === "client_admin" || role === "manager"
 }
 
-/** Only client_admin (and super_admin) may archive or delete. */
+/** Distribuidor, Asistente (and super_admin) may archive or delete. */
 export function canArchiveDrafts(role: UserRole | null): boolean {
-  return role === "super_admin" || role === "client_admin"
+  return role === "super_admin" || role === "client_admin" || role === "manager"
 }
 
 const byUpdated = (a: ContentDraft, b: ContentDraft) =>
