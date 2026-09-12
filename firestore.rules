@@ -738,6 +738,17 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ------------------------------------------------------------ funnelEvents
+    // Landing funnel steps. Written ONLY by the server route with the Admin
+    // SDK, which resolves the workspace from the integration key — no client
+    // write is ever allowed, so nobody can inflate another distributor's
+    // funnel. Analysts of the workspace read them; Telemarketing does not
+    // need marketing analytics and is not listed.
+    match /funnelEvents/{eventId} {
+      allow read: if isSuperAdmin() || isWsAdmin(resource.data.workspaceId);
+      allow write: if false;
+    }
+
     // --------------------------------------------------------------- customers
     // End customers ("Clientes finales") — the people who buy Royal Prestige.
     // NOT the `clients` collection, which holds commercial ACCOUNTS.
