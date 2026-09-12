@@ -19,13 +19,29 @@ export const runtime = "nodejs"
  * Accepts a single event or a batch, so a landing can flush several steps in
  * one request instead of one call per click.
  */
+/** Same structured logging as /api/website/leads. No key, no personal data. */
+function log(stage: string, detail: Record<string, unknown> = {}) {
+  console.log(`[website/events] ${stage}`, JSON.stringify(detail))
+}
+
 export async function POST(request: Request) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
-  if (!allow(`fe-ip:${ip}`, 120)) return NextResponse.json({ error: "rate_limited" }, { status: 429 })
+  log("request", { method: request.method, ip })
+  if (!allow(`fe-ip:${ip}`, 120)) {
+    log("rate_limited", { scope: "ip", status: 429 })
+    return NextResponse.json({ error: "rate_limited" }, { status: 429 })
+  }
 
   const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? ""
   const key = (request.headers.get("x-integration-key")?.trim() || bearer) ?? ""
-  if (!keyLooksValid(key)) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+  if (!keyLooksValid(key)) {
+    log("auth_failed", {
+      reason: key ? "malformed_key" : "missing_key",
+      header: request.headers.get("x-integration-key") ? "x-integration-key" : request.headers.get("authorization") ? "authorization" : "none",
+      status: 401,
+    })
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+  }
   if (!allow(`fe-key:${key.slice(0, 12)}`, 600)) return NextResponse.json({ error: "rate_limited" }, { status: 429 })
 
   let body: unknown
@@ -40,15 +56,21 @@ export async function POST(request: Request) {
   const parsed = raw.map(parseFunnelEvent)
   const failed = parsed.findIndex((p) => !p.ok)
   if (failed >= 0) {
-    const p = parsed[failed] as { ok: false; errors: unknown }
+    const p = parsed[failed] as { ok: false; errors: { field: string; reason: string }[] }
+    log("validation_failed", { index: failed, fields: p.errors.map((e) => `${e.field}:${e.reason}`), status: 400 })
     return NextResponse.json({ error: "validation", index: failed, details: p.errors }, { status: 400 })
   }
 
   try {
     const integration = await resolveByKey(key)
     if (!integration || integration.status !== "connected") {
+      log("auth_failed", { reason: integration ? "integration_disabled" : "key_not_found", status: 401 })
       return NextResponse.json({ error: "unauthorized" }, { status: 401 })
     }
+    log("auth_ok", {
+      workspaceId: integration.workspaceId,
+      events: parsed.flatMap((p) => (p.ok ? [p.event.eventName] : [])),
+    })
     const db = getAdminDb()
     const now = new Date().toISOString()
     const batch = db.batch()
@@ -86,10 +108,20 @@ export async function POST(request: Request) {
     }
 
     await batch.commit()
-    return NextResponse.json({ ok: true, stored: parsed.length }, { status: 201 })
+    log("events_stored", { workspaceId: integration.workspaceId, stored: parsed.length, status: 201 })
+    // Same envelope as /api/website/leads, so one landing reads both the same way.
+    return NextResponse.json({ success: true, ok: true, stored: parsed.length }, { status: 201 })
   } catch (err) {
-    if (isAdminNotConfigured(err)) return NextResponse.json({ error: "server_not_configured" }, { status: 503 })
-    console.error("[website/events]", err)
+    if (isAdminNotConfigured(err)) {
+      log("server_not_configured", { status: 503, hint: "FIREBASE_SERVICE_ACCOUNT_JSON missing or invalid" })
+      return NextResponse.json({ error: "server_not_configured" }, { status: 503 })
+    }
+    log("internal_error", {
+      status: 500,
+      name: err instanceof Error ? err.name : typeof err,
+      message: err instanceof Error ? err.message : String(err),
+    })
+    console.error("[website/events] stack", err)
     return NextResponse.json({ error: "internal" }, { status: 500 })
   }
 }
