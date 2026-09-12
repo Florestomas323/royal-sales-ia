@@ -3,6 +3,7 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { CampaignsTable } from "@/components/campaigns/campaigns-table"
+import { ConversionFunnelSection } from "@/components/campaigns/conversion-funnel-section"
 import { useMemo } from "react"
 import { useCampaigns } from "@/lib/firebase/collections"
 import { useLeads } from "@/lib/firebase/leads"
@@ -94,6 +95,10 @@ export function CampaignsLive() {
       </div>
 
       <CampaignsTable campaigns={rows} />
+
+      {/* Landing → booking funnel of this workspace. Reads its own events; it
+          does not touch the Meta metrics above. */}
+      <ConversionFunnelSection />
     </div>
   )
 }
