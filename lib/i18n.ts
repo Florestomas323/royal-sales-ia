@@ -375,6 +375,16 @@ export const t = {
   },
 
   campaigns: {
+    conversionFunnel: {
+      title: 'Embudo de conversión',
+      description: 'Recorrido real desde la landing hasta la cita agendada.',
+      empty: 'Todavía no hay visitas registradas en este periodo.',
+      ofPrevious: 'del paso anterior',
+      ofVisits: 'de las visitas',
+      dropOff: 'abandono',
+      worstDrop: (from: string, to: string, rate: string) => `Mayor abandono: ${from} → ${to}, ${rate}`,
+      noData: 'Sin datos',
+    },
     title: 'Campañas',
     description: 'Rendimiento de anuncios en Meta, Google y TikTok.',
     newCampaign: 'Nueva campaña',
