@@ -375,6 +375,14 @@ export const t = {
   },
 
   campaigns: {
+    ads: {
+      title: 'Anuncios asociados',
+      description: 'Anuncios que trajeron prospectos a cada campaña, según su atribución.',
+      empty: 'Todavía ningún prospecto llegó con datos de anuncio.',
+      viewAd: 'Ver anuncio',
+      noLink: 'Sin enlace disponible',
+      leads: (n: number) => (n === 1 ? '1 prospecto' : `${n} prospectos`),
+    },
     conversionFunnel: {
       title: 'Embudo de conversión',
       description: 'Recorrido real desde la landing hasta la cita agendada.',
@@ -664,6 +672,9 @@ export const t = {
       landingPage: 'Página de destino',
       referrer: 'Referente',
       externalIds: 'Identificadores externos',
+      adSetId: 'ID del conjunto de anuncios',
+      adId: 'ID del anuncio',
+      viewAd: 'Ver anuncio',
       noAttribution:
         'Este prospecto no tiene atribución publicitaria: se registró manualmente o su origen no proviene de una plataforma de anuncios.',
       noAttributionTitle: 'Sin atribución',

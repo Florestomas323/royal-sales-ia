@@ -52,7 +52,8 @@ export function canEditWorkspaceSettings(
   if (!targetWorkspaceId) return false
   if (isSuperAdmin) return true
   if (callerWorkspaceId !== targetWorkspaceId) return false
-  return role === "client_admin"
+  // Distribuidor and Asistente share operational rights.
+  return role === "client_admin" || role === "manager"
 }
 
 export function toDraft(workspace: Pick<Workspace,

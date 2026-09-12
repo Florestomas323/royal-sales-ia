@@ -508,6 +508,8 @@ export interface AttributionView {
   adSet: string | null
   ad: string | null
   creative: string | null
+  /** Public link to the ad, or null. Never derived from an id. */
+  adUrl: string | null
 }
 
 /** Placeholders written by older versions of `createLead`. Never displayed. */
@@ -536,37 +538,20 @@ export function attributionView(
   const a = lead.attribution
   const external = hasExternalIds(a)
   const fromAdPlatform = AD_PLATFORMS.includes(lead.source)
-
-  // Website/landing leads can still have real paid-media attribution. The landing
-  // page preserves UTMs even though the lead itself is stored with source=web.
-  // Infer only from explicit tracking values (never from a stale platform copy).
-  const trackedSource = (a?.utmSource ?? "").trim().toLowerCase()
-  const trackedReferrer = (a?.referrer ?? "").trim().toLowerCase()
-  const trackedPlatform: Platform | null =
-    /^(fb|facebook|meta)$/.test(trackedSource) || trackedReferrer.includes("facebook.com")
-      ? "facebook"
-      : /^(ig|instagram)$/.test(trackedSource) || trackedReferrer.includes("instagram.com")
-        ? "instagram"
-        : /^(google|googleads|adwords)$/.test(trackedSource) || trackedReferrer.includes("google.com")
-          ? "google"
-          : /^(tiktok|tt)$/.test(trackedSource) || trackedReferrer.includes("tiktok.com")
-            ? "tiktok"
-            : /^(youtube|yt)$/.test(trackedSource) || trackedReferrer.includes("youtube.com")
-              ? "youtube"
-              : trackedSource === "indeed" || trackedReferrer.includes("indeed.com")
-                ? "indeed"
-                : null
-
-  const platform = fromAdPlatform ? lead.source : trackedPlatform
+  // A platform is shown only when the lead really came from an ad platform.
+  // External ids alone do not invent one: they still need an ad source.
+  const platform = fromAdPlatform ? lead.source : null
   const campaign = realValue(a?.campaign) ?? realValue(lead.campaignName)
   const adSet = realValue(a?.adSet)
   const ad = realValue(a?.ad)
   const creative = realValue(a?.creative)
+  // A link is shown only when one was really supplied; nothing is built from ids.
+  const adUrl = realValue(a?.adPreviewUrl) ?? realValue(a?.adUrl)
 
   const empty =
     platform === null && !external && !hasMarketingContext(lead) && campaign === null
 
-  return { platform, empty, campaign, adSet, ad, creative }
+  return { platform, empty, campaign, adSet, ad, creative, adUrl }
 }
 
 /**

@@ -20,6 +20,17 @@ const MAX = {
 const MAX_ANSWERS = 40
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+/** Keeps a value only when it is a well-formed http(s) URL. */
+function httpUrl(v: string | null): string | null {
+  if (v === null || v === "") return v
+  try {
+    const u = new URL(v)
+    return u.protocol === "https:" || u.protocol === "http:" ? v : ""
+  } catch {
+    return ""
+  }
+}
+
 function str(v: unknown, max: number): string | null {
   if (v === undefined || v === null) return ""
   if (typeof v !== "string") return null
@@ -81,9 +92,15 @@ export function parseWebsiteLead(body: unknown): { ok: true; payload: WebsiteLea
 
   // Platform identifiers, when the landing page captured them.
   const ads = {
-    adId: str(metaObj.adId, MAX.utm),
-    adsetId: str(metaObj.adsetId, MAX.utm),
-    campaignId: str(metaObj.campaignId, MAX.utm),
+    adId: str(pick(b.adId, metaObj.adId), MAX.utm),
+    adsetId: str(pick(b.adsetId, metaObj.adsetId), MAX.utm),
+    campaignId: str(pick(b.campaignId, metaObj.campaignId), MAX.utm),
+    adName: str(pick(b.adName, metaObj.adName), MAX.utm),
+    adsetName: str(pick(b.adsetName, metaObj.adsetName), MAX.utm),
+    campaignName: str(pick(b.campaignName, metaObj.campaignName), MAX.utm),
+    // Only an http(s) URL is kept; anything else is dropped, never repaired.
+    adUrl: httpUrl(str(pick(b.adUrl, metaObj.adUrl), MAX.url)),
+    adPreviewUrl: httpUrl(str(pick(b.adPreviewUrl, metaObj.adPreviewUrl), MAX.url)),
   }
 
   // Extra answers of the specific form.
@@ -170,6 +187,13 @@ export function buildWebsiteLead(
     ...(payload.campaignId ? { externalCampaignId: payload.campaignId } : {}),
     ...(payload.adsetId ? { externalAdSetId: payload.adsetId } : {}),
     ...(payload.adId ? { externalAdId: payload.adId } : {}),
+    // Names and links, when the landing captured them. `campaign` keeps its
+    // precedence: an explicit campaign name wins over the utm_campaign slug.
+    ...(payload.campaignName ? { campaign: payload.campaignName } : {}),
+    ...(payload.adsetName ? { adSet: payload.adsetName } : {}),
+    ...(payload.adName ? { ad: payload.adName } : {}),
+    ...(payload.adUrl ? { adUrl: payload.adUrl } : {}),
+    ...(payload.adPreviewUrl ? { adPreviewUrl: payload.adPreviewUrl } : {}),
   }
 
   // Everything the standard lead fields cannot hold, kept together.
