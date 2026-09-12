@@ -83,8 +83,14 @@ service cloud.firestore {
       return inWorkspace(ws) && role() in ['client_admin', 'manager'];
     }
 
+    /**
+     * Distribuidor (client_admin) and Asistente (manager) hold the SAME
+     * operational rights inside their workspace: settings, memberships,
+     * deletions, archiving. What only the super admin may do stays with
+     * isSuperAdmin(); Telemarketing (sales_rep) keeps its own narrower set.
+     */
     function isWsClientAdmin(ws) {
-      return inWorkspace(ws) && role() == 'client_admin';
+      return inWorkspace(ws) && role() in ['client_admin', 'manager'];
     }
 
     function isWsMember(ws) {
