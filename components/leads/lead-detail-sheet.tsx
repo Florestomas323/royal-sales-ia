@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { toast } from "sonner"
-import { BadgeDollarSign, Phone, Mail, MessageCircle, CalendarPlus, Target, Clock, ArrowRightLeft, Pencil, Archive, ArchiveRestore } from "lucide-react"
+import { BadgeDollarSign, Phone, Mail, MessageCircle, CalendarPlus, Target, Clock, ArrowRightLeft, Pencil, Archive, ArchiveRestore, ExternalLink } from "lucide-react"
 import type { Lead, LeadType, PipelineStage } from "@/types"
 import {
   Sheet,
@@ -629,6 +629,35 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                       )}
                       {lead.attribution?.referrer && (
                         <InfoRow label={t.leads.detail.referrer} value={lead.attribution?.referrer ?? ""} />
+                      )}
+                      {lead.attribution?.externalAdSetId && (
+                        <InfoRow
+                          label={t.leads.detail.adSetId}
+                          value={<code className="rounded bg-muted px-1.5 py-0.5 text-xs">{lead.attribution.externalAdSetId}</code>}
+                        />
+                      )}
+                      {lead.attribution?.externalAdId && (
+                        <InfoRow
+                          label={t.leads.detail.adId}
+                          value={<code className="rounded bg-muted px-1.5 py-0.5 text-xs">{lead.attribution.externalAdId}</code>}
+                        />
+                      )}
+                      {/* Only when a real link exists: an id alone never becomes a URL. */}
+                      {attribution.adUrl && (
+                        <InfoRow
+                          label={t.leads.detail.ad}
+                          value={
+                            <a
+                              href={attribution.adUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
+                            >
+                              {t.leads.detail.viewAd}
+                              <ExternalLink className="size-3.5" />
+                            </a>
+                          }
+                        />
                       )}
                       {(lead.attribution?.externalCampaignId || lead.attribution?.externalAdId) && (
                         <InfoRow
