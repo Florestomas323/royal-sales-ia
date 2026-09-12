@@ -1,5 +1,5 @@
 import type { CampaignMetrics } from "@/lib/media-buyer/analyzer"
-import type { Campaign } from "@/types"
+import type { Campaign, Lead, Platform } from "@/types"
 
 /**
  * What the Campañas screen shows for one campaign.
@@ -109,4 +109,61 @@ export function mergedTotals(rows: MergedCampaign[]): MergedTotals {
     roas: spend !== null && spend > 0 && revenue !== null ? revenue / spend : null,
     active: rows.filter((r) => r.status === "active").length,
   }
+}
+
+/**
+ * One ad seen in the attribution of a campaign's leads. Insights only report
+ * at campaign level, so the ads a campaign "has" are the ones that actually
+ * brought somebody: real data, nothing looked up or guessed. `url` is present
+ * only when a lead carried a real link.
+ */
+export interface CampaignAd {
+  id: string
+  name: string
+  platform: Platform
+  adSet: string | null
+  url: string | null
+  /** Leads attributed to this ad. */
+  leads: number
+}
+
+/**
+ * Groups the ads found in the leads attributed to each campaign. A lead is
+ * attributed by its local `campaignId` or by the campaign's Meta id in
+ * `attribution.externalCampaignId`; the ad key is its external id, or its
+ * name when the platform gave none. Ads without id AND without name are not
+ * ads anyone can act on, and are skipped.
+ */
+export function adsByCampaign(campaigns: Campaign[], leads: Lead[]): Map<string, CampaignAd[]> {
+  const out = new Map<string, CampaignAd[]>()
+  for (const c of campaigns) {
+    const mine = leads.filter(
+      (l) => l.archived !== true &&
+        (l.campaignId === c.id || (c.externalId && l.attribution?.externalCampaignId === c.externalId)),
+    )
+    const ads = new Map<string, CampaignAd>()
+    for (const l of mine) {
+      const a = l.attribution
+      const key = a?.externalAdId || a?.ad
+      if (!key) continue
+      const url = a?.adPreviewUrl || a?.adUrl || null
+      const prev = ads.get(key)
+      if (prev) {
+        prev.leads += 1
+        if (!prev.url && url) prev.url = url
+        if (!prev.adSet && a?.adSet) prev.adSet = a.adSet
+      } else {
+        ads.set(key, {
+          id: key,
+          name: a?.ad || key,
+          platform: l.source,
+          adSet: a?.adSet ?? null,
+          url,
+          leads: 1,
+        })
+      }
+    }
+    if (ads.size > 0) out.set(c.id, [...ads.values()].sort((x, y) => y.leads - x.leads))
+  }
+  return out
 }
