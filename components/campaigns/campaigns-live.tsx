@@ -10,7 +10,7 @@ import { useLeads } from "@/lib/firebase/leads"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { useMediaBuyer } from "@/lib/media-buyer/client"
 import { analyzeCampaignPerformance } from "@/lib/media-buyer/analyzer"
-import { adsByCampaign, mergeCampaigns, mergedTotals } from "@/lib/campaigns/merged"
+import { mergeCampaigns, mergedTotals } from "@/lib/campaigns/merged"
 import { CampaignAdsSection } from "@/components/campaigns/campaign-ads-section"
 import { resolvePeriod, type PeriodKey } from "@/lib/metrics"
 import type { InsightsPeriod } from "@/lib/meta/insights"
@@ -40,8 +40,12 @@ export function CampaignsLive() {
     [data, leads, crmPeriod],
   )
   const rows = useMemo(() => mergeCampaigns(campaigns, metrics), [campaigns, metrics])
-  // Ads are what the attributed leads say they are: no per-ad Insights exist.
-  const ads = useMemo(() => adsByCampaign(campaigns, leads), [campaigns, leads])
+  // Ads come straight from Meta, one card per linked campaign. A campaign
+  // with no Meta link has no ads to read and renders nothing.
+  const metaCampaigns = useMemo(
+    () => campaigns.filter((c) => Boolean(c.externalId)),
+    [campaigns],
+  )
   const totals = useMemo(() => mergedTotals(rows), [rows])
 
   const noData = t.overview.noData
@@ -99,7 +103,9 @@ export function CampaignsLive() {
 
       <CampaignsTable campaigns={rows} />
 
-      <CampaignAdsSection campaigns={rows} ads={ads} />
+      {metaCampaigns.map((c) => (
+        <CampaignAdsSection key={c.id} metaCampaignId={c.externalId ?? null} campaignName={c.name} />
+      ))}
 
       {/* Landing → booking funnel of this workspace. Reads its own events; it
           does not touch the Meta metrics above. */}
