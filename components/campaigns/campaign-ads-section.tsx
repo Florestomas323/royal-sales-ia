@@ -35,7 +35,7 @@ export function CampaignAdsSection({
   metaCampaignId: string | null
   campaignName: string
 }) {
-  const { ads, loading, errorCode, reload } = useCampaignAds(metaCampaignId)
+  const { ads, loading, errorCode, detail, reload } = useCampaignAds(metaCampaignId)
 
   if (!metaCampaignId) return null
 
@@ -57,9 +57,15 @@ export function CampaignAdsSection({
           <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-4 py-8 text-center">
             <AlertTriangle className="size-5 text-muted-foreground" />
             <p className="text-sm text-pretty text-muted-foreground">
-              {errorCode === "no_ad_account" ? a.noAdAccount : a.error}
+              {errorCode === "no_ad_account"
+                ? a.noAdAccount
+                : errorCode === "not_linked"
+                  ? a.notLinked
+                  : a.errorWithCode(errorCode)}
             </p>
-            {errorCode !== "no_ad_account" && (
+            {/* Meta's own classification, shown so the failure is actionable. */}
+            {detail && <p className="font-mono text-xs text-muted-foreground">{detail}</p>}
+            {errorCode !== "no_ad_account" && errorCode !== "not_linked" && (
               <Button variant="outline" size="sm" onClick={reload} className="h-9">
                 {a.retry}
               </Button>
