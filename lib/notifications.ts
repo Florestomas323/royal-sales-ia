@@ -1,4 +1,5 @@
 import { PLATFORM_LABELS } from "@/lib/constants"
+import { whatsappHref, whatsappOpener } from "@/lib/leads"
 import type { AppNotification, Lead, MemberStatus, User, UserRole } from "@/types"
 
 /**
@@ -96,37 +97,91 @@ export function newLeadEmail(
   workspaceName: string,
   appUrl: string,
 ): NewLeadEmail {
-  const kind = lead.leadType === "recruiting" ? "Nuevo candidato" : "Nuevo prospecto"
+  const isRecruiting = lead.leadType === "recruiting"
+  const kind = isRecruiting ? "Nuevo candidato" : "Nuevo prospecto"
+  const typeLabel = isRecruiting ? "Reclutamiento" : "Ventas"
   const subject = `${kind} en Royal Sales IA — ${lead.name}`
   const origin = formLabel(form, lead.source)
   const when = new Date(lead.createdAt).toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" })
-  // Deep link: the app opens Prospectos with this lead's sheet. No token in
-  // the URL — the person signs in as usual and the Rules decide what they see.
+
+  // Deep link into the app. No token, no personal data in the URL: the person
+  // still signs in and the Rules decide whether they may see this lead.
   const link = `${appUrl.replace(/\/$/, "")}/leads?lead=${encodeURIComponent(lead.id)}`
+
+  // The SAME opener the app uses on the lead's WhatsApp button, so the first
+  // message a distributor sends from the email matches what they would send
+  // from Prospectos. No owner is named: the email goes to several people.
+  const whatsapp = whatsappHref(lead.phone, whatsappOpener(lead, null))
+
   const rows: [string, string][] = [
     ["Nombre", lead.name],
     ["Teléfono", lead.phone || "—"],
     ["Origen", origin],
+    ["Tipo", typeLabel],
     ["Workspace", workspaceName],
     ["Fecha", when],
   ]
-  const text = [subject, "", ...rows.map(([k, v]) => `${k}: ${v}`), "", `Ver prospecto: ${link}`].join("\n")
+  const text = [
+    subject, "",
+    ...rows.map(([k, v]) => `${k}: ${v}`), "",
+    `Ver prospecto: ${link}`,
+    ...(whatsapp ? [`Contactar por WhatsApp: ${whatsapp}`] : []),
+  ].join("\n")
+
   const esc = (v: string) => v.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c)
-  const html = `<!doctype html><html lang="es"><body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#111;padding:24px">
-<h2 style="margin:0 0 16px">${esc(kind)}</h2>
-<table style="border-collapse:collapse">${rows.map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;color:#666">${esc(k)}</td><td style="padding:4px 0"><strong>${esc(v)}</strong></td></tr>`).join("")}</table>
-<p style="margin:24px 0"><a href="${esc(link)}" style="background:#2563eb;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;display:inline-block">Ver prospecto</a></p>
-<p style="color:#888;font-size:12px">Royal Sales IA</p></body></html>`
+  const row = ([k, v]: [string, string]) =>
+    `<tr><td style="padding:6px 12px 6px 0;color:#6b7280;font-size:14px;white-space:nowrap;vertical-align:top">${esc(k)}</td>` +
+    `<td style="padding:6px 0;font-size:14px;color:#111827;font-weight:600">${esc(v)}</td></tr>`
+  const button = (href: string, label: string, bg: string, color: string) =>
+    `<a href="${esc(href)}" style="display:inline-block;padding:12px 20px;border-radius:8px;background:${bg};color:${color};` +
+    `font-size:15px;font-weight:600;text-decoration:none;text-align:center">${esc(label)}</a>`
+
+  const html = `<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(subject)}</title></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f4f6;padding:24px 12px">
+<tr><td align="center">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb">
+  <tr><td style="background:#2563eb;padding:20px 24px">
+    <p style="margin:0;color:#ffffff;font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.9">Royal Sales IA</p>
+    <h1 style="margin:6px 0 0;color:#ffffff;font-size:22px;font-weight:700">${esc(kind)}</h1>
+  </td></tr>
+  <tr><td style="padding:24px">
+    <table role="presentation" cellspacing="0" cellpadding="0" style="width:100%">${rows.map(row).join("")}</table>
+    <table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;margin-top:24px">
+      <tr><td style="padding-bottom:10px">${button(link, "Ver prospecto", "#2563eb", "#ffffff")}</td></tr>
+      ${whatsapp ? `<tr><td>${button(whatsapp, "Contactar por WhatsApp", "#25d366", "#ffffff")}</td></tr>` : ""}
+    </table>
+    <p style="margin:24px 0 0;color:#6b7280;font-size:12px;line-height:1.5">
+      Recibes este correo porque eres Distribuidor o Asistente de ${esc(workspaceName)}.
+      Puedes desactivarlo en Configuración → Perfil.
+    </p>
+  </td></tr>
+</table>
+</td></tr></table>
+</body></html>`
+
   return { subject, text, html }
 }
 
 /** Members eligible to receive the email: same rule as in-app, plus an address. */
+/**
+ * Who gets the email: the ADMINS of the lead's workspace (Distribuidor,
+ * Asistente) — never Telemarketing, never another workspace — minus anyone
+ * who switched the preference off. An absent preference counts as on.
+ */
 export function emailRecipients(
-  lead: Pick<Lead, "workspaceId" | "assignedToId">,
-  members: Pick<User, "id" | "workspaceId" | "role" | "status" | "email">[],
+  lead: Pick<Lead, "workspaceId">,
+  members: Pick<User, "id" | "workspaceId" | "role" | "status" | "email" | "emailNewLeadNotifications">[],
 ): string[] {
-  const ids = new Set(recipientsFor(lead, members))
-  return [...new Set(members.filter((m) => ids.has(m.id) && m.email).map((m) => m.email.trim().toLowerCase()))]
+  const emails = members
+    .filter((m) => m.workspaceId === lead.workspaceId)
+    .filter((m) => m.status === "active")
+    .filter((m) => m.role === "client_admin" || m.role === "manager")
+    .filter((m) => m.emailNewLeadNotifications !== false)
+    .map((m) => (m.email ?? "").trim().toLowerCase())
+    .filter(Boolean)
+  return [...new Set(emails)]
 }
 
 export type { MemberStatus, UserRole }
