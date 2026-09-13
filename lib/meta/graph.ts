@@ -374,10 +374,11 @@ export const getCampaignAds = (campaignId: string, o?: GraphClientOptions) =>
   graphGet<GraphPaged<GraphAd>>(
     `${encodeURIComponent(campaignId)}/ads`,
     {
-      fields: [
-        "id", "name", "status", "effective_status",
-        "adset_id", "campaign_id", "adset{id,name}",
-      ].join(","),
+      // Minimum safe set: flat, core Ad fields only. No nested expansion and
+      // no optional extras — Meta fails the WHOLE request when one field is
+      // not readable, so anything beyond this could hide every ad. Ad set
+      // names and preview links are fetched separately, and optionally.
+      fields: ["id", "name", "status", "effective_status", "adset_id", "campaign_id"].join(","),
       limit: "100",
     },
     o,
@@ -391,6 +392,13 @@ export const getCampaignAds = (campaignId: string, o?: GraphClientOptions) =>
  * the ad still appears in the list without a button. The caller treats any
  * failure as "no link", never as an error worth surfacing.
  */
+/**
+ * Name of ONE ad set, in its own request. Optional by design: a failure here
+ * leaves the ad showing its ad set id and nothing else.
+ */
+export const getAdSetName = (adSetId: string, o?: GraphClientOptions) =>
+  graphGet<{ id: string; name?: string }>(encodeURIComponent(adSetId), { fields: "name" }, o)
+
 export const getAdPreviewLink = (adId: string, o?: GraphClientOptions) =>
   graphGet<{ id: string; preview_shareable_link?: string }>(
     encodeURIComponent(adId),

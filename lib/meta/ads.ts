@@ -82,8 +82,9 @@ export function normalizeAd(ad: GraphAd): CampaignAd {
     name: ad.name?.trim() || ad.id,
     status,
     statusKind: statusKind(status),
-    adSetId: ad.adset?.id ?? ad.adset_id ?? null,
-    adSetName: ad.adset?.name ?? null,
+    // Flat field only: the first call no longer expands `adset{}`.
+    adSetId: ad.adset_id ?? null,
+    adSetName: null,
     url: realUrl(ad.preview_shareable_link),
   }
 }
