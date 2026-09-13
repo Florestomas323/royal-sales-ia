@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { Info } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import {
   Card,
@@ -95,6 +96,9 @@ export function SettingsPanel() {
           email={currentUser.email}
           avatarColor={currentUser.avatarColor}
           isSuperAdmin={isSuperAdmin}
+          // Absent means opted in: every admin gets the email until they say no.
+          emailNewLead={profile?.emailNewLeadNotifications !== false}
+          canReceiveNewLeadEmail={profile?.role === "client_admin" || profile?.role === "manager"}
           onSaved={refreshProfile}
         />
       </TabsContent>
@@ -406,6 +410,8 @@ function ProfileCard({
   email,
   avatarColor,
   isSuperAdmin,
+  emailNewLead,
+  canReceiveNewLeadEmail,
   onSaved,
 }: {
   userId: string | null
@@ -413,22 +419,29 @@ function ProfileCard({
   name: string
   email: string
   avatarColor: string
+  /** Current value of the "email me new leads" preference. */
+  emailNewLead: boolean
+  /** Only Distribuidor and Asistente receive these emails; others see no switch. */
+  canReceiveNewLeadEmail: boolean
   onSaved: () => Promise<void>
 }) {
   const [value, setValue] = useState(name)
+  const [wantsEmail, setWantsEmail] = useState(emailNewLead)
   const [color, setColor] = useState(avatarColor)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => setValue(name), [name])
   useEffect(() => setColor(avatarColor), [avatarColor])
+  useEffect(() => setWantsEmail(emailNewLead), [emailNewLead])
 
-  const dirty = (value.trim() !== name && value.trim().length > 0) || color !== avatarColor
+  const dirty =
+    (value.trim() !== name && value.trim().length > 0) || color !== avatarColor || wantsEmail !== emailNewLead
 
   async function handleSave() {
     if (!userId || !dirty) return
     setSaving(true)
     try {
-      await updateOwnProfile(userId, { name: value, avatarColor: color })
+      await updateOwnProfile(userId, { name: value, avatarColor: color, emailNewLeadNotifications: wantsEmail })
       await onSaved()
       toast.success(t.settings.savedTitle, { description: t.settings.profile.saved })
     } catch (err) {
@@ -500,6 +513,21 @@ function ProfileCard({
               </FieldContent>
               <Input id="email" type="email" value={email} readOnly disabled className="sm:max-w-xs" />
             </Field>
+            {canReceiveNewLeadEmail && (
+              <Field orientation="responsive">
+                <FieldContent>
+                  <FieldLabel htmlFor="email-new-lead">{t.settings.profile.emailNewLeadLabel}</FieldLabel>
+                  <FieldDescription>{t.settings.profile.emailNewLeadDescription}</FieldDescription>
+                </FieldContent>
+                <Switch
+                  id="email-new-lead"
+                  checked={wantsEmail}
+                  onCheckedChange={setWantsEmail}
+                  disabled={saving}
+                  aria-label={t.settings.profile.emailNewLeadLabel}
+                />
+              </Field>
+            )}
           </FieldGroup>
         )}
       </CardContent>
