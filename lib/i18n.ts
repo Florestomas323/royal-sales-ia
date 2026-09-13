@@ -381,7 +381,11 @@ export const t = {
       loading: 'Cargando anuncios desde Meta…',
       empty: 'Esta campaña todavía no tiene anuncios.',
       error: 'No pudimos cargar los anuncios desde Meta.',
+      // Diagnostic phase: the exact reason is shown so a failure can be acted
+      // on instead of guessed at.
+      errorWithCode: (code: string) => `No se pudo consultar Meta: ${code}`,
       noAdAccount: 'Selecciona una cuenta publicitaria en Administrar Meta para ver los anuncios.',
+      notLinked: 'Esta campaña no está asignada a ningún workspace.',
       viewAd: 'Ver anuncio',
       noLink: 'Sin enlace disponible',
       adId: 'ID',
