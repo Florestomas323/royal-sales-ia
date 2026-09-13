@@ -1,6 +1,9 @@
 "use client"
 
-import { AlertTriangle, ExternalLink, Loader2 } from "lucide-react"
+import { useState } from "react"
+import { AlertTriangle, Eye, Loader2 } from "lucide-react"
+import { AdPreviewDialog } from "@/components/campaigns/ad-preview-dialog"
+import type { CampaignAd } from "@/lib/meta/ads"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -36,6 +39,7 @@ export function CampaignAdsSection({
   campaignName: string
 }) {
   const { ads, loading, errorCode, detail, reload } = useCampaignAds(metaCampaignId)
+  const [openAd, setOpenAd] = useState<CampaignAd | null>(null)
 
   if (!metaCampaignId) return null
 
@@ -95,25 +99,32 @@ export function CampaignAdsSection({
                     {ad.adSetId ? ` (${ad.adSetId})` : ""}
                   </p>
                 </div>
-                {/* Only when Meta itself returned a link. */}
-                {ad.url ? (
-                  <a
-                    href={ad.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-3 text-sm hover:bg-muted"
-                  >
-                    {a.viewAd}
-                    <ExternalLink className="size-3.5" />
-                  </a>
-                ) : (
-                  <Badge variant="outline" className="shrink-0 text-[10px]">{a.noLink}</Badge>
-                )}
+                {/* Opens the in-app preview: never Facebook, never Ads Manager. */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-11 shrink-0 gap-1.5 sm:h-9"
+                  onClick={() => setOpenAd(ad)}
+                >
+                  <Eye className="size-3.5" />
+                  {a.viewAd}
+                </Button>
               </li>
             ))}
           </ul>
         )}
       </CardContent>
+
+      {openAd && (
+        <AdPreviewDialog
+          open={Boolean(openAd)}
+          onOpenChange={(o) => { if (!o) setOpenAd(null) }}
+          adId={openAd.id}
+          metaCampaignId={metaCampaignId}
+          campaignName={campaignName}
+          adSetName={openAd.adSetName}
+        />
+      )}
     </Card>
   )
 }
