@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import { onAuthStateChanged } from "firebase/auth"
 import { auth } from "@/lib/firebase/client"
 import type { CampaignAd } from "@/lib/meta/ads"
 
@@ -26,11 +27,7 @@ export interface CampaignAdsState {
 
 /**
  * Ads of one Meta campaign, fetched through the server route.
- *
- * The browser never sees a Meta token: it sends the person's Firebase ID
- * token and the server does the Graph call. One request per campaign, run
- * once per mount — not on every render — and a failure leaves `ads` empty
- * instead of throwing, so a Meta outage cannot take the page down.
+ * Waits for Firebase Auth to finish hydrating before calling the API.
  */
 export function useCampaignAds(metaCampaignId: string | null): CampaignAdsState {
   const [ads, setAds] = useState<CampaignAd[]>([])
@@ -49,13 +46,25 @@ export function useCampaignAds(metaCampaignId: string | null): CampaignAdsState 
     }
 
     let cancelled = false
+    let requestStarted = false
+
     setLoading(true)
     setErrorCode(null)
 
-    ;(async () => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (cancelled || requestStarted) return
+
+      if (!user) {
+        setAds([])
+        setErrorCode("forbidden")
+        setLoading(false)
+        return
+      }
+
+      requestStarted = true
+
       try {
-        const token = await auth.currentUser?.getIdToken()
-        if (!token) throw new Error("not_signed_in")
+        const token = await user.getIdToken()
 
         const res = await fetch(
           `/api/meta/campaign-ads?metaCampaignId=${encodeURIComponent(metaCampaignId)}`,
@@ -78,10 +87,11 @@ export function useCampaignAds(metaCampaignId: string | null): CampaignAdsState 
       } finally {
         if (!cancelled) setLoading(false)
       }
-    })()
+    })
 
     return () => {
       cancelled = true
+      unsubscribe()
     }
   }, [metaCampaignId, nonce])
 
