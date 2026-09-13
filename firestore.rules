@@ -379,7 +379,7 @@ service cloud.firestore {
             && (!roleOrStatusChanges() || seatConsistentAfter()))
         // A member may edit their own display fields.
         || (hasMembership() && resource.data.authUid == request.auth.uid
-            && onlyChanges(['name', 'avatarColor', 'updatedAt']))
+            && onlyChanges(['name', 'avatarColor', 'emailNewLeadNotifications', 'updatedAt']))
         // Claiming an invitation: only authUid/status/updatedAt change.
         || (signedIn()
             && request.auth.token.email_verified == true
