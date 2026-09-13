@@ -270,7 +270,11 @@ export interface GraphAd {
   effective_status?: string
   adset_id?: string
   campaign_id?: string
-  creative?: { id?: string }
+  /** Present when the caller asked for the nested `adset{id,name}` field. */
+  adset?: { id?: string; name?: string }
+  creative?: { id?: string; effective_object_story_id?: string }
+  /** Meta returns this only for ads whose creative is a real published post. */
+  preview_shareable_link?: string
 }
 
 /** Ad sets of a campaign. Needs ads_read on the owning ad account. */
@@ -344,5 +348,36 @@ export const getLeadForms = (pageId: string, o?: GraphClientOptions) =>
   graphGet<GraphPaged<GraphLeadForm>>(
     `${encodeURIComponent(pageId)}/leadgen_forms`,
     { fields: "id,name,status,leads_count", limit: "100" },
+    o,
+  )
+
+/* -------------------------------------------------------------------------- */
+/*  Ads of a campaign                                                          */
+/* -------------------------------------------------------------------------- */
+
+
+/**
+ * Ads inside ONE campaign, straight from the Graph API.
+ *
+ * Read-only, like the rest of this module. Includes paused and archived ads:
+ * the caller decides what to show, and hiding them here would make a campaign
+ * look empty right after someone pauses it. `preview_shareable_link` is asked
+ * for in the same call — Meta returns it when the ad has one, and when it does
+ * not there is simply no link, never a constructed one.
+ *
+ * Needs `ads_read` on the ad account.
+ */
+export const getCampaignAds = (campaignId: string, o?: GraphClientOptions) =>
+  graphGet<GraphPaged<GraphAd>>(
+    `${encodeURIComponent(campaignId)}/ads`,
+    {
+      fields: [
+        "id", "name", "status", "effective_status",
+        "adset_id", "campaign_id", "adset{id,name}",
+        "creative{id,effective_object_story_id}",
+        "preview_shareable_link",
+      ].join(","),
+      limit: "100",
+    },
     o,
   )
