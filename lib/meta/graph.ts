@@ -405,3 +405,96 @@ export const getAdPreviewLink = (adId: string, o?: GraphClientOptions) =>
     { fields: "preview_shareable_link" },
     o,
   )
+
+/* -------------------------------------------------------------------------- */
+/*  Ad creative (for the in-app preview)                                       */
+/* -------------------------------------------------------------------------- */
+
+export interface GraphAdCreative {
+  id?: string
+  name?: string
+  object_type?: string
+  title?: string
+  body?: string
+  link_url?: string
+  call_to_action_type?: string
+  image_url?: string
+  thumbnail_url?: string
+  video_id?: string
+  effective_object_story_id?: string
+  /** Static creatives: one of link_data / video_data / photo_data is set. */
+  object_story_spec?: {
+    page_id?: string
+    link_data?: {
+      message?: string
+      name?: string
+      description?: string
+      link?: string
+      picture?: string
+      image_hash?: string
+      call_to_action?: { type?: string; value?: { link?: string } }
+    }
+    video_data?: {
+      message?: string
+      title?: string
+      link_description?: string
+      video_id?: string
+      image_url?: string
+      call_to_action?: { type?: string; value?: { link?: string } }
+    }
+    photo_data?: { caption?: string; url?: string; image_hash?: string }
+  }
+  /** Dynamic creatives: arrays of variants. */
+  asset_feed_spec?: {
+    bodies?: { text?: string }[]
+    titles?: { text?: string }[]
+    descriptions?: { text?: string }[]
+    link_urls?: { website_url?: string }[]
+    call_to_action_types?: string[]
+    images?: { url?: string; hash?: string }[]
+    videos?: { video_id?: string; thumbnail_url?: string }[]
+  }
+}
+
+export interface GraphAdWithCreative {
+  id: string
+  name?: string
+  effective_status?: string
+  status?: string
+  adset_id?: string
+  campaign_id?: string
+  creative?: GraphAdCreative
+}
+
+/**
+ * One ad with its creative expanded, everything the in-app preview needs in
+ * ONE request. `campaign_id` is included so the caller can prove the ad
+ * really belongs to the campaign it was asked for — the tenant check.
+ *
+ * Read-only. Needs `ads_read`.
+ */
+export const getAdWithCreative = (adId: string, o?: GraphClientOptions) =>
+  graphGet<GraphAdWithCreative>(
+    encodeURIComponent(adId),
+    {
+      fields: [
+        "id", "name", "effective_status", "status", "adset_id", "campaign_id",
+        "creative{id,name,object_type,title,body,link_url,call_to_action_type,"
+          + "image_url,thumbnail_url,video_id,effective_object_story_id,"
+          + "object_story_spec,asset_feed_spec}",
+      ].join(","),
+    },
+    o,
+  )
+
+/**
+ * Playable source of one ad video, in its own optional request. Meta only
+ * returns it when the token may read the video; when it may not, the preview
+ * falls back to the thumbnail and says so.
+ */
+export const getVideoSource = (videoId: string, o?: GraphClientOptions) =>
+  graphGet<{ id: string; source?: string; picture?: string }>(
+    encodeURIComponent(videoId),
+    { fields: "source,picture" },
+    o,
+  )
