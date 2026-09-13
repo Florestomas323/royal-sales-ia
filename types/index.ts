@@ -532,7 +532,11 @@ export interface User {
   assignedLeads: number
   appointments: number
   sales: number
-  isDemo?: boolean
+  isDemo?: boolean  /**
+   * Personal preference: receive an email when a new lead arrives. Absent
+   * means true — every Distribuidor and Asistente is opted in by default.
+   */
+  emailNewLeadNotifications?: boolean
 }
 
 /**
@@ -684,6 +688,11 @@ export interface Lead {
   /** users.id of whoever sent it to the trash, and their name at the time. */
   archivedBy?: string
   archivedByName?: string
+  /**
+   * ISO timestamp of the "new lead" email dispatch. Set server-side, once,
+   * before sending: a retry of the same lead sees it and sends nothing.
+   */
+  emailNotifiedAt?: string
   archivedAt?: string | null
   isDemo?: boolean
 }
