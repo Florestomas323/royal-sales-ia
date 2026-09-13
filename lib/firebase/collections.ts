@@ -304,13 +304,15 @@ export const AVATAR_COLORS: readonly string[] = [
  */
 export async function updateOwnProfile(
   userId: string,
-  patch: { name?: string; avatarColor?: string },
+  patch: { name?: string; avatarColor?: string; emailNewLeadNotifications?: boolean },
 ): Promise<void> {
   // `updatedAt` is not part of the User model (it only exists to satisfy the
-  // Security Rule that whitelists name/avatarColor/updatedAt), hence DocumentData.
+  // Security Rule that whitelists name/avatarColor/emailNewLeadNotifications/
+  // updatedAt), hence DocumentData.
   const data: DocumentData = { updatedAt: serverTimestamp() }
   if (typeof patch.name === "string") data.name = patch.name.trim()
   if (typeof patch.avatarColor === "string") data.avatarColor = patch.avatarColor
+  if (typeof patch.emailNewLeadNotifications === "boolean") data.emailNewLeadNotifications = patch.emailNewLeadNotifications
   await updateDoc(doc(collection(db, "users"), userId), data)
 }
 
