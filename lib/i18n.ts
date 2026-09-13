@@ -376,12 +376,17 @@ export const t = {
 
   campaigns: {
     ads: {
-      title: 'Anuncios asociados',
-      description: 'Anuncios que trajeron prospectos a cada campaña, según su atribución.',
-      empty: 'Todavía ningún prospecto llegó con datos de anuncio.',
+      title: 'Anuncios de la campaña',
+      description: 'Anuncios sincronizados directamente desde Meta Ads.',
+      loading: 'Cargando anuncios desde Meta…',
+      empty: 'Esta campaña todavía no tiene anuncios.',
+      error: 'No pudimos cargar los anuncios desde Meta.',
+      noAdAccount: 'Selecciona una cuenta publicitaria en Administrar Meta para ver los anuncios.',
       viewAd: 'Ver anuncio',
       noLink: 'Sin enlace disponible',
-      leads: (n: number) => (n === 1 ? '1 prospecto' : `${n} prospectos`),
+      adId: 'ID',
+      adSet: 'Conjunto',
+      retry: 'Reintentar',
     },
     conversionFunnel: {
       title: 'Embudo de conversión',
