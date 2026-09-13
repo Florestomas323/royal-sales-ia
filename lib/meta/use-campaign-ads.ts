@@ -3,12 +3,24 @@
 import { useCallback, useEffect, useState } from "react"
 import { auth } from "@/lib/firebase/client"
 import type { CampaignAd } from "@/lib/meta/ads"
-import type { CampaignAdsResponse } from "@/app/api/meta/campaign-ads/route"
+
+type CampaignAdsErrorCode =
+  | "no_ad_account"
+  | "not_linked"
+  | "graph_error"
+  | "forbidden"
+
+interface CampaignAdsResponse {
+  ok: boolean
+  ads: CampaignAd[]
+  errorCode?: CampaignAdsErrorCode
+  message?: string
+}
 
 export interface CampaignAdsState {
   ads: CampaignAd[]
   loading: boolean
-  errorCode: CampaignAdsResponse["errorCode"] | null
+  errorCode: CampaignAdsErrorCode | null
   reload: () => void
 }
 
@@ -23,37 +35,54 @@ export interface CampaignAdsState {
 export function useCampaignAds(metaCampaignId: string | null): CampaignAdsState {
   const [ads, setAds] = useState<CampaignAd[]>([])
   const [loading, setLoading] = useState(Boolean(metaCampaignId))
-  const [errorCode, setErrorCode] = useState<CampaignAdsResponse["errorCode"] | null>(null)
+  const [errorCode, setErrorCode] = useState<CampaignAdsErrorCode | null>(null)
   const [nonce, setNonce] = useState(0)
 
   const reload = useCallback(() => setNonce((n) => n + 1), [])
 
   useEffect(() => {
     if (!metaCampaignId) {
-      setAds([]); setLoading(false); setErrorCode(null)
+      setAds([])
+      setLoading(false)
+      setErrorCode(null)
       return
     }
+
     let cancelled = false
-    setLoading(true); setErrorCode(null)
+    setLoading(true)
+    setErrorCode(null)
+
     ;(async () => {
       try {
         const token = await auth.currentUser?.getIdToken()
         if (!token) throw new Error("not_signed_in")
+
         const res = await fetch(
           `/api/meta/campaign-ads?metaCampaignId=${encodeURIComponent(metaCampaignId)}`,
-          { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" },
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          },
         )
+
         const body = (await res.json().catch(() => ({}))) as CampaignAdsResponse
         if (cancelled) return
+
         setAds(body.ads ?? [])
         setErrorCode(body.ok ? null : (body.errorCode ?? "graph_error"))
       } catch {
-        if (!cancelled) { setAds([]); setErrorCode("graph_error") }
+        if (!cancelled) {
+          setAds([])
+          setErrorCode("graph_error")
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
     })()
-    return () => { cancelled = true }
+
+    return () => {
+      cancelled = true
+    }
   }, [metaCampaignId, nonce])
 
   return { ads, loading, errorCode, reload }
