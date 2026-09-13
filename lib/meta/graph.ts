@@ -463,22 +463,26 @@ export interface GraphAdWithCreative {
   status?: string
   adset_id?: string
   campaign_id?: string
+  /** Ad account that owns the ad, WITHOUT the `act_` prefix. */
+  account_id?: string
   creative?: GraphAdCreative
 }
 
 /**
  * One ad with its creative expanded, everything the in-app preview needs in
- * ONE request. `campaign_id` is included so the caller can prove the ad
- * really belongs to the campaign it was asked for — the tenant check.
+ * ONE request. `campaign_id` and `account_id` are included so the caller can
+ * prove the ad belongs to the campaign it was asked for AND to the ad account
+ * that workspace has connected — the tenant checks.
  *
- * Read-only. Needs `ads_read`.
+ * Read-only. Uses the single global token like every other call in this
+ * module; see `getMetaAccessToken`.
  */
 export const getAdWithCreative = (adId: string, o?: GraphClientOptions) =>
   graphGet<GraphAdWithCreative>(
     encodeURIComponent(adId),
     {
       fields: [
-        "id", "name", "effective_status", "status", "adset_id", "campaign_id",
+        "id", "name", "effective_status", "status", "adset_id", "campaign_id", "account_id",
         "creative{id,name,object_type,title,body,link_url,call_to_action_type,"
           + "image_url,thumbnail_url,video_id,effective_object_story_id,"
           + "object_story_spec,asset_feed_spec}",
