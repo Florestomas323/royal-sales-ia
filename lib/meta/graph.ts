@@ -361,9 +361,12 @@ export const getLeadForms = (pageId: string, o?: GraphClientOptions) =>
  *
  * Read-only, like the rest of this module. Includes paused and archived ads:
  * the caller decides what to show, and hiding them here would make a campaign
- * look empty right after someone pauses it. `preview_shareable_link` is asked
- * for in the same call — Meta returns it when the ad has one, and when it does
- * not there is simply no link, never a constructed one.
+ * look empty right after someone pauses it.
+ *
+ * ONLY core Ad fields are requested. Meta fails the WHOLE request with error
+ * 100 when one field is not readable — so asking for an optional extra here
+ * would mean a single unsupported field hides every ad. The preview link is
+ * fetched separately, per ad, by `getAdPreviewLink`.
  *
  * Needs `ads_read` on the ad account.
  */
@@ -374,10 +377,23 @@ export const getCampaignAds = (campaignId: string, o?: GraphClientOptions) =>
       fields: [
         "id", "name", "status", "effective_status",
         "adset_id", "campaign_id", "adset{id,name}",
-        "creative{id,effective_object_story_id}",
-        "preview_shareable_link",
       ].join(","),
       limit: "100",
     },
+    o,
+  )
+
+/**
+ * Shareable preview link of ONE ad, in its own request.
+ *
+ * Isolated on purpose: if `preview_shareable_link` is not readable for this
+ * ad — or not supported by the API version in use — only this call fails and
+ * the ad still appears in the list without a button. The caller treats any
+ * failure as "no link", never as an error worth surfacing.
+ */
+export const getAdPreviewLink = (adId: string, o?: GraphClientOptions) =>
+  graphGet<{ id: string; preview_shareable_link?: string }>(
+    encodeURIComponent(adId),
+    { fields: "preview_shareable_link" },
     o,
   )

@@ -13,11 +13,28 @@ export interface CampaignAd {
   statusKind: AdStatusKind
   adSetId: string | null
   adSetName: string | null
-  /** Public link to the ad, or null. Only ever a URL Meta itself supplied. */
+  /**
+   * Public link to the ad, or null. Only ever a URL Meta itself supplied,
+   * filled in by a SEPARATE request after the list already loaded.
+   */
   url: string | null
 }
 
 export type AdStatusKind = "active" | "paused" | "archived" | "other"
+
+/**
+ * Why the ads could not be listed. Kept distinct so a failure can be
+ * diagnosed from the UI and the logs instead of guessed at: a missing scope
+ * and an expired token need different fixes.
+ */
+export type CampaignAdsErrorCode =
+  | "not_linked"
+  | "no_ad_account"
+  | "missing_ads_read"
+  | "meta_auth_error"
+  | "meta_permission_error"
+  | "meta_graph_error"
+  | "forbidden"
 
 /**
  * Meta reports many statuses; these are the ones that mean the same thing to
