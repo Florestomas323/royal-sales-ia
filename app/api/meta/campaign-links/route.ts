@@ -1,177 +1,172 @@
 import { NextResponse } from "next/server"
-import { getAdminDb, isAdminNotConfigured } from "@/lib/firebase/admin"
-import { authenticateRequest, canAccessWorkspace } from "@/lib/firebase/server-auth"
-import { getCampaignLink } from "@/lib/meta/campaign-links"
-import { readMetaConnection } from "@/lib/meta/connection-store"
-import { getAdPreviewLink, getAdSetName, getCampaignAds, type GraphFailure } from "@/lib/meta/graph"
-import { normalizeAd, type CampaignAd, type CampaignAdsErrorCode } from "@/lib/meta/ads"
+import { getAdminDb } from "@/lib/firebase/admin"
+import {
+  authenticateRequest,
+  canAccessWorkspace,
+  canManageCampaignLinks,
+} from "@/lib/firebase/server-auth"
+import {
+  deleteCampaignLink,
+  ensureLocalCampaign,
+  listCampaignLinks,
+  upsertCampaignLink,
+} from "@/lib/meta/campaign-links"
+import type { LeadType, MetaCampaignLink } from "@/types"
 
+/**
+ * Campaign → workspace ownership links.
+ *
+ *   GET    /api/meta/campaign-links            → links the caller may see
+ *   POST   /api/meta/campaign-links            → assign / reassign a campaign
+ *   DELETE /api/meta/campaign-links?campaignId → remove an assignment
+ *
+ * The workspace in the body is NEVER trusted blindly: it is checked against
+ * `memberships/{uid}` on the server.
+ *
+ * Reading  → `canAccessWorkspace(user, ws, false)` (any member of the workspace).
+ * Writing  → `canManageCampaignLinks(user, ws)`: super_admin anywhere,
+ *            client_admin only in their own workspace. manager, sales_rep and
+ *            viewer are read-only here, even though `manager` may write other
+ *            resources — this one decides where leads land.
+ */
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-export interface CampaignAdsResponse {
-  ok: boolean
-  ads: CampaignAd[]
-  errorCode?: CampaignAdsErrorCode
-  /** Safe technical detail for diagnosis. Never a token or a secret. */
-  detail?: string
+export interface CampaignLinksResponse {
+  links: MetaCampaignLink[]
 }
 
-/**
- * Ads of ONE Meta campaign, read live from the Graph API.
- *
- * Server-only: the access token lives in the server environment and never
- * reaches the browser. Isolation is enforced twice — the caller must have
- * access to the workspace AND the campaign must be linked to that same
- * workspace. Reuses the existing integration; no parallel one.
- *
- * Order matters: the ad LIST loads first, with minimum safe fields. Ad set
- * names and preview links are separate, optional requests afterwards — a
- * failure in either leaves the ads on screen without that extra.
- */
-
-/** Where execution reached. Reported on failure so a crash is locatable. */
-type Stage =
-  | "auth"
-  | "campaign_link"
-  | "workspace_access"
-  | "meta_connection"
-  | "fetch_ads"
-  | "normalize_ads"
-  | "fetch_previews"
-
-/** Structured, secret-free log line. */
-function logFailure(detail: {
-  stage: Stage
-  campaignId: string
-  workspaceId: string | null
-  errorName: string
-  errorMessage: string
-}) {
-  console.error("[meta/campaign-ads]", JSON.stringify(detail))
-}
-
-/** Maps the Graph client's own classification to what the UI reports. */
-function errorCodeFor(failure: GraphFailure): CampaignAdsErrorCode {
-  switch (failure.kind) {
-    case "not_configured":
-      return "missing_ads_read"
-    case "auth":
-      return "meta_auth_error"
-    case "permission":
-      return "meta_permission_error"
-    default:
-      return "meta_graph_error"
-  }
+function isLeadType(v: unknown): v is LeadType {
+  return v === "sales" || v === "recruiting"
 }
 
 export async function GET(request: Request) {
-  // Tracks how far we got, so an unexpected throw says WHERE it happened.
-  let stage: Stage = "auth"
-  let campaignId = ""
-  let workspaceId: string | null = null
+  const auth = await authenticateRequest(request)
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-  try {
-    const auth = await authenticateRequest(request)
-    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
+  const isSuperAdmin = auth.user.membership.role === "super_admin"
+  const requested = new URL(request.url).searchParams.get("workspaceId")?.trim() || null
 
-    const url = new URL(request.url)
-    // This is `Campaign.externalId` — the Meta campaign id the client sends,
-    // never the local Firestore document id.
-    campaignId = url.searchParams.get("metaCampaignId")?.trim() ?? ""
-    if (!campaignId) return NextResponse.json({ error: "missing_campaign" }, { status: 400 })
-
-    const fail = (errorCode: CampaignAdsErrorCode, detail?: string, status = 200) =>
-      NextResponse.json(
-        { ok: false, ads: [], errorCode, ...(detail ? { detail } : {}) } satisfies CampaignAdsResponse,
-        { status },
-      )
-
-    const db = getAdminDb()
-
-    stage = "campaign_link"
-    const link = await getCampaignLink(db, campaignId)
-    if (!link || !link.active) {
-      logFailure({ stage, campaignId, workspaceId, errorName: "not_linked", errorMessage: "campaign has no active workspace link" })
-      return fail("not_linked")
-    }
-    workspaceId = link.workspaceId
-
-    stage = "workspace_access"
-    // The campaign's OWN workspace decides, never one the caller supplies.
-    if (!canAccessWorkspace(auth.user, link.workspaceId, false)) {
-      logFailure({ stage, campaignId, workspaceId, errorName: "forbidden", errorMessage: "caller cannot access this workspace" })
-      return fail("forbidden", undefined, 403)
-    }
-
-    stage = "meta_connection"
-    const conn = await readMetaConnection(db, link.workspaceId)
-    if (!conn?.adAccount?.id) {
-      logFailure({ stage, campaignId, workspaceId, errorName: "no_ad_account", errorMessage: "no ad account selected" })
-      return fail("no_ad_account")
-    }
-
-    // ---- 1. The list. Minimum safe fields; nothing optional can hide it.
-    stage = "fetch_ads"
-    const result = await getCampaignAds(campaignId)
-    if (!result.ok) {
-      logFailure({
-        stage,
-        campaignId,
-        workspaceId,
-        errorName: result.kind,
-        errorMessage: `${result.detail}${result.message ? ` — ${result.message}` : ""}`,
-      })
-      return fail(errorCodeFor(result), `${result.kind} at ${stage}: ${result.detail}`)
-    }
-
-    stage = "normalize_ads"
-    const ads = (result.data.data ?? []).map(normalizeAd)
-
-    // ---- 2. Extras. Every failure below is swallowed on purpose: the ads
-    //         are already loaded and must stay on screen.
-    stage = "fetch_previews"
-    await Promise.all([
-      ...ads.map(async (ad) => {
-        try {
-          const preview = await getAdPreviewLink(ad.id)
-          if (preview.ok) {
-            ad.url = normalizeAd({ id: ad.id, preview_shareable_link: preview.data.preview_shareable_link }).url
-          }
-        } catch {
-          // No link for this ad. Not worth failing the response over.
-        }
-      }),
-      ...[...new Set(ads.map((a) => a.adSetId).filter((v): v is string => Boolean(v)))].map(async (adSetId) => {
-        try {
-          const res = await getAdSetName(adSetId)
-          if (res.ok && res.data.name) {
-            for (const ad of ads) if (ad.adSetId === adSetId) ad.adSetName = res.data.name
-          }
-        } catch {
-          // The ad keeps showing its ad set id.
-        }
-      }),
-    ])
-
-    return NextResponse.json({ ok: true, ads } satisfies CampaignAdsResponse)
-  } catch (err) {
-    if (isAdminNotConfigured(err)) {
-      return NextResponse.json({ error: "server_not_configured" }, { status: 503 })
-    }
-    const errorName = err instanceof Error ? err.name : typeof err
-    const errorMessage = err instanceof Error ? err.message : String(err)
-    logFailure({ stage, campaignId, workspaceId, errorName, errorMessage })
-    // The real reason, surfaced instead of a bare 500: the whole point is
-    // that the next failure names itself.
-    return NextResponse.json(
-      {
-        ok: false,
-        ads: [],
-        errorCode: "meta_graph_error",
-        detail: `unexpected at ${stage}: ${errorName}: ${errorMessage}`,
-      } satisfies CampaignAdsResponse,
-      { status: 200 },
-    )
+  // Super admin may list everything (requested === null) or one workspace.
+  const scope = isSuperAdmin ? requested : auth.user.membership.workspaceId
+  if (!isSuperAdmin && !scope) return NextResponse.json({ error: "no_workspace" }, { status: 403 })
+  if (scope && !canAccessWorkspace(auth.user, scope, false)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 })
   }
+
+  const db = getAdminDb()
+  // Links assigned before the local mirror existed carry `campaignId: null`,
+  // so Campañas showed nothing while Media Buyer worked (it reads the link,
+  // not the local document). Reconcile them here, where the bridge already
+  // runs: find-or-create the mirror and store its id. Idempotent — a link
+  // that already points somewhere is left untouched — and it never reads or
+  // writes anything belonging to Meta itself.
+  const links = await reconcileLocalCampaigns(db, await listCampaignLinks(db, scope))
+  const body: CampaignLinksResponse = { links }
+  return NextResponse.json(body)
+}
+
+interface UpsertBody {
+  metaCampaignId?: string
+  workspaceId?: string
+  objective?: string
+  active?: boolean
+  metaCampaignName?: string | null
+  adAccountId?: string | null
+}
+
+export async function POST(request: Request) {
+  const auth = await authenticateRequest(request)
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
+  let body: UpsertBody
+  try {
+    body = (await request.json()) as UpsertBody
+  } catch {
+    return NextResponse.json({ error: "invalid_body" }, { status: 400 })
+  }
+
+  const metaCampaignId = body.metaCampaignId?.trim()
+  const workspaceId = body.workspaceId?.trim()
+  if (!metaCampaignId || !workspaceId) return NextResponse.json({ error: "missing_fields" }, { status: 400 })
+  if (!isLeadType(body.objective)) return NextResponse.json({ error: "invalid_objective" }, { status: 400 })
+  // Assigning ownership is a write on the TARGET workspace.
+  if (!canManageCampaignLinks(auth.user, workspaceId)) {
+    console.warn(
+      `[meta/campaign-links] denied assign role=${auth.user.membership.role} target=${workspaceId}`,
+    )
+    return NextResponse.json({ error: "forbidden" }, { status: 403 })
+  }
+
+  const link = await upsertCampaignLink(getAdminDb(), {
+    metaCampaignId,
+    workspaceId,
+    objective: body.objective,
+    active: body.active !== false,
+    metaCampaignName: body.metaCampaignName ?? null,
+    adAccountId: body.adAccountId ?? null,
+    assignedByUserId: auth.user.membership.userId,
+  })
+  console.info(
+    `[meta/campaign-links] ${metaCampaignId} → workspace=${workspaceId} objective=${link.objective} active=${link.active}`,
+  )
+  return NextResponse.json({ link })
+}
+
+export async function DELETE(request: Request) {
+  const auth = await authenticateRequest(request)
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
+  const metaCampaignId = new URL(request.url).searchParams.get("campaignId")?.trim()
+  if (!metaCampaignId) return NextResponse.json({ error: "missing_fields" }, { status: 400 })
+
+  const db = getAdminDb()
+  const existing = await listCampaignLinks(db, null).then((links) =>
+    links.find((l) => l.metaCampaignId === metaCampaignId),
+  )
+  if (!existing) return NextResponse.json({ ok: true })
+  // Only someone who could assign it may remove it.
+  if (!canManageCampaignLinks(auth.user, existing.workspaceId)) {
+    console.warn(
+      `[meta/campaign-links] denied delete role=${auth.user.membership.role} target=${existing.workspaceId}`,
+    )
+    return NextResponse.json({ error: "forbidden" }, { status: 403 })
+  }
+
+  await deleteCampaignLink(db, metaCampaignId)
+  console.info(`[meta/campaign-links] removed ${metaCampaignId}`)
+  return NextResponse.json({ ok: true })
+}
+
+/**
+ * Gives every active link a local `campaigns` document, once.
+ *
+ * A link with `campaignId` already set is skipped, so this costs one extra
+ * read only the first time and nothing afterwards. Failures are logged and
+ * swallowed: listing the links must keep working even if one mirror cannot
+ * be created.
+ */
+async function reconcileLocalCampaigns(
+  db: ReturnType<typeof getAdminDb>,
+  links: MetaCampaignLink[],
+): Promise<MetaCampaignLink[]> {
+  return Promise.all(
+    links.map(async (link) => {
+      if (!link.active || link.campaignId || !link.workspaceId) return link
+      try {
+        const campaignId = await ensureLocalCampaign(db, {
+          workspaceId: link.workspaceId,
+          metaCampaignId: link.metaCampaignId,
+          name: link.metaCampaignName ?? null,
+          objective: link.objective,
+        })
+        await db.collection("metaCampaignLinks").doc(link.metaCampaignId)
+          .set({ campaignId, updatedAt: new Date().toISOString() }, { merge: true })
+        return { ...link, campaignId }
+      } catch (err) {
+        console.error("[meta/campaign-links] reconcile failed", link.metaCampaignId, err)
+        return link
+      }
+    }),
+  )
 }
