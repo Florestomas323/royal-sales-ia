@@ -20,18 +20,26 @@ export interface AdPreviewResponse {
 /**
  * The creative behind ONE ad, for the in-app preview.
  *
- * Tenant isolation is enforced three times, in order:
+ * TOKEN: this route uses the SAME single global `META_ACCESS_TOKEN` as every
+ * other Meta call in the project — there is no per-workspace token today
+ * (`MetaConnection.secretRef` points at that env var). The workspace's
+ * connection is read for its AD ACCOUNT, not for a credential.
+ *
+ * Because one token can read several ad accounts, isolation cannot rest on
+ * the credential. It is enforced in the app, four times, in order:
  *   1. the caller is signed in;
  *   2. the campaign they name is linked to a workspace they may access;
- *   3. the ad Meta returns REALLY belongs to that campaign (`campaign_id`),
- *      so pasting an ad id from another account yields nothing.
+ *   3. the ad Meta returns REALLY belongs to that campaign (`campaign_id`);
+ *   4. that ad belongs to the ad account this workspace has connected
+ *      (`account_id`), so a campaign id pointing at another distributor's
+ *      account inside the same token cannot be previewed here.
  *
- * The Meta token never leaves the server: only the normalised preview — text
- * and media URLs Meta chose to publish — travels to the browser. Video source
- * and shareable link are optional extras; failing to get them degrades that
- * piece to "no disponible" and never fails the response.
+ * The token never leaves the server: only the normalised preview — text and
+ * media URLs Meta chose to publish — travels to the browser. Video source and
+ * shareable link are optional extras; failing to get them degrades that piece
+ * to "no disponible" and never fails the response.
  */
-type Stage = "auth" | "campaign_link" | "workspace_access" | "meta_connection" | "fetch_creative" | "verify_ad" | "extras"
+type Stage = "auth" | "campaign_link" | "workspace_access" | "meta_connection" | "fetch_creative" | "verify_ad" | "verify_account" | "extras"
 
 function log(detail: Record<string, unknown>) {
   console.error("[meta/ad-preview]", JSON.stringify(detail))
@@ -74,6 +82,8 @@ export async function GET(request: Request) {
     stage = "workspace_access"
     if (!canAccessWorkspace(auth.user, link.workspaceId, false)) return fail("forbidden", undefined, 403)
 
+    // Not a credential: the ad account this workspace works with, used below
+    // to confirm the ad really is theirs.
     stage = "meta_connection"
     const conn = await readMetaConnection(db, link.workspaceId)
     if (!conn?.adAccount?.id) return fail("no_ad_account")
@@ -91,6 +101,19 @@ export async function GET(request: Request) {
     stage = "verify_ad"
     if (result.data.campaign_id !== campaignId) {
       log({ stage, adId, campaignId, workspaceId, errorKind: "ad_not_in_campaign" })
+      return fail("forbidden", undefined, 403)
+    }
+
+    // 4. And to the ad account this workspace connected. The global token may
+    //    read several accounts, so this is what stops one distributor's
+    //    campaign id from surfacing another's creative. Only checked when Meta
+    //    actually returned `account_id`: an absent field is not proof of
+    //    anything, and refusing on it would break previews for no gain.
+    stage = "verify_account"
+    const adAccount = normalizeAccountId(result.data.account_id)
+    const connAccount = normalizeAccountId(conn.adAccount.id)
+    if (adAccount && connAccount && adAccount !== connAccount) {
+      log({ stage, adId, campaignId, workspaceId, errorKind: "ad_account_mismatch" })
       return fail("forbidden", undefined, 403)
     }
 
@@ -135,4 +158,11 @@ function safeUrl(v: string | undefined): string | null {
   } catch {
     return null
   }
+}
+
+/** Meta reports the account with and without the `act_` prefix; compare bare. */
+function normalizeAccountId(v: string | undefined | null): string | null {
+  const s = (v ?? "").trim()
+  if (!s) return null
+  return s.startsWith("act_") ? s.slice(4) : s
 }
