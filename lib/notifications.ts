@@ -52,6 +52,69 @@ export function messageFor(lead: Pick<Lead, "name" | "source">, form: string | n
 }
 
 /** The document written for one recipient. `id` is assigned by the writer. */
+/**
+ * THE id of a new-lead notification: one per lead per recipient, forever.
+ *
+ * Both creation paths — the client batch in lib/firebase/leads.ts and the
+ * server batch in lib/notifications/server.ts — write to this id, so a lead
+ * that somehow goes through both produces ONE document instead of two. A
+ * repeated trigger overwrites nothing: the write is a create that the Rules
+ * reject on an existing doc, or a set that lands on the same id.
+ *
+ * Firestore ids may not contain "/", and lead and user ids never do.
+ */
+export function newLeadNotificationId(leadId: string, userId: string): string {
+  return `new_lead__${leadId}__${userId}`
+}
+
+/**
+ * The key that identifies ONE logical event, used to collapse the duplicates
+ * already in Firestore from before the deterministic id existed.
+ */
+export function notificationKey(
+  n: Pick<AppNotification, "type" | "leadId" | "userId">,
+): string {
+  return `${n.type}__${n.leadId}__${n.userId}`
+}
+
+/**
+ * Collapses historical duplicates into one logical row.
+ *
+ * The newest copy supplies what is shown. If ANY copy is unread the logical
+ * notification counts as unread — otherwise a stale duplicate would keep the
+ * badge lit with nothing to open. `copies` carries every document id so
+ * marking one read can mark them all.
+ */
+export interface LogicalNotification extends AppNotification {
+  /** Ids of every document behind this row, newest first. */
+  copies: string[]
+}
+
+export function dedupeNotifications(items: AppNotification[]): LogicalNotification[] {
+  const byKey = new Map<string, AppNotification[]>()
+  for (const n of items) {
+    const key = notificationKey(n)
+    const list = byKey.get(key)
+    if (list) list.push(n)
+    else byKey.set(key, [n])
+  }
+  const rows: LogicalNotification[] = []
+  for (const group of byKey.values()) {
+    // Newest first: its content is what the row shows.
+    const sorted = [...group].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""))
+    const newest = sorted[0]
+    const anyUnread = sorted.some((n) => !n.read)
+    rows.push({
+      ...newest,
+      // Unread wins: any copy still unread keeps the row unread.
+      read: !anyUnread,
+      readAt: anyUnread ? null : newest.readAt,
+      copies: sorted.map((n) => n.id),
+    })
+  }
+  return sortNotifications(rows) as LogicalNotification[]
+}
+
 export function buildNotification(
   lead: Pick<Lead, "id" | "workspaceId" | "leadType" | "name" | "source">,
   form: string | null | undefined,
