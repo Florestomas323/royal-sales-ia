@@ -302,7 +302,10 @@ export function computeCampaignPerformance(
 
 /** Leads created per day inside the period, for the trend chart. */
 export function computeLeadTrend(leads: Lead[], period: Period, now = new Date()): { date: string; leads: number }[] {
-  const from = period.from ?? earliestCreatedAt(leads, now)
+  // The chart's own start date must ignore the trash too: an archived lead
+  // created months ago would stretch the axis with days nobody counted.
+  const active = activeLeads(leads)
+  const from = period.from ?? earliestCreatedAt(active, now)
   if (!from) return []
   const days: { date: string; leads: number }[] = []
   const cursor = new Date(from)
@@ -316,7 +319,7 @@ export function computeLeadTrend(leads: Lead[], period: Period, now = new Date()
     cursor.setDate(cursor.getDate() + 1)
   }
   const index = new Map(days.map((d, i) => [d.date, i]))
-  for (const lead of activeLeads(leads)) {
+  for (const lead of active) {
     const day = lead.createdAt?.slice(0, 10)
     const i = day ? index.get(day) : undefined
     if (i !== undefined) days[i].leads += 1

@@ -581,6 +581,7 @@ export const t = {
       archive: 'Eliminar prospecto',
       restore: 'Restaurar',
       archived: 'En papelera',
+      archivedReadOnly: 'Este prospecto está en la papelera. Restáuralo para volver a trabajarlo.',
       archivedAt: (when: string) => `Eliminado ${when}`,
       archivedBy: (who: string, when: string) => `Eliminado por ${who} ${when}`,
       archiveTitle: '¿Eliminar este prospecto?',

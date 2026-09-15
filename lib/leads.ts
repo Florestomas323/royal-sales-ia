@@ -246,8 +246,16 @@ export interface LeadEditorContext {
  * Who may edit a lead. Mirrors `match /leads … allow update`:
  *   super_admin → any; client_admin / manager → their workspace;
  *   sales_rep   → only leads assigned to them; viewer → never.
+ *
+ * A lead in the TRASH is read-only for everyone, super admin included: the
+ * only action it accepts is being restored. Putting this here — rather than
+ * in each screen — means no surface can forget it.
  */
-export function canEditLead(ctx: LeadEditorContext, lead: Pick<Lead, "workspaceId" | "assignedToId">): boolean {
+export function canEditLead(
+  ctx: LeadEditorContext,
+  lead: Pick<Lead, "workspaceId" | "assignedToId"> & Partial<Pick<Lead, "archived">>,
+): boolean {
+  if (!isActiveLead(lead)) return false
   if (ctx.isSuperAdmin) return true
   if (ctx.workspaceId !== lead.workspaceId) return false
   if (ctx.role === "client_admin" || ctx.role === "manager") return true
@@ -323,7 +331,7 @@ export function canMoveLeadTo(
   lead: Pick<Lead, "workspaceId" | "assignedToId" | "leadType" | "stage" | "archived">,
   stage: PipelineStage,
 ): boolean {
-  if (!isActiveLead(lead)) return false
+  // canEditLead already refuses an archived lead.
   if (!canEditLead(ctx, lead)) return false
   if (!isStageOf(leadTypeOf(lead), stage)) return false
   return lead.stage !== stage
