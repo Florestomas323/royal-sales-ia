@@ -9,7 +9,7 @@ import { PlatformMark } from "@/components/shared/platform-badge"
 import { LeadTypeBadge } from "@/components/shared/lead-type-badge"
 import { Badge } from "@/components/ui/badge"
 import { PLATFORM_LABELS } from "@/lib/constants"
-import { displayStage, leadAmount, leadTypeOf, telHref, whatsappHref, whatsappOpener } from "@/lib/leads"
+import { displayStage, isActiveLead, leadAmount, leadTypeOf, telHref, whatsappHref, whatsappOpener } from "@/lib/leads"
 import { formatCurrency, formatRelativeTime, initials } from "@/lib/format"
 import { recordContact } from "@/lib/firebase/leads"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
@@ -41,9 +41,14 @@ export function LeadCard({
   const contacting = useRef(false)
   const type = leadTypeOf(lead)
   const tel = telHref(lead.phone)
+  /** Tapping the card still opens the read-only sheet; only actions are off. */
+  const archived = !isActiveLead(lead)
 
   /** Same contract as the detail sheet: record without blocking navigation. */
   function handleContact(kind: "whatsapp" | "call") {
+    // A lead in the trash records nothing: the buttons below are already
+    // inert, and this guards a stale click or a lead archived elsewhere.
+    if (!isActiveLead(lead)) return
     if (!membership?.userId || !role || contacting.current) return
     contacting.current = true
     void recordContact(lead, kind, { userId: membership.userId, role })
@@ -138,13 +143,20 @@ export function LeadCard({
       {/* Acciones rápidas — enlaces reales, no botones decorativos */}
       <div className="grid grid-cols-2 gap-2">
         <QuickAction
-          href={wa}
+          href={archived ? null : wa}
+          disabledReason={archived ? t.leads.detail.archivedReadOnly : undefined}
           icon={MessageCircle}
           label={t.leads.detail.whatsapp}
           primary
           onActivate={() => handleContact("whatsapp")}
         />
-        <QuickAction href={tel} icon={Phone} label={t.leads.detail.call} onActivate={() => handleContact("call")} />
+        <QuickAction
+          href={archived ? null : tel}
+          disabledReason={archived ? t.leads.detail.archivedReadOnly : undefined}
+          icon={Phone}
+          label={t.leads.detail.call}
+          onActivate={() => handleContact("call")}
+        />
       </div>
     </div>
   )
@@ -156,12 +168,15 @@ function QuickAction({
   label,
   primary = false,
   onActivate,
+  disabledReason,
 }: {
   href: string | null
   icon: typeof Phone
   label: string
   primary?: boolean
   onActivate?: () => void
+  /** Shown instead of "no phone" when the action is off for another reason. */
+  disabledReason?: string
 }) {
   const base =
     "flex h-11 items-center justify-center gap-1.5 rounded-lg text-sm font-medium transition-colors"
@@ -169,7 +184,7 @@ function QuickAction({
     return (
       <span
         aria-disabled="true"
-        title={t.leads.detail.noPhone}
+        title={disabledReason ?? t.leads.detail.noPhone}
         className={cn(base, "cursor-not-allowed border border-dashed text-muted-foreground/60")}
       >
         <Icon className="size-4" />

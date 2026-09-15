@@ -148,11 +148,21 @@ export function LeadsView({
     if (fresh && fresh !== selected) setSelected(fresh)
   }, [leads, selected])
 
+  /**
+   * The list this view works on. Papelera is an EXCLUSIVE view of deleted
+   * leads, not the active list plus them: mixing both made it impossible to
+   * see what is actually in the trash. Every count and filter option below
+   * derives from this same list, so the header always describes what is
+   * on screen.
+   */
+  const scope = useMemo(
+    () => leads.filter((l) => (showArchived ? !isActiveLead(l) : isActiveLead(l))),
+    [leads, showArchived],
+  )
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const rows = leads.filter((l) => {
-      // Archived leads are kept in Firestore but hidden unless asked for.
-      if (!showArchived && l.archived === true) return false
+    const rows = scope.filter((l) => {
       // displayStage traduce un estado retirado al que se muestra hoy, así
       // que un prospecto antiguo sigue apareciendo al filtrar.
       if (stage !== "all" && displayStage(l) !== stage) return false
@@ -166,18 +176,19 @@ export function LeadsView({
       if (sort === "score") return b.score - a.score
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     })
-  }, [leads, query, stage, platform, temp, sort, showArchived])
+  }, [scope, query, stage, platform, temp, sort])
 
-  const archivedCount = useMemo(() => leads.filter((l) => l.archived === true).length, [leads])
+  const archivedCount = useMemo(() => leads.filter((l) => !isActiveLead(l)).length, [leads])
 
   function openLead(lead: Lead) {
     setSelected(lead)
     setOpen(true)
   }
 
-  // Derived options come from the ACTIVE list: a platform that only exists on
-  // an archived lead is not a filter anybody can act on.
-  const platforms = Array.from(new Set(leads.filter(isActiveLead).map((l) => l.source)))
+  // Filter options describe the list on screen: the active leads normally,
+  // the deleted ones inside Papelera. An archived lead never contributes an
+  // option to the active view.
+  const platforms = Array.from(new Set(scope.map((l) => l.source)))
 
   return (
     <div className="flex flex-col gap-4">
@@ -325,7 +336,8 @@ export function LeadsView({
       <div className="flex flex-wrap items-center justify-between gap-2 px-1">
         <p className="text-sm text-muted-foreground">
           <span className="font-medium text-foreground">{filtered.length}</span>{" "}
-          {t.leads.count(filtered.length, leads.length - (showArchived ? 0 : archivedCount))}
+          {/* Denominator is the list on screen: active leads, or the trash. */}
+          {t.leads.count(filtered.length, scope.length)}
         </p>
         {archivedCount > 0 && (
           <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-muted-foreground">

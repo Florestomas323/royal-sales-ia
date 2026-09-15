@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { BadgeDollarSign, Phone, Mail, MessageCircle, CalendarPlus, Target, Clock, ArrowRightLeft, Pencil, Archive, ArchiveRestore, ExternalLink } from "lucide-react"
 import type { Lead, LeadType, PipelineStage } from "@/types"
@@ -107,6 +107,20 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
    * this, and the handlers guard again so a stale click cannot slip through.
    */
   const archived = !isActiveLead(lead)
+
+  /**
+   * The lead can be archived from ANOTHER session while a dialog is open
+   * here. Firestore pushes the change, `archived` flips, and every
+   * operational dialog closes itself — so nothing that writes stays
+   * reachable. Restaurar is not a dialog and keeps working.
+   */
+  useEffect(() => {
+    if (!archived) return
+    setEditOpen(false)
+    setScheduleOpen(false)
+    setSaleOpen(false)
+    setClosingStage(null)
+  }, [archived])
   // Trash is an admin decision: Telemarketing edits its leads, never removes them.
   const canDelete = canDeleteLead(editor, lead)
   const stageOptions = PIPELINES[type].stages
@@ -711,11 +725,11 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
 
       {canEdit && <EditLeadDialog lead={lead} open={editOpen} onOpenChange={setEditOpen} />}
 
-      {SALES_FLOW_ENABLED && canRegisterSale(lead) && (
+      {SALES_FLOW_ENABLED && canRegisterSale(lead) && !archived && (
         <RegisterSaleDialog lead={lead} open={saleOpen} onOpenChange={setSaleOpen} />
       )}
 
-      {canBook && (
+      {canBook && !archived && (
         <ScheduleDialog
           target={{
             leadId: lead.id,
@@ -731,7 +745,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
 
       <CloseSaleDialog
         lead={lead}
-        open={closingStage !== null}
+        open={closingStage !== null && !archived}
         onOpenChange={(open) => !open && setClosingStage(null)}
         busy={changingStage}
         onConfirm={(amount) => {
