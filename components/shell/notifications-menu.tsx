@@ -31,7 +31,7 @@ import type { AppNotification } from "@/types"
 export function NotificationsMenu() {
   const router = useRouter()
   const { membership, isSuperAdmin, workspaceId, workspaces } = useWorkspace()
-  const { leads } = useLeads("all")
+  const { leads, loading: leadsLoading } = useLeads("all")
   const { items, error } = useNotifications({
     userId: membership?.userId ?? null,
     isSuperAdmin,
@@ -51,7 +51,12 @@ export function NotificationsMenu() {
     () => new Set(leads.filter((l) => !isActiveLead(l)).map((l) => l.id)),
     [leads],
   )
-  const live = useMemo(() => items.filter((n) => !archivedLeadIds.has(n.leadId)), [items, archivedLeadIds])
+  // Nothing is shown or counted until the leads are known: otherwise the badge
+  // would briefly include a notification about an archived lead.
+  const live = useMemo(
+    () => (leadsLoading ? [] : items.filter((n) => !archivedLeadIds.has(n.leadId))),
+    [items, archivedLeadIds, leadsLoading],
+  )
   const unread = useMemo(() => unreadCount(live), [live])
   const recent = useMemo(() => live.slice(0, 30), [live])
   const workspaceName = (id: string) => workspaces.find((w) => w.id === id)?.name ?? id
