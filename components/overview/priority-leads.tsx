@@ -11,7 +11,7 @@ import { PlatformMark } from "@/components/shared/platform-badge"
 import { LeadTypeBadge } from "@/components/shared/lead-type-badge"
 import { LeadDetailSheet } from "@/components/leads/lead-detail-sheet"
 import { useLeads } from "@/lib/firebase/leads"
-import { isOpen, leadTypeOf } from "@/lib/leads"
+import { isActiveLead, isOpen, leadTypeOf } from "@/lib/leads"
 import { t } from "@/lib/i18n"
 import type { Lead } from "@/types"
 
@@ -29,6 +29,8 @@ export function PriorityLeads() {
   const [selected, setSelected] = useState<Lead | null>(null)
 
   const priority = leads
+    // A lead in the trash is not a priority: it takes part in nothing.
+    .filter(isActiveLead)
     .filter(isOpen)
     .sort((a, b) => b.score - a.score)
     .slice(0, 6)
