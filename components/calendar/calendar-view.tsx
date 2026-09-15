@@ -31,7 +31,7 @@ export function CalendarView() {
   const router = useRouter()
   const { workspaceId, isSuperAdmin, role, membership } = useWorkspace()
   const { appointments, loading, error } = useAppointments()
-  const { leads } = useLeads("all")
+  const { leads, loading: leadsLoading } = useLeads("all")
   const scoped = useUsersForWorkspace(workspaceId)
   const ambient = useUsers()
   const users = workspaceId ? scoped.users : ambient.users
@@ -88,7 +88,9 @@ export function CalendarView() {
   const readableLeadIds = useMemo(() => new Set(leads.filter(isActiveLead).map((l) => l.id)), [leads])
 
   if (error) return <DataErrorState error={error} />
-  if (loading) {
+  // Wait for the leads too: deciding before they arrive would flash the
+  // appointment of an archived lead and then remove it.
+  if (loading || leadsLoading) {
     return (
       <div className="flex flex-col gap-3">
         {Array.from({ length: 4 }).map((_, i) => (
@@ -98,7 +100,9 @@ export function CalendarView() {
     )
   }
 
-  const owners = users.filter((u) => appointments.some((a) => a.assignedToId === u.id))
+  // Owners come from the VISIBLE appointments: an archived lead's meeting must
+  // not put a person in the filter with nothing behind them.
+  const owners = users.filter((u) => visible.some((a) => a.assignedToId === u.id))
 
   return (
     <div className="flex flex-col gap-4">
