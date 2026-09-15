@@ -1,6 +1,6 @@
 import type { Lead, LeadType } from "@/types"
 import type { InsightsCampaign } from "@/app/api/meta/insights/route"
-import { hasClosedAmount, leadTypeOf } from "@/lib/leads"
+import { hasClosedAmount, leadTypeOf, isActiveLead } from "@/lib/leads"
 import type { Period } from "@/lib/metrics"
 
 /**
@@ -172,7 +172,7 @@ const pct = (n: number) => `${(n * 100).toFixed(0)}%`
 export function leadsForCampaign(leads: Lead[], campaign: Pick<InsightsCampaign, "metaCampaignId" | "localCampaignId" | "workspaceId">): Lead[] {
   return leads.filter(
     (l) =>
-      l.archived !== true &&
+      isActiveLead(l) &&
       l.workspaceId === campaign.workspaceId &&
       (l.attribution?.externalCampaignId === campaign.metaCampaignId ||
         (campaign.localCampaignId !== null && l.campaignId === campaign.localCampaignId)),
@@ -233,7 +233,7 @@ export function analyzeCampaignPerformance(
   options: { period: Period; linkedWithoutData?: number },
 ): Analysis {
   const { period } = options
-  const active = leads.filter((l) => l.archived !== true)
+  const active = leads.filter(isActiveLead)
 
   // 1. Per-campaign metrics. CRM leads are counted by `createdAt` inside the
   // period; sales and revenue by `closedAt` — the same rule as Phase F.
