@@ -17,7 +17,7 @@ import { markAllNotificationsRead, markNotificationRead, useNotifications } from
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { useLeads } from "@/lib/firebase/leads"
 import { isActiveLead } from "@/lib/leads"
-import { unreadCount } from "@/lib/notifications"
+import { dedupeNotifications, unreadCount, type LogicalNotification } from "@/lib/notifications"
 import { formatRelativeTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { t } from "@/lib/i18n"
@@ -53,18 +53,25 @@ export function NotificationsMenu() {
   )
   // Nothing is shown or counted until the leads are known: otherwise the badge
   // would briefly include a notification about an archived lead.
+  /**
+   * One row per logical event. Documents created before the deterministic id
+   * existed can be duplicated in Firestore; they are collapsed here — newest
+   * copy for the content, unread if ANY copy is unread — so the list shows one
+   * row and the badge counts the event once. Nothing is deleted.
+   */
   const live = useMemo(
-    () => (leadsLoading ? [] : items.filter((n) => !archivedLeadIds.has(n.leadId))),
+    () => (leadsLoading ? [] : dedupeNotifications(items.filter((n) => !archivedLeadIds.has(n.leadId)))),
     [items, archivedLeadIds, leadsLoading],
   )
   const unread = useMemo(() => unreadCount(live), [live])
   const recent = useMemo(() => live.slice(0, 30), [live])
   const workspaceName = (id: string) => workspaces.find((w) => w.id === id)?.name ?? id
 
-  async function open(n: AppNotification) {
+  async function open(n: LogicalNotification) {
     if (!n.read && !isSuperAdmin) {
       // Best-effort: navigation must not wait on the write.
-      void markNotificationRead(n.id).catch(() => {})
+      // Every historical copy, not just the one on screen.
+      void markNotificationRead(n.copies).catch(() => {})
     }
     router.push(`/leads?lead=${encodeURIComponent(n.leadId)}`)
   }
