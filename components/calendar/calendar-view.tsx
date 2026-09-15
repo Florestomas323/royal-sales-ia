@@ -66,17 +66,26 @@ export function CalendarView() {
     [leads],
   )
 
+  /**
+   * Every appointment this person may act on: the Rules already scoped the
+   * collection, and the trash is removed here. The FILTER options derive from
+   * this list, never from `visible` — otherwise picking one owner would drop
+   * every other owner from the selector and trap the person in that choice.
+   */
+  const allowed = useMemo(
+    () => appointments.filter((a) => !archivedLeadIds.has(a.leadId)),
+    [appointments, archivedLeadIds],
+  )
+
   const visible = useMemo(
     () =>
-      appointments
-        .filter((a) => !archivedLeadIds.has(a.leadId))
-        .filter(
+      allowed.filter(
         (a) =>
           matchesDateFilter(a, dateFilter) &&
           (ownerFilter === ANY || (a.assignedToId || "") === (ownerFilter === "" ? "" : ownerFilter)) &&
           (typeFilter === ANY || a.type === typeFilter),
       ),
-    [appointments, archivedLeadIds, dateFilter, ownerFilter, typeFilter],
+    [allowed, dateFilter, ownerFilter, typeFilter],
   )
 
   /**
@@ -100,9 +109,9 @@ export function CalendarView() {
     )
   }
 
-  // Owners come from the VISIBLE appointments: an archived lead's meeting must
-  // not put a person in the filter with nothing behind them.
-  const owners = users.filter((u) => visible.some((a) => a.assignedToId === u.id))
+  // From `allowed`, not `visible`: an archived lead's meeting must not put a
+  // person in the filter, and choosing an owner must not hide the rest.
+  const owners = users.filter((u) => allowed.some((a) => a.assignedToId === u.id))
 
   return (
     <div className="flex flex-col gap-4">
