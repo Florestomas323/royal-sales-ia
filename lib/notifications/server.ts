@@ -1,6 +1,6 @@
 import { getAdminDb } from "@/lib/firebase/admin"
 import { sendEmail } from "@/lib/email/send"
-import { NOTIFICATIONS, buildNotification, emailRecipients, newLeadEmail, recipientsFor } from "@/lib/notifications"
+import { NOTIFICATIONS, buildNotification, emailRecipients, newLeadEmail, newLeadNotificationId, recipientsFor } from "@/lib/notifications"
 import type { Lead, User } from "@/types"
 
 /**
@@ -27,11 +27,24 @@ export async function notifyNewLeadServer(
 
   const recipients = recipientsFor(lead, members)
   const now = new Date().toISOString()
+  // Same deterministic id as the client path. A repeated trigger must not
+  // create a second document NOR resurrect one the person already read, so
+  // each recipient is checked first and an existing doc is left untouched —
+  // its `read`, `readAt` and `createdAt` stay exactly as they are.
+  const existing = await Promise.all(
+    recipients.map((userId) => db.collection(NOTIFICATIONS).doc(newLeadNotificationId(lead.id, userId)).get()),
+  )
   const batch = db.batch()
-  for (const userId of recipients) {
-    batch.set(db.collection(NOTIFICATIONS).doc(), buildNotification(lead, form, userId, now))
-  }
-  await batch.commit()
+  let written = 0
+  recipients.forEach((userId, i) => {
+    if (existing[i].exists) return
+    batch.set(
+      db.collection(NOTIFICATIONS).doc(newLeadNotificationId(lead.id, userId)),
+      buildNotification(lead, form, userId, now),
+    )
+    written += 1
+  })
+  if (written > 0) await batch.commit()
 
   const emailed = await emailNewLeadServer(lead, form, { appUrl: opts.appUrl, members, workspaceName })
   return { notified: recipients, emailed }
