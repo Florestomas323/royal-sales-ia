@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { markAllNotificationsRead, markNotificationRead, useNotifications } from "@/lib/firebase/notifications"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
+import { useLeads } from "@/lib/firebase/leads"
+import { isActiveLead } from "@/lib/leads"
 import { unreadCount } from "@/lib/notifications"
 import { formatRelativeTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -29,13 +31,29 @@ import type { AppNotification } from "@/types"
 export function NotificationsMenu() {
   const router = useRouter()
   const { membership, isSuperAdmin, workspaceId, workspaces } = useWorkspace()
+  const { leads } = useLeads("all")
   const { items, error } = useNotifications({
     userId: membership?.userId ?? null,
     isSuperAdmin,
     workspaceId,
   })
-  const unread = useMemo(() => unreadCount(items), [items])
-  const recent = useMemo(() => items.slice(0, 30), [items])
+  /**
+   * Notifications whose lead is in the trash are dropped from the menu and
+   * from the badge: an archived lead takes part in nothing, and tapping one
+   * would open a prospect that no longer exists operationally. The documents
+   * stay in Firestore — restoring the lead simply stops hiding them, and no
+   * old notification is regenerated.
+   *
+   * A lead missing from `leads` for any OTHER reason (permissions, another
+   * workspace) is left alone; only a lead we can read AND see archived counts.
+   */
+  const archivedLeadIds = useMemo(
+    () => new Set(leads.filter((l) => !isActiveLead(l)).map((l) => l.id)),
+    [leads],
+  )
+  const live = useMemo(() => items.filter((n) => !archivedLeadIds.has(n.leadId)), [items, archivedLeadIds])
+  const unread = useMemo(() => unreadCount(live), [live])
+  const recent = useMemo(() => live.slice(0, 30), [live])
   const workspaceName = (id: string) => workspaces.find((w) => w.id === id)?.name ?? id
 
   async function open(n: AppNotification) {
@@ -71,7 +89,7 @@ export function NotificationsMenu() {
               variant="ghost"
               size="sm"
               className="h-8 gap-1 text-xs"
-              onClick={(e) => { e.preventDefault(); void markAllNotificationsRead(items) }}
+              onClick={(e) => { e.preventDefault(); void markAllNotificationsRead(live) }}
             >
               <CheckCheck className="size-3.5" />
               {t.notifications.markAllRead}

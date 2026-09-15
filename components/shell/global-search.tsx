@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { ScoreBadge } from '@/components/shared/score-badge'
 import { navSections } from './nav-config'
 import { useLeads } from '@/lib/firebase/leads'
+import { isActiveLead } from '@/lib/leads'
 import { t } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
@@ -43,7 +44,7 @@ export function GlobalSearch() {
     ? leads
         // A lead in the trash is out of every active surface, search included;
         // the trash toggle in Prospectos is the one place to find it again.
-        .filter((l) => l.archived !== true)
+        .filter(isActiveLead)
         .filter(
           (l) =>
             l.name.toLowerCase().includes(q) ||
