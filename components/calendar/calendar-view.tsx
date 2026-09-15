@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { DataErrorState } from "@/components/shared/data-error-state"
 import { useAppointments } from "@/lib/firebase/appointments"
 import { useLeads } from "@/lib/firebase/leads"
+import { isActiveLead } from "@/lib/leads"
 import { useUsersForWorkspace, useUsers } from "@/lib/firebase/collections"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { APPOINTMENT_TYPES, canManageAppointment, canSchedule, matchesDateFilter, type DateFilter } from "@/lib/appointments"
@@ -50,15 +51,32 @@ export function CalendarView() {
     return map
   }, [users])
 
+  /**
+   * Leads this person can read that are IN THE TRASH. Their appointments are
+   * hidden: an archived lead takes part in nothing, and its meeting is not an
+   * obligation any more. The document stays in Firestore, so restoring the
+   * lead brings its appointments back.
+   *
+   * Deliberately NOT the same as "lead not in `leads`": a lead absent because
+   * the role may not read it is a permissions matter, and its appointment
+   * stays visible and reschedulable as before.
+   */
+  const archivedLeadIds = useMemo(
+    () => new Set(leads.filter((l) => !isActiveLead(l)).map((l) => l.id)),
+    [leads],
+  )
+
   const visible = useMemo(
     () =>
-      appointments.filter(
+      appointments
+        .filter((a) => !archivedLeadIds.has(a.leadId))
+        .filter(
         (a) =>
           matchesDateFilter(a, dateFilter) &&
           (ownerFilter === ANY || (a.assignedToId || "") === (ownerFilter === "" ? "" : ownerFilter)) &&
           (typeFilter === ANY || a.type === typeFilter),
       ),
-    [appointments, dateFilter, ownerFilter, typeFilter],
+    [appointments, archivedLeadIds, dateFilter, ownerFilter, typeFilter],
   )
 
   /**
@@ -67,7 +85,7 @@ export function CalendarView() {
    * reschedulable — only the "Ver prospecto" link is withheld, because
    * following it would land on a lead they cannot read.
    */
-  const readableLeadIds = useMemo(() => new Set(leads.map((l) => l.id)), [leads])
+  const readableLeadIds = useMemo(() => new Set(leads.filter(isActiveLead).map((l) => l.id)), [leads])
 
   if (error) return <DataErrorState error={error} />
   if (loading) {
