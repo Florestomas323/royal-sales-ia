@@ -54,6 +54,20 @@ export function isLost(lead: Pick<Lead, "leadType" | "stage">): boolean {
   return lead.stage === PIPELINES[leadTypeOf(lead)].lost
 }
 
+/**
+ * THE definition of an active lead. A lead in the trash takes part in nothing:
+ * no list, no metric, no funnel, no agenda, no notification, no automation.
+ * The only surface that may see it is Prospectos → Papelera, which filters for
+ * the opposite explicitly.
+ *
+ * Every surface should start from this predicate — or from `activeLeads()` in
+ * lib/metrics.ts, which is just this applied to an array — so "active" means
+ * one thing across the app.
+ */
+export function isActiveLead(lead: Pick<Lead, "archived">): boolean {
+  return lead.archived !== true
+}
+
 export function isOpen(lead: Pick<Lead, "leadType" | "stage">): boolean {
   return !isWon(lead) && !isLost(lead)
 }
@@ -291,7 +305,7 @@ export function groupLeadsByStage(
   const map = {} as Record<PipelineStage, Lead[]>
   for (const stage of pipeline.stages) map[stage] = []
   for (const lead of leads) {
-    if (lead.archived === true) continue
+    if (!isActiveLead(lead)) continue
     if (leadTypeOf(lead) !== leadType) continue
     const optimistic = overrides[lead.id]
     const stage = optimistic && isStageOf(leadType, optimistic) ? optimistic : displayStage(lead)
@@ -309,7 +323,7 @@ export function canMoveLeadTo(
   lead: Pick<Lead, "workspaceId" | "assignedToId" | "leadType" | "stage" | "archived">,
   stage: PipelineStage,
 ): boolean {
-  if (lead.archived === true) return false
+  if (!isActiveLead(lead)) return false
   if (!canEditLead(ctx, lead)) return false
   if (!isStageOf(leadTypeOf(lead), stage)) return false
   return lead.stage !== stage

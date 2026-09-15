@@ -1,5 +1,5 @@
 import { PIPELINES } from "@/lib/constants"
-import { hasClosedAmount, isWon, leadTypeOf } from "@/lib/leads"
+import { hasClosedAmount, isActiveLead, isWon, leadTypeOf } from "@/lib/leads"
 import type { Lead, LeadType, PipelineStage } from "@/types"
 
 /**
@@ -81,7 +81,7 @@ export function costPer(spend: number | null, units: number): number | null {
 
 /** Active leads: archived ones never take part in metrics. */
 export function activeLeads(leads: Lead[]): Lead[] {
-  return leads.filter((l) => l.archived !== true)
+  return leads.filter(isActiveLead)
 }
 
 /** A lead counts as contacted only through a real WhatsApp / call action. */
