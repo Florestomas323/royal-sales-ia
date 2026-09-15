@@ -9,6 +9,7 @@ import { DemoRowsNotice } from "@/components/shared/demo-data-badge"
 import { useLeads } from "@/lib/firebase/leads"
 import { Skeleton } from "@/components/ui/skeleton"
 import { PIPELINES } from "@/lib/constants"
+import { isActiveLead } from "@/lib/leads"
 import { t } from "@/lib/i18n"
 import type { LeadType } from "@/types"
 
@@ -20,7 +21,7 @@ export function PipelineLive() {
   const [leadType, setLeadType] = useState<LeadType>("sales")
   const { leads, loading, error } = useLeads(leadType)
   // Archived leads are out of the funnel: neither columns nor summary numbers.
-  const active = useMemo(() => leads.filter((l) => l.archived !== true), [leads])
+  const active = useMemo(() => leads.filter(isActiveLead), [leads])
 
   return (
     <div className="flex flex-col gap-4">
