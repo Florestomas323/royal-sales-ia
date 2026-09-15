@@ -47,18 +47,35 @@ export function useNotifications(input: {
   return { items, loading, error }
 }
 
-export async function markNotificationRead(id: string): Promise<void> {
+/**
+ * Marks a logical notification read — EVERY historical copy of it.
+ *
+ * Before the deterministic id existed, one event could produce several
+ * documents. Marking only the one on screen would leave a twin unread and the
+ * badge lit with nothing left to open, so all the ids behind the row are
+ * updated together.
+ */
+export async function markNotificationRead(id: string | string[]): Promise<void> {
+  const ids = [...new Set(Array.isArray(id) ? id : [id])]
+  if (ids.length === 0) return
+  const now = new Date().toISOString()
   const batch = writeBatch(db)
-  batch.update(doc(col, id), { read: true, readAt: new Date().toISOString() })
+  for (const one of ids) batch.update(doc(col, one), { read: true, readAt: now })
   await batch.commit()
 }
 
-export async function markAllNotificationsRead(items: Pick<AppNotification, "id" | "read">[]): Promise<void> {
-  const unread = items.filter((n) => !n.read)
-  if (unread.length === 0) return
+/**
+ * "Marcar todas como leídas". Accepts logical rows, so every historical copy
+ * behind an unread row is updated — not just the one that was displayed.
+ */
+export async function markAllNotificationsRead(
+  items: (Pick<AppNotification, "id" | "read"> & { copies?: string[] })[],
+): Promise<void> {
+  const ids = [...new Set(items.filter((n) => !n.read).flatMap((n) => n.copies ?? [n.id]))]
+  if (ids.length === 0) return
   const now = new Date().toISOString()
   const batch = writeBatch(db)
-  for (const n of unread) batch.update(doc(col, n.id), { read: true, readAt: now })
+  for (const id of ids) batch.update(doc(col, id), { read: true, readAt: now })
   await batch.commit()
 }
 

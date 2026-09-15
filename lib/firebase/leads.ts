@@ -15,7 +15,7 @@ import {
   type QueryConstraint,
 } from "firebase/firestore"
 import { db } from "./client"
-import { NOTIFICATIONS, buildNotification, recipientsFor } from "@/lib/notifications"
+import { NOTIFICATIONS, buildNotification, newLeadNotificationId, recipientsFor } from "@/lib/notifications"
 import { useWorkspace } from "./workspace-context"
 import { PIPELINES } from "@/lib/constants"
 import {
@@ -428,8 +428,10 @@ export async function createLead(input: NewLeadInput) {
   if (input.notify) {
     const now = new Date().toISOString()
     for (const userId of recipientsFor({ workspaceId: input.workspaceId, assignedToId: lead.assignedToId }, input.notify)) {
+      // Deterministic id: this lead + this recipient can only ever be ONE
+      // document, whichever path creates it.
       batch.set(
-        doc(collection(db, NOTIFICATIONS)),
+        doc(db, NOTIFICATIONS, newLeadNotificationId(ref.id, userId)),
         buildNotification({ ...lead, id: ref.id }, input.attribution?.externalFormId ?? null, userId, now),
       )
     }
