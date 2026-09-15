@@ -53,6 +53,7 @@ import {
   attributionView,
   canDeleteLead,
   canEditLead,
+  isActiveLead,
   displayStage,
   leadAmount,
   leadTypeOf,
@@ -63,6 +64,7 @@ import {
 } from "@/lib/leads"
 import { formatCurrency, formatRelativeTime } from "@/lib/format"
 import { t } from "@/lib/i18n"
+import { cn } from "@/lib/utils"
 
 interface LeadDetailSheetProps {
   lead: Lead | null
@@ -89,7 +91,8 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
   const rep = usersMap[lead.assignedToId]
   const type = leadTypeOf(lead)
   const isRecruiting = type === "recruiting"
-  const canChangeType = isSuperAdmin || role === "client_admin" || role === "manager"
+  const canChangeType =
+    (isSuperAdmin || role === "client_admin" || role === "manager") && isActiveLead(lead)
   // Mirror of firestore.rules; Firestore remains the authority on every write.
   const editor = {
     role,
@@ -98,6 +101,12 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
     isSuperAdmin,
   }
   const canEdit = canEditLead(editor, lead)
+  /**
+   * A lead in the trash is read-only: view, history, attribution, past
+   * appointments and Restaurar. Every operational action below is gated on
+   * this, and the handlers guard again so a stale click cannot slip through.
+   */
+  const archived = !isActiveLead(lead)
   // Trash is an admin decision: Telemarketing edits its leads, never removes them.
   const canDelete = canDeleteLead(editor, lead)
   const stageOptions = PIPELINES[type].stages
@@ -136,6 +145,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
 
   async function handleStageChange(next: string | null, confirmedValue?: number) {
     if (!lead || !next || next === lead.stage) return
+    if (!isActiveLead(lead)) return
     // Closing a sale needs the real amount confirmed first.
     if (requiresClosedValue(lead, next as PipelineStage) && confirmedValue === undefined) {
       setClosingStage(next as PipelineStage)
@@ -187,6 +197,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
    * app is not proof of delivery, hence "iniciado".
    */
   function handleContact(kind: "whatsapp" | "call") {
+    if (!lead || !isActiveLead(lead)) return
     if (!lead || !actor || contacting) return // double-tap guard
     setContacting(true)
     void recordContact(lead, kind, actor)
@@ -196,6 +207,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
 
   async function handleChangeType() {
     if (!lead) return
+    if (!isActiveLead(lead)) return
     setChangingType(true)
     try {
       await updateLeadType(lead.id, nextType)
@@ -270,8 +282,10 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
               <Button
                 size="sm"
                 className="h-11 min-w-0 gap-1.5 sm:h-8"
-                nativeButton={false}
-                render={<a href={wa} target="_blank" rel="noopener noreferrer" />}
+                nativeButton={!archived}
+                disabled={archived}
+                title={archived ? t.leads.detail.archivedReadOnly : undefined}
+                render={archived ? undefined : <a href={wa} target="_blank" rel="noopener noreferrer" />}
                 onClick={() => handleContact("whatsapp")}
               >
                 <MessageCircle className="size-3.5" data-icon="inline-start" />
@@ -288,8 +302,10 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                 size="sm"
                 variant="outline"
                 className="h-11 min-w-0 gap-1.5 sm:h-8"
-                nativeButton={false}
-                render={<a href={tel} />}
+                nativeButton={!archived}
+                disabled={archived}
+                title={archived ? t.leads.detail.archivedReadOnly : undefined}
+                render={archived ? undefined : <a href={tel} />}
                 onClick={() => handleContact("call")}
               >
                 <Phone className="size-3.5" data-icon="inline-start" />
@@ -306,8 +322,8 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
               size="sm"
               variant="outline"
               className="col-span-2 h-11 gap-1.5 sm:col-span-1 sm:h-8"
-              disabled={!canBook}
-              title={canBook ? undefined : t.modules.calendar.readOnly}
+              disabled={!canBook || archived}
+              title={archived ? t.leads.detail.archivedReadOnly : canBook ? undefined : t.modules.calendar.readOnly}
               onClick={() => setScheduleOpen(true)}
             >
               <CalendarPlus className="size-3.5" data-icon="inline-start" />
@@ -323,7 +339,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
                 size="sm"
                 className="col-span-2 h-11 gap-1.5 sm:h-8"
                 disabled={!canEdit || Boolean(lead.customerId)}
-                title={lead.customerId ? t.sales.alreadyRegistered : undefined}
+                title={archived ? t.leads.detail.archivedReadOnly : lead.customerId ? t.sales.alreadyRegistered : undefined}
                 onClick={() => setSaleOpen(true)}
               >
                 <BadgeDollarSign className="size-3.5" data-icon="inline-start" />
@@ -334,21 +350,33 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
           {!lead.phone && (
             <p className="text-xs text-muted-foreground">{t.leads.detail.noPhone}</p>
           )}
-          {canEdit ? (
+          {/* Says plainly why everything is disabled, instead of leaving a
+              screen full of dead buttons with no explanation. */}
+          {archived && (
+            <p className="rounded-lg border border-dashed px-3 py-2 text-sm text-muted-foreground text-pretty">
+              {t.leads.detail.archivedReadOnly}
+            </p>
+          )}
+          {/* Restaurar is the ONE action an archived lead still accepts, so it
+              lives outside the canEdit gate — which is false while archived.
+              Editing stays behind that gate. */}
+          {canEdit || archived ? (
             <div className="grid w-full min-w-0 grid-cols-2 gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-11 min-w-0 gap-1.5 sm:h-8"
-                onClick={() => setEditOpen(true)}
-              >
-                <Pencil className="size-3.5" data-icon="inline-start" />
-                {t.leads.detail.edit}
-              </Button>
+              {canEdit && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-11 min-w-0 gap-1.5 sm:h-8"
+                  onClick={() => setEditOpen(true)}
+                >
+                  <Pencil className="size-3.5" data-icon="inline-start" />
+                  {t.leads.detail.edit}
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-11 min-w-0 gap-1.5 text-muted-foreground sm:h-8"
+                className={cn("h-11 min-w-0 gap-1.5 text-muted-foreground sm:h-8", !canEdit && "col-span-2")}
                 onClick={() => setArchiveOpen(true)}
                 disabled={archiving || !canDelete}
                 title={canDelete ? undefined : t.leads.detail.onlyAdminsDelete}
@@ -368,7 +396,8 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
 
         <ScrollArea className="min-h-0 flex-1">
           <div className="flex min-w-0 flex-col gap-5 p-4 sm:p-5">
-            <LeadAiAssistant lead={lead} />
+            {/* Read-only while archived: its actions write to the lead. */}
+            {!archived && <LeadAiAssistant lead={lead} />}
 
             <Tabs defaultValue="details">
               <TabsList className="w-full">

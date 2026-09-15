@@ -35,7 +35,7 @@ import {
   PLATFORM_LABELS,
   TEMPERATURE_LABELS,
 } from "@/lib/constants"
-import { displayStage, leadTypeOf } from "@/lib/leads"
+import { displayStage, isActiveLead, leadTypeOf } from "@/lib/leads"
 import { t } from "@/lib/i18n"
 import { useUsersMap } from "@/lib/firebase/collections"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
@@ -124,15 +124,22 @@ export function LeadsView({
   }, [stageOptions, stage])
 
   // Deep link: open the requested lead as soon as it is in the live list.
+  // An archived lead is NOT opened from the normal view — a link from an old
+  // email or notification must not resurrect it. Turning on "Mostrar papelera"
+  // makes the same link work, which is the one place it should.
   useEffect(() => {
     if (!openLeadId || leads.length === 0) return
     const target = leads.find((l) => l.id === openLeadId)
+    if (target && !isActiveLead(target) && !showArchived) {
+      onOpenedLead?.()
+      return
+    }
     if (target) {
       setSelected(target)
       setOpen(true)
     }
     onOpenedLead?.()
-  }, [openLeadId, leads, onOpenedLead])
+  }, [openLeadId, leads, showArchived, onOpenedLead])
 
   // Keep the open sheet in sync with live updates (stage / type changes).
   useEffect(() => {
@@ -168,7 +175,9 @@ export function LeadsView({
     setOpen(true)
   }
 
-  const platforms = Array.from(new Set(leads.map((l) => l.source)))
+  // Derived options come from the ACTIVE list: a platform that only exists on
+  // an archived lead is not a filter anybody can act on.
+  const platforms = Array.from(new Set(leads.filter(isActiveLead).map((l) => l.source)))
 
   return (
     <div className="flex flex-col gap-4">
