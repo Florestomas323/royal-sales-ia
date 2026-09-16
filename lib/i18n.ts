@@ -526,6 +526,11 @@ export const t = {
       phoneInvalid: 'Revisa el teléfono: debe tener entre 8 y 15 dígitos con el código de país.',
       valueLabel: 'Valor potencial (USD)',
       stageLabel: 'Etapa',
+      campaignLabel: 'Campaña atribuida',
+      noCampaign: 'Sin campaña',
+      campaignHint: 'Solo campañas de este workspace, activas o pausadas. Media Buyer se recalcula al guardar.',
+      campaignFromMeta: 'Atribución automática desde Meta. Si eliges otra campaña, la manual manda.',
+      campaignInvalid: 'Esa campaña no pertenece a este workspace.',
       assignLabel: 'Responsable',
       assignLocked: 'Solo un administrador puede reasignar el prospecto.',
       assignLoading: 'Cargando miembros…',
@@ -1416,6 +1421,15 @@ export const t = {
       ],
     },
     calendar: {
+      sync: {
+        description: 'Citas agendadas antes de la sincronización automática pueden no reflejarse en el embudo.',
+        action: 'Sincronizar citas existentes',
+        done: (moved: number, examined: number) =>
+          moved === 0
+            ? `Todo al día: ${examined} prospecto(s) con cita revisados, ninguno necesitaba moverse.`
+            : `${moved} de ${examined} prospecto(s) con cita pasaron a la etapa de cita.`,
+        error: 'No se pudo completar la sincronización.',
+      },
       title: 'Calendario',
       description: 'Agenda operativa del workspace: citas reales creadas desde tus prospectos.',
       empty: 'No hay citas agendadas todavía.',
