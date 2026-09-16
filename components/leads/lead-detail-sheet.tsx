@@ -72,9 +72,23 @@ interface LeadDetailSheetProps {
   onOpenChange: (open: boolean) => void
 }
 
+/**
+ * Wrapper: decides whether there is a lead to show and nothing else.
+ *
+ * Every hook lives in the inner component, which only ever mounts with a
+ * real lead. Doing the `if (!lead)` check here — and NOT between hooks —
+ * keeps the hook count identical across renders. The previous shape ran an
+ * effect after an early return, which React reports as "Rendered more hooks
+ * than during the previous render" the moment a lead is selected.
+ */
 export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetProps) {
+  if (!lead) return null
+  return <LeadDetailSheetInner lead={lead} open={open} onOpenChange={onOpenChange} />
+}
+
+function LeadDetailSheetInner({ lead, open, onOpenChange }: LeadDetailSheetProps & { lead: Lead }) {
   // Owner name must come from the lead's workspace (see useUsersForWorkspace).
-  const usersMap = useUsersMap(lead?.workspaceId ?? null)
+  const usersMap = useUsersMap(lead.workspaceId)
   const { isSuperAdmin, workspaces, role, membership, currentUser } = useWorkspace()
   const [changingType, setChangingType] = useState(false)
   const [confirmTypeOpen, setConfirmTypeOpen] = useState(false)
@@ -86,8 +100,7 @@ export function LeadDetailSheet({ lead, open, onOpenChange }: LeadDetailSheetPro
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [saleOpen, setSaleOpen] = useState(false)
   const [contacting, setContacting] = useState(false)
-  const { activities, loading: activityLoading, error: activityError } = useLeadActivities(lead?.id ?? null)
-  if (!lead) return null
+  const { activities, loading: activityLoading, error: activityError } = useLeadActivities(lead.id)
   const rep = usersMap[lead.assignedToId]
   const type = leadTypeOf(lead)
   const isRecruiting = type === "recruiting"
