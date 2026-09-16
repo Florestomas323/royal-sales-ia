@@ -14,6 +14,11 @@
     "lib/meta/types.ts",
     "lib/notifications.ts",
     "types/index.ts",
-    "app/api/meta/campaign-links/route.ts"
+    "app/api/meta/campaign-links/route.ts",
+    "lib/metrics.ts",
+    "lib/media-buyer/analyzer.ts",
+    "lib/constants.ts",
+    "lib/leads.ts",
+    "app/api/meta/ad-preview/route.ts"
   ]
 }
