@@ -22,7 +22,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { PhoneField } from "@/components/leads/phone-field"
-import { useUsersForWorkspace } from "@/lib/firebase/collections"
+import { useCampaigns, useUsersForWorkspace } from "@/lib/firebase/collections"
+import { CAMPAIGN_STATUS_LABELS } from "@/lib/constants"
 import { LeadValidationError, updateLead, type LeadPatch } from "@/lib/firebase/leads"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
@@ -33,6 +34,7 @@ import { t } from "@/lib/i18n"
 import type { Lead, PipelineStage } from "@/types"
 
 const NO_OWNER = "__none__"
+const NO_CAMPAIGN = "__no_campaign__"
 
 /**
  * Edit a lead. Only fields that exist in the model are editable; workspace,
@@ -68,6 +70,16 @@ export function EditLeadDialog({
     displayStage(lead),
   )
   const [assignedToId, setAssignedToId] = React.useState(lead.assignedToId || NO_OWNER)
+  /**
+   * Manual campaign attribution. The list is `useCampaigns()`, which is
+   * scoped to the active workspace by construction, and it includes paused
+   * campaigns on purpose: a lead can belong to a campaign that was paused
+   * later. Only Distribuidor / Asistente may attribute; the Rules whitelist
+   * for a Telemarketing user does not include `campaignId`.
+   */
+  const { campaigns, loading: campaignsLoading } = useCampaigns()
+  const canAttribute = isSuperAdmin || role === "client_admin" || role === "manager"
+  const [campaignId, setCampaignId] = React.useState(lead.campaignId || NO_CAMPAIGN)
   const [nextAction, setNextAction] = React.useState(lead.nextAction ?? "")
   const [errors, setErrors] = React.useState<Partial<Record<keyof LeadPatch, string>>>({})
   const [formError, setFormError] = React.useState<string | null>(null)
@@ -83,6 +95,7 @@ export function EditLeadDialog({
     setNational(p.national)
     setStage(displayStage(lead))
     setAssignedToId(lead.assignedToId || NO_OWNER)
+    setCampaignId(lead.campaignId || NO_CAMPAIGN)
     setNextAction(lead.nextAction ?? "")
     setErrors({})
     setFormError(null)
@@ -114,6 +127,20 @@ export function EditLeadDialog({
       if (next !== lead.assignedToId) patch.assignedToId = next
     }
     if (nextAction.trim() !== (lead.nextAction ?? "")) patch.nextAction = nextAction
+    if (canAttribute) {
+      const nextCampaign = campaignId === NO_CAMPAIGN ? "" : campaignId
+      if (nextCampaign !== (lead.campaignId ?? "")) {
+        // Never a campaign outside this workspace: the list is scoped, and
+        // this re-checks the id against it before anything is written.
+        const chosen = nextCampaign ? campaigns.find((c) => c.id === nextCampaign) : undefined
+        if (nextCampaign && !chosen) {
+          toast.error(t.leads.editDialog.campaignInvalid)
+          return
+        }
+        patch.campaignId = nextCampaign
+        patch.campaignName = chosen?.name ?? ""
+      }
+    }
 
     if (Object.keys(patch).length === 0) {
       toast.info(t.leads.editDialog.nothingChanged)
@@ -255,6 +282,38 @@ export function EditLeadDialog({
                 ) : null}
               </Field>
             </div>
+
+            {canAttribute && (
+              <Field>
+                <FieldLabel>{t.leads.editDialog.campaignLabel}</FieldLabel>
+                <Select value={campaignId} onValueChange={(v) => v && setCampaignId(v)} disabled={saving || campaignsLoading}>
+                  <SelectTrigger className="h-11 w-full sm:h-9">
+                    <SelectValue>
+                      {(v: string) =>
+                        v === NO_CAMPAIGN
+                          ? t.leads.editDialog.noCampaign
+                          : (campaigns.find((c) => c.id === v)?.name ?? v)}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[60svh]">
+                    <SelectItem value={NO_CAMPAIGN}>{t.leads.editDialog.noCampaign}</SelectItem>
+                    {/* Active AND paused: a lead may belong to a campaign paused later. */}
+                    {campaigns
+                      .filter((c) => c.status === "active" || c.status === "paused")
+                      .map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name} · {CAMPAIGN_STATUS_LABELS[c.status]}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <FieldDescription>
+                  {lead.attributionSource !== "manual" && lead.attribution?.externalCampaignId
+                    ? t.leads.editDialog.campaignFromMeta
+                    : t.leads.editDialog.campaignHint}
+                </FieldDescription>
+              </Field>
+            )}
 
             <Field>
               <FieldLabel htmlFor="edit-next">{t.leads.editDialog.nextActionLabel}</FieldLabel>
