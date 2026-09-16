@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Bell, CheckCheck } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -13,11 +13,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { markAllNotificationsRead, markNotificationRead, useNotifications } from "@/lib/firebase/notifications"
+import {
+  fetchReadReceipts,
+  markAllNotificationsRead,
+  markReadReceipts,
+  useNotifications,
+} from "@/lib/firebase/notifications"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { useLeads } from "@/lib/firebase/leads"
 import { isActiveLead } from "@/lib/leads"
 import { dedupeNotifications, unreadCount, type LogicalNotification } from "@/lib/notifications"
+import { toast } from "sonner"
+import { describeError } from "@/lib/firebase/errors"
 import { formatRelativeTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { t } from "@/lib/i18n"
@@ -59,19 +66,62 @@ export function NotificationsMenu() {
    * copy for the content, unread if ANY copy is unread — so the list shows one
    * row and the badge counts the event once. Nothing is deleted.
    */
+  /**
+   * A super admin reads every workspace's notifications, so the same lead
+   * arrives once per recipient. They are collapsed by EVENT, and their read
+   * state comes from server-side receipts — the Rule forbids them writing on
+   * somebody else's document, and a distributor's read state is not theirs.
+   */
+  const [receipts, setReceipts] = useState<ReadonlySet<string>>(new Set())
+  useEffect(() => {
+    if (!isSuperAdmin) return
+    let cancelled = false
+    void fetchReadReceipts().then((keys) => { if (!cancelled) setReceipts(keys) })
+    return () => { cancelled = true }
+  }, [isSuperAdmin])
+
   const live = useMemo(
-    () => (leadsLoading ? [] : dedupeNotifications(items.filter((n) => !archivedLeadIds.has(n.leadId)))),
-    [items, archivedLeadIds, leadsLoading],
+    () =>
+      leadsLoading
+        ? []
+        : dedupeNotifications(
+            items.filter((n) => !archivedLeadIds.has(n.leadId)),
+            { byEvent: isSuperAdmin, readKeys: receipts },
+          ),
+    [items, archivedLeadIds, leadsLoading, isSuperAdmin, receipts],
   )
   const unread = useMemo(() => unreadCount(live), [live])
   const recent = useMemo(() => live.slice(0, 30), [live])
   const workspaceName = (id: string) => workspaces.find((w) => w.id === id)?.name ?? id
 
+  /** Marks a row read: receipts for a super admin, own documents otherwise. */
+  async function markRead(rows: LogicalNotification[]) {
+    const unread = rows.filter((r) => !r.read)
+    if (unread.length === 0) return
+    if (isSuperAdmin) {
+      const keys = unread.map((r) => r.eventKey)
+      // Optimistic: the badge drops now, and the receipt persists it.
+      setReceipts((prev) => new Set([...prev, ...keys]))
+      try {
+        await markReadReceipts(keys)
+      } catch (err) {
+        setReceipts((prev) => new Set([...prev].filter((k) => !keys.includes(k))))
+        throw err
+      }
+      return
+    }
+    await markAllNotificationsRead(unread)
+  }
+
   async function open(n: LogicalNotification) {
-    if (!n.read && !isSuperAdmin) {
-      // Best-effort: navigation must not wait on the write.
-      // Every historical copy, not just the one on screen.
-      void markNotificationRead(n.copies).catch(() => {})
+    if (!n.read) {
+      // Every historical copy for a member; a receipt for a super admin.
+      // Skipping this entirely for super admins was why their badge never
+      // went down.
+      void markRead([n]).catch((err) => {
+        // Silence hid a failing write behind a badge that never moved.
+        toast.error(t.notifications.markError, { description: describeError(err).message })
+      })
     }
     router.push(`/leads?lead=${encodeURIComponent(n.leadId)}`)
   }
@@ -96,12 +146,17 @@ export function NotificationsMenu() {
       <DropdownMenuContent align="end" className="w-[min(92vw,22rem)] p-0">
         <div className="flex items-center justify-between gap-2 px-3 py-2">
           <p className="text-sm font-medium">{t.notifications.title}</p>
-          {unread > 0 && !isSuperAdmin && (
+          {unread > 0 && (
             <Button
               variant="ghost"
               size="sm"
               className="h-8 gap-1 text-xs"
-              onClick={(e) => { e.preventDefault(); void markAllNotificationsRead(live) }}
+              onClick={(e) => {
+                e.preventDefault()
+                void markRead(live).catch((err) =>
+                  toast.error(t.notifications.markError, { description: describeError(err).message }),
+                )
+              }}
             >
               <CheckCheck className="size-3.5" />
               {t.notifications.markAllRead}
