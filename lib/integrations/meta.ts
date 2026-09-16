@@ -170,6 +170,7 @@ export async function assignCampaign(input: {
   objective: LeadType
   active?: boolean
   metaCampaignName?: string | null
+  metaCampaignStatus?: string | null
   adAccountId?: string | null
 }): Promise<MetaCampaignLink> {
   try {
