@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "outDir": ".test-build",
+    "jsx": "react-jsx",
+    "declaration": false,
+    "skipLibCheck": true
+  },
+  "include": [
+    "lib/meta/processor.ts",
+    "lib/meta/types.ts",
+    "lib/notifications.ts",
+    "types/index.ts",
+    "app/api/meta/campaign-links/route.ts"
+  ]
+}

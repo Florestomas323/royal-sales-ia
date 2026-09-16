@@ -67,7 +67,10 @@ service cloud.firestore {
      * bypassed by a stale client. Absent means active (legacy memberships).
      */
     function membershipIsActive() {
-      return me().get('status', 'active') != 'inactive';
+      // EXACTLY 'active'. `!= 'inactive'` let a historical or corrupted value
+      // ('invited', 'unknown', anything) behave as if it granted access.
+      // Absent still means active, for legacy memberships.
+      return me().get('status', 'active') == 'active';
     }
 
     /**
@@ -103,6 +106,32 @@ service cloud.firestore {
 
     function validRole(r) {
       return r in ['super_admin', 'client_admin', 'manager', 'sales_rep', 'viewer'];
+    }
+
+    /* --- Member state machine -------------------------------------------- *
+     *
+     *   authUid == null   →  invited | inactive     (never active)
+     *   authUid != null   →  active  | inactive     (never invited)
+     *
+     * The ONLY transition between the two halves is the atomic claim branch
+     * in users/{userId}. Without this, an admin could flip an unclaimed
+     * profile to `active` — taking a seat with no membership behind it and no
+     * way to claim it afterwards — or leave a claimed profile as `invited`,
+     * which `membershipIsActive()` still reads as having access.
+     */
+    function validMemberStatus(s) {
+      return s in ['active', 'invited', 'inactive'];
+    }
+
+    /** A membership belongs to somebody who already signed in: never invited. */
+    function validMembershipStatus(s) {
+      return s in ['active', 'inactive'];
+    }
+
+    function statusMatchesClaimState(authUid, status) {
+      return authUid == null
+        ? status in ['invited', 'inactive']
+        : status in ['active', 'inactive'];
     }
 
     /** Ventas / Reclutamiento. Never used for access decisions — only validated. */
@@ -204,6 +233,15 @@ service cloud.firestore {
        * with that role and holding a seat (invited or active); a removed
        * holder ends up inactive or with another role. Always in THIS workspace.
        */
+      /**
+       * An op must describe a REAL transition of that list, not merely a state
+       * that happens to hold afterwards.
+       *
+       * An "add" for somebody already seated was accepted before, which made a
+       * no-op usable as the justification for somebody else's silent removal:
+       * seats [A,B] → [A] declared as "add A" used to pass. Requiring the
+       * before/after pair closes that.
+       */
       function seatOpIsHonest(op) {
         return op.kind in ['add', 'remove']
           && op.role in seatRoles()
@@ -212,10 +250,12 @@ service cloud.firestore {
           && seatUser(op).workspaceId == wsId
           && (
             (op.kind == 'add'
+              && !seatsBefore()[op.role].hasAll([op.userId])
               && seatsAfter()[op.role].hasAll([op.userId])
               && seatUser(op).role == op.role
               && seatUser(op).status in ['invited', 'active'])
             || (op.kind == 'remove'
+              && seatsBefore()[op.role].hasAll([op.userId])
               && !seatsAfter()[op.role].hasAll([op.userId])
               && (seatUser(op).status == 'inactive' || seatUser(op).role != op.role))
           );
@@ -236,11 +276,36 @@ service cloud.firestore {
               || seatOpIsHonest(request.resource.data.seatOps[1]));
       }
 
+      /** Ops of this role declared as additions / removals. */
+      function declaredAdds(r) {
+        return (request.resource.data.seatOps[0].role == r && request.resource.data.seatOps[0].kind == 'add'
+                 ? [request.resource.data.seatOps[0].userId] : [])
+          .concat(request.resource.data.seatOps.size() == 2
+                   && request.resource.data.seatOps[1].role == r
+                   && request.resource.data.seatOps[1].kind == 'add'
+                 ? [request.resource.data.seatOps[1].userId] : []);
+      }
+
+      function declaredRemovals(r) {
+        return (request.resource.data.seatOps[0].role == r && request.resource.data.seatOps[0].kind == 'remove'
+                 ? [request.resource.data.seatOps[0].userId] : [])
+          .concat(request.resource.data.seatOps.size() == 2
+                   && request.resource.data.seatOps[1].role == r
+                   && request.resource.data.seatOps[1].kind == 'remove'
+                 ? [request.resource.data.seatOps[1].userId] : []);
+      }
+
+      /**
+       * EXACT correspondence, not a count: whoever entered the list must be a
+       * declared add, and whoever left must be a declared removal. A bound on
+       * the number of changes let an undeclared change ride along with a
+       * declared one of the same size.
+       */
       function roleListOnlyChangedByOps(r) {
-        return seatsAfter()[r].toSet().difference(seatsBefore()[r].toSet()).size()
-              + seatsBefore()[r].toSet().difference(seatsAfter()[r].toSet()).size()
-            <= (request.resource.data.seatOps[0].role == r ? 1 : 0)
-              + (request.resource.data.seatOps.size() == 2 && request.resource.data.seatOps[1].role == r ? 1 : 0);
+        return seatsAfter()[r].toSet().difference(seatsBefore()[r].toSet())
+                 == declaredAdds(r).toSet()
+          && seatsBefore()[r].toSet().difference(seatsAfter()[r].toSet())
+                 == declaredRemovals(r).toSet();
       }
 
       /**
@@ -258,7 +323,11 @@ service cloud.firestore {
                    && roleListOnlyChangedByOps('client_admin')
                    && roleListOnlyChangedByOps('manager')
                    && roleListOnlyChangedByOps('sales_rep'))
-                : true);
+                // Building the ledger from scratch is a migration: only the
+                // super admin (Configuración → Super admin → reconstruir
+                // cupos). A workspace admin could otherwise "initialise" a
+                // ledger that already ignores the limits.
+                : isSuperAdmin());
       }
 
       allow read: if isSuperAdmin() || isWsMember(wsId);
@@ -291,27 +360,109 @@ service cloud.firestore {
       // Super admin can grant any membership.
       // Anyone else can only CLAIM their own invitation: the values written
       // must match an unclaimed `users` profile with their (verified) email.
+      /** The invited profile BEFORE the claim batch. */
+      function claimedProfile() {
+        return get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data;
+      }
+
+      /** …and as it ends up, since claimInvitation flips its status in the same batch. */
+      function claimedProfileAfter() {
+        return getAfter(/databases/$(database)/documents/users/$(request.resource.data.userId)).data;
+      }
+
+      function claimedWorkspaceSeats() {
+        return getAfter(/databases/$(database)/documents/workspaces/$(request.resource.data.workspaceId)).data.seats;
+      }
+
+      /**
+       * The seat must really be held. An invitation that was cancelled or
+       * deactivated has had its seat released, so a claim would otherwise
+       * hand out access that the ledger does not back.
+       */
+      function claimHoldsItsSeat() {
+        return existsAfter(/databases/$(database)/documents/workspaces/$(request.resource.data.workspaceId))
+          && claimedWorkspaceSeats()[request.resource.data.role].hasAll([request.resource.data.userId]);
+      }
+
       allow create: if isSuperAdmin() || (
         uid == request.auth.uid
         && request.auth.token.email_verified == true
+        // hasOnly as well as hasAll: no extra fields smuggled into a membership.
         && request.resource.data.keys().hasAll(['workspaceId', 'role', 'userId', 'email', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['workspaceId', 'role', 'userId', 'email', 'createdAt', 'status'])
         && request.resource.data.email == request.auth.token.email.lower()
         && request.resource.data.role != 'super_admin'
         && validRole(request.resource.data.role)
         && exists(/databases/$(database)/documents/users/$(request.resource.data.userId))
-        && get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.authUid == null
-        && get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.email == request.auth.token.email.lower()
-        && get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.workspaceId == request.resource.data.workspaceId
-        && get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.role == request.resource.data.role
+        && claimedProfile().authUid == null
+        && claimedProfile().email == request.auth.token.email.lower()
+        && claimedProfile().workspaceId == request.resource.data.workspaceId
+        && claimedProfile().role == request.resource.data.role
+        // Only a live invitation can be claimed: an inactive profile stays
+        // inactive and cannot reactivate itself by signing up again.
+        && claimedProfile().status == 'invited'
+        // Atomically coherent with the profile as it ends up…
+        && existsAfter(/databases/$(database)/documents/users/$(request.resource.data.userId))
+        && claimedProfileAfter().role == request.resource.data.role
+        && claimedProfileAfter().workspaceId == request.resource.data.workspaceId
+        && claimedProfileAfter().status == 'active'
+        && claimedProfileAfter().authUid == request.auth.uid
+        && validMembershipStatus(request.resource.data.get('status', 'active'))
+        && request.resource.data.get('status', 'active') == 'active'
+        // …and with the seat ledger.
+        && claimHoldsItsSeat()
       );
+
+      /**
+       * The team profile this membership belongs to, as it ends up after the
+       * batch. A role change is only honest when the profile — whose own rule
+       * enforces the seat ledger — carries the SAME role in the same write.
+       * Changing the membership alone would let an admin bypass the seats.
+       */
+      function profileAfter() {
+        return getAfter(/databases/$(database)/documents/users/$(resource.data.userId)).data;
+      }
+
+      /** Absent status means active, on both documents (legacy compatibility). */
+      function membershipStatusAfter() {
+        return request.resource.data.get('status', 'active');
+      }
+
+      function profileStatusAfter() {
+        return profileAfter().get('status', 'active');
+      }
+
+      /**
+       * After ANY normal update the membership must still describe the same
+       * person, with the same role AND the same status as their team profile
+       * — the document whose own rule enforces the seat ledger.
+       *
+       * Without the status half, writing `status: "active"` straight to the
+       * membership would restore real access (membershipIsActive reads THIS
+       * document) for somebody who holds no seat any more.
+       */
+      function matchesProfileAfter() {
+        return validMembershipStatus(membershipStatusAfter())
+          && existsAfter(/databases/$(database)/documents/users/$(resource.data.userId))
+          && profileAfter().workspaceId == resource.data.workspaceId
+          && profileAfter().role == request.resource.data.role
+          && profileStatusAfter() == membershipStatusAfter();
+      }
 
       allow update: if isSuperAdmin() || (
         isWsClientAdmin(resource.data.workspaceId)
+        // Identity is frozen: no moving a person to another workspace, no
+        // rebinding to another profile or email.
         && unchanged('workspaceId') && unchanged('userId') && unchanged('email')
         && request.resource.data.role != 'super_admin'
         && validRole(request.resource.data.role)
+        && onlyChanges(['role', 'status', 'updatedAt'])
+        // Role AND status must ride with the profile (and therefore the seats).
+        && matchesProfileAfter()
       );
-      allow delete: if isSuperAdmin() || isWsClientAdmin(resource.data.workspaceId);
+      // Same reasoning as users: revoking access is `status: inactive`, which
+      // releases the seat atomically. A hard delete is a super admin repair.
+      allow delete: if isSuperAdmin();
     }
 
     // ------------------------------------------------------------------- users
@@ -337,13 +488,108 @@ service cloud.firestore {
        * status moves, so the ledger and the team can never disagree — and a
        * plain name/colour edit skips it, which keeps legacy workspaces usable.
        */
+      /** The three seat lists after the batch. */
+      function seatListAfter(r) {
+        return ledgerAfter().seats[r];
+      }
+
+      /**
+       * No list may hold the same id twice. Duplicates would let one person
+       * consume two of the two available seats, or survive a removal that
+       * only dropped one copy.
+       */
+      function noDuplicateSeatsAfter() {
+        return seatListAfter('client_admin').size() == seatListAfter('client_admin').toSet().size()
+          && seatListAfter('manager').size() == seatListAfter('manager').toSet().size()
+          && seatListAfter('sales_rep').size() == seatListAfter('sales_rep').toSet().size();
+      }
+
+      /**
+       * A profile occupies exactly ONE seat: the one for its own role.
+       *
+       * Checking only the new role let a manager→sales_rep change add the
+       * person to `sales_rep` while leaving them in `manager`, so they held
+       * two seats and the old list silently lost capacity.
+       */
+      function seatsOnlyInOwnRoleAfter() {
+        return (request.resource.data.role == 'client_admin' || !seatListAfter('client_admin').hasAll([userId]))
+          && (request.resource.data.role == 'manager' || !seatListAfter('manager').hasAll([userId]))
+          && (request.resource.data.role == 'sales_rep' || !seatListAfter('sales_rep').hasAll([userId]));
+      }
+
+      /** Holds no seat in any of the three lists. */
+      function holdsNoSeatAfter() {
+        return !seatListAfter('client_admin').hasAll([userId])
+          && !seatListAfter('manager').hasAll([userId])
+          && !seatListAfter('sales_rep').hasAll([userId]);
+      }
+
+      /**
+       * Where this profile must sit once the batch lands.
+       *
+       * There is no automatic pass for a non-seat role: `viewer` used to skip
+       * the whole check, so changing manager → viewer while leaving the id in
+       * `seats.manager` stranded a seat nobody could release. A viewer — like
+       * a deactivated member — must hold NO seat at all.
+       */
       function seatConsistentAfter() {
-        return !seatRoleAfter()
-          || (request.resource.data.status == 'inactive'
-                ? (!ledgerHasSeatsAfter()
-                   || !ledgerAfter().seats[request.resource.data.role].hasAll([userId]))
-                : (ledgerHasSeatsAfter()
-                   && ledgerAfter().seats[request.resource.data.role].hasAll([userId])));
+        return !ledgerHasSeatsAfter()
+          // A workspace with no ledger yet is a migration case, handled by the
+          // workspaces rule (super admin only).
+          ? !seatRoleAfter()
+          : (noDuplicateSeatsAfter()
+             && (request.resource.data.status == 'inactive' || !seatRoleAfter()
+                   // Deactivated, or not a seat role at all (viewer): nowhere.
+                   ? holdsNoSeatAfter()
+                   // Invited or active seat role: its own list, and only that one.
+                   : (seatListAfter(request.resource.data.role).hasAll([userId])
+                      && seatsOnlyInOwnRoleAfter())));
+      }
+
+      /**
+       * The membership of an ALREADY claimed profile, after this batch.
+       *
+       * `membershipIsActive()` and the role checks all read the MEMBERSHIP, so
+       * a profile whose role or status moves without its membership moving too
+       * leaves the person with their old access: deactivated on paper while
+       * still active in practice, or holding manager privileges after being
+       * demoted to sales_rep and freeing the manager seat.
+       */
+      function linkedMembershipAfter() {
+        return getAfter(/databases/$(database)/documents/memberships/$(resource.data.authUid)).data;
+      }
+
+      function linkedMembershipConsistentAfter() {
+        return existsAfter(/databases/$(database)/documents/memberships/$(resource.data.authUid))
+          && linkedMembershipAfter().workspaceId == resource.data.workspaceId
+          && linkedMembershipAfter().userId == userId
+          && linkedMembershipAfter().role == request.resource.data.role
+          && linkedMembershipAfter().get('status', 'active')
+               == request.resource.data.get('status', 'active');
+      }
+
+      /**
+       * Required only when this profile HAS a membership and its role or
+       * status is moving. An invited profile has none until the claim, and a
+       * name or colour edit never needs one rewritten.
+       */
+      function membershipRidesAlong() {
+        return !roleOrStatusChanges()
+          || resource.data.get('authUid', null) == null
+          || linkedMembershipConsistentAfter();
+      }
+
+      /** The membership written by the same batch that claims this profile. */
+      function claimMembershipAfter() {
+        return getAfter(/databases/$(database)/documents/memberships/$(request.auth.uid)).data;
+      }
+
+      /** The profile's state after this write must be internally coherent. */
+      function statusStateValidAfter() {
+        return validMemberStatus(request.resource.data.get('status', 'invited'))
+          && statusMatchesClaimState(
+               request.resource.data.get('authUid', null),
+               request.resource.data.get('status', 'invited'));
       }
 
       function roleOrStatusChanges() {
@@ -352,8 +598,18 @@ service cloud.firestore {
 
       allow read: if isSuperAdmin()
         || isWsMember(resource.data.workspaceId)
-        // Needed for the invitation lookup before a membership exists.
-        || (signedIn() && resource.data.email == request.auth.token.email.lower());
+        /**
+         * Invitation lookup, before any membership exists. Narrow on purpose:
+         * a VERIFIED address, a profile that nobody has claimed, and an
+         * invitation that is still live. A cancelled invitation or an already
+         * claimed profile must not be readable through this exception — those
+         * are reached through membership, or not at all.
+         */
+        || (signedIn()
+            && request.auth.token.email_verified == true
+            && resource.data.email == request.auth.token.email.lower()
+            && resource.data.get('authUid', null) == null
+            && resource.data.get('status', 'invited') == 'invited');
 
       // An invitation reserves a seat: the profile is born listed in the ledger
       // written by the same transaction. Only the three seat roles are
@@ -365,6 +621,7 @@ service cloud.firestore {
         && seatRoleAfter()
         && request.resource.data.status == 'invited'
         && request.resource.data.authUid == null
+        && statusStateValidAfter()
         && seatConsistentAfter()
       );
 
@@ -372,23 +629,57 @@ service cloud.firestore {
         // Workspace admins manage their team, but cannot move a profile to
         // another workspace nor escalate anyone to super_admin. A role or
         // status change must be mirrored in the seat ledger.
+        // WHITELIST, not a blacklist: exactly the fields the real team flows
+        // write (updateMemberRole, setMemberStatus, profile edits). Anything
+        // else — identity, counters, future fields — is out of reach.
         || (isWsAdmin(resource.data.workspaceId)
-            && unchanged('workspaceId')
+            && onlyChanges(['name', 'avatarColor', 'role', 'status', 'emailNewLeadNotifications', 'updatedAt'])
             && request.resource.data.role != 'super_admin'
             && validRole(request.resource.data.role)
-            && (!roleOrStatusChanges() || seatConsistentAfter()))
+            && (!roleOrStatusChanges() || seatConsistentAfter())
+            // An unclaimed profile can only be invited or inactive — never
+            // active, which would hold a seat with no membership behind it
+            // and make the claim branch unreachable afterwards.
+            && statusStateValidAfter()
+            // Profile, membership and seats settle together or not at all.
+            && membershipRidesAlong())
         // A member may edit their own display fields.
-        || (hasMembership() && resource.data.authUid == request.auth.uid
+        // A deactivated member keeps their session but not their write access.
+        || (hasMembership() && membershipIsActive()
+            && resource.data.authUid == request.auth.uid
             && onlyChanges(['name', 'avatarColor', 'emailNewLeadNotifications', 'updatedAt']))
-        // Claiming an invitation: only authUid/status/updatedAt change.
+        /**
+         * Claiming an invitation. The profile side alone used to be enough,
+         * which could leave `authUid` set and `status` moved with NO
+         * membership — a broken invitation whose seat was already spent.
+         * Now the membership must exist after the batch and agree with the
+         * profile, so users + memberships + seats settle together or not
+         * at all.
+         */
         || (signedIn()
             && request.auth.token.email_verified == true
             && resource.data.authUid == null
+            && resource.data.get('status', 'invited') == 'invited'
             && resource.data.email == request.auth.token.email.lower()
             && request.resource.data.authUid == request.auth.uid
-            && onlyChanges(['authUid', 'status', 'updatedAt']));
+            && request.resource.data.status == 'active'
+            && statusStateValidAfter()
+            && onlyChanges(['authUid', 'status', 'updatedAt'])
+            && seatConsistentAfter()
+            && existsAfter(/databases/$(database)/documents/memberships/$(request.auth.uid))
+            && claimMembershipAfter().workspaceId == resource.data.workspaceId
+            && claimMembershipAfter().userId == userId
+            && claimMembershipAfter().role == request.resource.data.role
+            && claimMembershipAfter().get('status', 'active') == 'active'
+            && claimMembershipAfter().email == request.auth.token.email.lower());
 
-      allow delete: if isSuperAdmin() || isWsClientAdmin(resource.data.workspaceId);
+      /**
+       * Hard delete is SUPER ADMIN only. A workspace admin removing a team
+       * profile would leave its id sitting in `workspaces.seats`, holding a
+       * seat nobody can release — the app deactivates instead
+       * (`setMemberStatus`), which frees the seat in the same transaction.
+       */
+      allow delete: if isSuperAdmin();
     }
 
     // ----------------------------------------------------------------- clients
@@ -722,22 +1013,69 @@ service cloud.firestore {
           && request.resource.data.readAt == null
           && request.resource.data.workspaceId is string
           && request.resource.data.userId is string
-          && request.resource.data.leadId is string;
+          && request.resource.data.leadId is string
+          // Strict types and sane lengths: this text is rendered in the bell.
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 120
+          && request.resource.data.message is string
+          && request.resource.data.message.size() > 0
+          && request.resource.data.message.size() <= 500
+          && request.resource.data.source is string
+          && (request.resource.data.form == null
+              || (request.resource.data.form is string && request.resource.data.form.size() <= 200))
+          && request.resource.data.createdAt is string;
+      }
+
+      /**
+       * The notification must describe the lead it points at. Without this, a
+       * member could announce a "Nuevo prospecto" with a source and a type of
+       * their choosing over somebody else's lead.
+       */
+      function describesItsLead() {
+        return request.resource.data.workspaceId == notifiedLead().workspaceId
+          && request.resource.data.leadType == notifiedLead().get('leadType', 'sales')
+          && request.resource.data.source == notifiedLead().source;
+      }
+
+      /**
+       * Who may be told: an ACTIVE Distribuidor or Asistente of that
+       * workspace, or the person the lead is assigned to. Not any user id
+       * that happens to live in the workspace.
+       */
+      function validRecipient() {
+        return recipientProfile().workspaceId == request.resource.data.workspaceId
+          && recipientProfile().get('status', 'active') == 'active'
+          && (recipientProfile().role in ['client_admin', 'manager']
+              || notifiedLead().get('assignedToId', '') == request.resource.data.userId);
+      }
+
+      /**
+       * Deterministic id — the same one lib/notifications.ts builds. One
+       * document per lead per recipient, so equivalent copies cannot exist.
+       */
+      function deterministicId() {
+        return notificationId == 'new_lead__' + request.resource.data.leadId + '__' + request.resource.data.userId;
       }
 
       allow read: if isSuperAdmin()
         || (hasMembership() && membershipIsActive() && resource.data.userId == myUserId());
 
-      // Only alongside a lead that really exists in that workspace after the
-      // batch, and only for a recipient who belongs to that same workspace.
+      // From the client, ONLY alongside a lead born in this same batch: the
+      // manual "Nuevo prospecto" flow. A lead that already existed cannot be
+      // announced again from the browser — that would be a fake "new lead"
+      // for every admin. Server paths use the Admin SDK and bypass this.
       allow create: if validNotificationShape()
+        && deterministicId()
         && (isSuperAdmin() || isWsMember(request.resource.data.workspaceId))
+        && !exists(/databases/$(database)/documents/leads/$(request.resource.data.leadId))
         && existsAfter(/databases/$(database)/documents/leads/$(request.resource.data.leadId))
-        && notifiedLead().workspaceId == request.resource.data.workspaceId
+        && describesItsLead()
         && exists(/databases/$(database)/documents/users/$(request.resource.data.userId))
-        && recipientProfile().workspaceId == request.resource.data.workspaceId;
+        && validRecipient();
 
       allow update: if hasMembership()
+        && membershipIsActive()
         && resource.data.userId == myUserId()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']);
 
@@ -800,7 +1138,7 @@ service cloud.firestore {
               && assigneeProfile().workspaceId == request.resource.data.workspaceId
               && assigneeMembershipExists()
               && assigneeMembership().workspaceId == request.resource.data.workspaceId
-              && assigneeMembership().get('status', 'active') != 'inactive');
+              && assigneeMembership().get('status', 'active') == 'active');
       }
 
       function validCustomerShape() {
@@ -925,7 +1263,7 @@ service cloud.firestore {
           && sellerProfile().workspaceId == request.resource.data.workspaceId
           && sellerMembershipExists()
           && sellerMembership().workspaceId == request.resource.data.workspaceId
-          && sellerMembership().get('status', 'active') != 'inactive'
+          && sellerMembership().get('status', 'active') == 'active'
           && sellerMembership().role in ['client_admin', 'manager', 'sales_rep'];
       }
 
@@ -1109,13 +1447,126 @@ service cloud.firestore {
             );
       }
 
+      /**
+       * Shape guards. Firestore stores whatever it is given, and React then
+       * renders it: a `name` that is a map or an `archived` that is the string
+       * "yes" is a stored crash. These checks are deliberately loose about
+       * OPTIONAL fields (legacy docs lack many) and strict about types.
+       */
+      function optionalString(f) {
+        return !(f in request.resource.data)
+            || request.resource.data[f] == null
+            || request.resource.data[f] is string;
+      }
+
+      function optionalBool(f) {
+        return !(f in request.resource.data)
+            || request.resource.data[f] == null
+            || request.resource.data[f] is bool;
+      }
+
+      function optionalNumber(f) {
+        return !(f in request.resource.data)
+            || request.resource.data[f] == null
+            || request.resource.data[f] is number;
+      }
+
+      /**
+       * A REQUIRED field, checked the legacy-tolerant way: it must be valid
+       * when present, and may only be absent on a document that already
+       * lacked it. So a lead created in 2025 without `assignedToId` stays
+       * editable, while no update can ever REMOVE a field or introduce an
+       * invalid type. `required` below is used on create, where nothing is
+       * allowed to be missing.
+       */
+      function presentString(f) {
+        return f in request.resource.data
+          ? (request.resource.data[f] is string)
+          : (resource == null || !(f in resource.data));
+      }
+
+      function nonEmptyString(f) {
+        return f in request.resource.data
+          ? (request.resource.data[f] is string && request.resource.data[f].size() > 0)
+          : (resource == null || !(f in resource.data));
+      }
+
+      function validLeadShape() {
+        return nonEmptyString('workspaceId')
+          && nonEmptyString('name')
+          && presentString('phone')
+          && presentString('assignedToId')
+          && presentString('source')
+          && presentString('createdAt')
+          && optionalString('email')
+          && optionalString('assignedToName')
+          && optionalString('campaignId')
+          && optionalString('campaignName')
+          && optionalString('clientId')
+          && optionalString('receivedAt')
+          && optionalString('updatedAt')
+          && optionalString('emailNotifiedAt')
+          && optionalString('notes')
+          && (!('temperature' in request.resource.data)
+              || request.resource.data.temperature == null
+              || request.resource.data.temperature in ['hot', 'warm', 'cold'])
+          && optionalString('lastContactAt')
+          && optionalString('nextFollowUpAt')
+          && optionalString('nextAction')
+          && optionalString('archivedAt')
+          && optionalString('archivedBy')
+          && optionalString('archivedByName')
+          && optionalString('closedAt')
+          && optionalString('customerId')
+          && optionalBool('archived')
+          && optionalNumber('closedValue')
+          && optionalNumber('potentialValue')
+          && optionalNumber('score')
+          && (!('attribution' in request.resource.data)
+              || request.resource.data.attribution == null
+              || request.resource.data.attribution is map)
+          && (!('webForm' in request.resource.data)
+              || request.resource.data.webForm == null
+              || request.resource.data.webForm is map)
+          && (!('recruiting' in request.resource.data)
+              || request.resource.data.recruiting == null
+              || request.resource.data.recruiting is map);
+      }
+
+      /**
+       * What a Telemarketing user may touch on a lead assigned to them: the
+       * work of following up. Everything else — trash, ownership, origin,
+       * integration data — is an admin's business and is not on this list,
+       * so it cannot be changed by a direct SDK write either.
+       */
+      function repEditableFields() {
+        return ['name', 'phone', 'email', 'stage', 'closedValue', 'closedAt', 'customerId',
+                'potentialValue', 'temperature', 'score',
+                'lastContactAt', 'nextFollowUpAt', 'nextAction', 'notes', 'updatedAt'];
+      }
+
       // New leads must declare their type AND a stage of that type's pipeline.
       // Access is still decided exclusively by workspaceId / role / assignedToId.
       // A lead is never born closed: closing data can only appear later, on a
       // real transition into the won stage.
-      allow create: if validLeadType(request.resource.data.leadType)
+      allow create: if validLeadShape()
+        // On create everything required must really be there.
+        && request.resource.data.keys().hasAll(['workspaceId', 'name', 'phone', 'assignedToId', 'source', 'createdAt'])
+        && validLeadType(request.resource.data.leadType)
         && stageMatchesType(request.resource.data.leadType, request.resource.data.stage)
         && !request.resource.data.keys().hasAny(['closedValue', 'closedAt'])
+        // A lead is never born in the trash, and the trash metadata belongs to
+        // whoever archives it later.
+        && !request.resource.data.keys().hasAny(['archived', 'archivedAt', 'archivedBy', 'archivedByName'])
+        // `webForm` is what a website integration reports; only the server
+        // routes (Admin SDK, which bypasses these rules) may write it.
+        && !request.resource.data.keys().hasAny(['webForm'])
+        // A stated platform must agree with the lead's own source.
+        && (!('attribution' in request.resource.data)
+            || request.resource.data.attribution == null
+            || !('platform' in request.resource.data.attribution)
+            || request.resource.data.attribution.platform == null
+            || request.resource.data.attribution.platform == request.resource.data.source)
         // A lead is never born converted: the link only appears on a close.
         && !request.resource.data.keys().hasAny(['customerId'])
         && (
@@ -1133,9 +1584,10 @@ service cloud.firestore {
       //     the stage to that pipeline's initial stage, and only for admins;
       //  4. the role checks are exactly the previous ones, plus: a rep may not
       //     reassign the lead nor change its type.
-      allow update: if validLeadType(request.resource.data.leadType)
+      allow update: if validLeadShape()
+        && validLeadType(request.resource.data.leadType)
         && stageMatchesType(request.resource.data.leadType, request.resource.data.stage)
-        && !changedKeys().hasAny(['workspaceId', 'source', 'attribution', 'createdAt', 'clientId'])
+        && !changedKeys().hasAny(['workspaceId', 'source', 'attribution', 'createdAt', 'clientId', 'webForm'])
         && closingInvariants()
         && customerLinkIsWriteOnce()
         && customerLinkOnlyOnRealClose()
@@ -1149,9 +1601,11 @@ service cloud.firestore {
         && (
           isSuperAdmin()
           || isWsAdmin(resource.data.workspaceId)
+          // A rep works their own lead through a WHITELIST: reassigning,
+          // archiving, restoring or touching integration data is not on it.
           || (isWsRep(resource.data.workspaceId)
               && resource.data.assignedToId == myUserId()
-              && !changedKeys().hasAny(['assignedToId', 'leadType']))
+              && changedKeys().hasOnly(repEditableFields()))
         );
 
       allow delete: if isSuperAdmin() || isWsAdmin(resource.data.workspaceId);
