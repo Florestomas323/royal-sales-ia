@@ -50,7 +50,9 @@ export interface ResolvedIdentity {
 export type ResolveOutcome =
   | { status: "ready"; identity: ResolvedIdentity }
   | { status: "no_membership" }
-  | { status: "unverified_email"; invitationId: string }
+  // The invitation cannot be read before the address is verified, so its id
+  // is not available here. The UI only uses `status`.
+  | { status: "unverified_email"; invitationId?: string }
   | { status: "deactivated" }
 
 const membershipsCol = collection(db, "memberships")
@@ -75,13 +77,23 @@ export async function getWorkspace(workspaceId: string): Promise<Workspace | nul
   return { ...(snap.data() as Omit<Workspace, "id">), id: snap.id }
 }
 
-/** Finds an unclaimed team profile for this email (invitation). */
+/**
+ * Finds a LIVE invitation for this email.
+ *
+ * The three filters mirror the Security Rule exactly. Firestore Rules are not
+ * filters: a query that does not narrow itself the same way the rule does is
+ * rejected outright, so leaving out `status == "invited"` would make every
+ * lookup fail with permission-denied rather than return nothing.
+ *
+ * Only callable with a VERIFIED email — the rule requires it too.
+ */
 export async function findInvitation(email: string): Promise<User | null> {
   const snap = await getDocs(
     query(
       usersCol,
       where("email", "==", email.toLowerCase()),
       where("authUid", "==", null),
+      where("status", "==", "invited"),
       limit(1),
     ),
   )
@@ -131,9 +143,12 @@ export async function resolveIdentity(authUser: AuthUser): Promise<ResolveOutcom
   let membership = await getMembership(authUser.uid)
 
   if (!membership) {
+    // Verification FIRST: the rule that exposes an invitation demands a
+    // verified address, so looking it up beforehand would come back as
+    // permission-denied instead of this friendly state.
+    if (!authUser.emailVerified) return { status: "unverified_email" }
     const invitation = authUser.email ? await findInvitation(authUser.email) : null
     if (!invitation) return { status: "no_membership" }
-    if (!authUser.emailVerified) return { status: "unverified_email", invitationId: invitation.id }
     membership = await claimInvitation(authUser, invitation)
   }
 

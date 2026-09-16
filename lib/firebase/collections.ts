@@ -456,11 +456,20 @@ export async function setMemberStatus(
   await runTransaction(db, async (tx) => {
     const userSnap = await tx.get(userRef)
     if (!userSnap.exists()) throw new Error("user_not_found")
-    const current = userSnap.data() as { role: UserRole; status: MemberStatus }
+    const current = userSnap.data() as { role: UserRole; status: MemberStatus; authUid?: string | null }
     const { seats } = await seatsInTx(tx, workspaceRef, legacy)
 
+    /**
+     * Reactivating somebody who never signed in returns them to `invited`,
+     * not `active`: they still have to claim the invitation, and there is no
+     * membership behind them yet. Marking them active would take a seat that
+     * nothing backs and leave the claim flow unreachable.
+     */
+    const target: MemberStatus =
+      status === "active" && (current.authUid ?? null) === null ? "invited" : status
+
     if (isSeatRole(current.role)) {
-      if (status === "inactive") {
+      if (target === "inactive") {
         // Deactivating frees the seat.
         tx.update(workspaceRef, {
           seats: withoutSeat(seats, userId),
@@ -477,7 +486,9 @@ export async function setMemberStatus(
         })
       }
     }
-    tx.update(userRef, { status, updatedAt: serverTimestamp() })
+    tx.update(userRef, { status: target, updatedAt: serverTimestamp() })
+    // A membership never holds `invited`: an unclaimed profile has none, so
+    // this loop is empty in that case.
     for (const m of memberships.docs) tx.update(m.ref, { status })
   })
 }
