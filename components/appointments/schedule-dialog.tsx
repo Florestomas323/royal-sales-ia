@@ -139,6 +139,13 @@ export function ScheduleDialog({
         toast.success(d.updated)
         onOpenChange(false)
       } else {
+        // The actor is mandatory: a meeting is never booked without the
+        // lead's stage following it. Without a resolved membership there is
+        // nobody to sign the change, so nothing is written.
+        if (!membership?.userId || !role) {
+          toast.error(d.error)
+          return
+        }
         const id = await createAppointment({
           workspaceId: target.workspaceId,
           leadId: target.leadId,
@@ -151,7 +158,7 @@ export function ScheduleDialog({
           notes: notes.trim() || undefined,
           location: storedLocation,
           createdBy: membership.userId,
-        })
+        }, { userId: membership.userId, role })
         toast.success(d.created)
         // The dialog switches to a success step offering the export. The
         // appointment already exists: this step can be dismissed freely.
