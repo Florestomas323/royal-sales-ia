@@ -19,6 +19,8 @@
     "lib/media-buyer/analyzer.ts",
     "lib/constants.ts",
     "lib/leads.ts",
-    "app/api/meta/ad-preview/route.ts"
+    "app/api/meta/ad-preview/route.ts",
+    "lib/meta/campaign-links.ts",
+    "lib/campaigns/merged.ts"
   ]
 }

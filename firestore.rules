@@ -1510,6 +1510,10 @@ service cloud.firestore {
           && (!('temperature' in request.resource.data)
               || request.resource.data.temperature == null
               || request.resource.data.temperature in ['hot', 'warm', 'cold'])
+          // Absent on legacy documents, or exactly one of the three. An
+          // explicit null is not a value the app ever writes.
+          && (!('attributionSource' in request.resource.data)
+              || request.resource.data.attributionSource in ['meta', 'manual', 'web'])
           && optionalString('lastContactAt')
           && optionalString('nextFollowUpAt')
           && optionalString('nextAction')
@@ -1531,6 +1535,33 @@ service cloud.firestore {
           && (!('recruiting' in request.resource.data)
               || request.resource.data.recruiting == null
               || request.resource.data.recruiting is map);
+      }
+
+      /**
+       * Manual campaign attribution. The selector in the app is scoped to the
+       * workspace, but a tampered client could send any id — so the tenant
+       * check lives here: a non-empty `campaignId` must be a real campaign of
+       * THIS lead's workspace, `campaignName` must be that campaign's name,
+       * and the change is recorded as manual. "" is "Sin campaña".
+       */
+      function attributionChanges() {
+        return changedKeys().hasAny(['campaignId', 'campaignName', 'attributionSource']);
+      }
+
+      function attributedCampaign() {
+        return get(/databases/$(database)/documents/campaigns/$(request.resource.data.campaignId)).data;
+      }
+
+      function manualAttributionIsValid() {
+        return request.resource.data.get('attributionSource', null) == 'manual'
+          && request.resource.data.campaignId is string
+          && (
+            (request.resource.data.campaignId == ''
+              && request.resource.data.get('campaignName', '') == '')
+            || (exists(/databases/$(database)/documents/campaigns/$(request.resource.data.campaignId))
+              && attributedCampaign().workspaceId == resource.data.workspaceId
+              && request.resource.data.get('campaignName', '') == attributedCampaign().name)
+          );
       }
 
       /**
@@ -1591,6 +1622,12 @@ service cloud.firestore {
         && closingInvariants()
         && customerLinkIsWriteOnce()
         && customerLinkOnlyOnRealClose()
+        // Attribution moves only by an admin, and only to a campaign of the
+        // same workspace (or to none). Telemarketing's whitelist excludes it.
+        && (
+          !attributionChanges()
+          || ((isSuperAdmin() || isWsAdmin(resource.data.workspaceId)) && manualAttributionIsValid())
+        )
         && (
           !changedKeys().hasAny(['leadType'])
           || (
