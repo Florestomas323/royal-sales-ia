@@ -184,13 +184,19 @@ const pct = (n: number) => `${(n * 100).toFixed(0)}%`
  * Only leads already authorised for the viewer are ever passed in.
  */
 export function leadsForCampaign(leads: Lead[], campaign: Pick<InsightsCampaign, "metaCampaignId" | "localCampaignId" | "workspaceId">): Lead[] {
-  return leads.filter(
-    (l) =>
-      isActiveLead(l) &&
-      l.workspaceId === campaign.workspaceId &&
-      (l.attribution?.externalCampaignId === campaign.metaCampaignId ||
-        (campaign.localCampaignId !== null && l.campaignId === campaign.localCampaignId)),
-  )
+  return leads.filter((l) => {
+    if (!isActiveLead(l) || l.workspaceId !== campaign.workspaceId) return false
+    // A person's choice is authoritative: a manually attributed lead matches
+    // by its local campaign only, so an older Meta id cannot also claim it.
+    // "Sin campaña" chosen by hand (empty campaignId) matches nothing.
+    if (l.attributionSource === "manual") {
+      return campaign.localCampaignId !== null && l.campaignId === campaign.localCampaignId
+    }
+    return (
+      l.attribution?.externalCampaignId === campaign.metaCampaignId ||
+      (campaign.localCampaignId !== null && l.campaignId === campaign.localCampaignId)
+    )
+  })
 }
 
 /** Sales closed INSIDE the period, by `closedAt`. */
