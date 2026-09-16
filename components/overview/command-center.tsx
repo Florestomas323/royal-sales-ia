@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { DataErrorState } from "@/components/shared/data-error-state"
 import { useLeads } from "@/lib/firebase/leads"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
+import { useAppointments } from "@/lib/firebase/appointments"
 import { computeMetrics, resolvePeriod, type PeriodKey } from "@/lib/metrics"
 import { formatCurrency, formatNumber } from "@/lib/format"
 import { t } from "@/lib/i18n"
@@ -32,7 +33,13 @@ export function CommandCenter() {
   const { leads, loading, error } = useLeads("all")
 
   const period = useMemo(() => resolvePeriod(periodKey), [periodKey])
-  const metrics = useMemo(() => computeMetrics(leads, { period }), [leads, period])
+  // Real meetings come from the `appointments` collection: scheduling one does
+  // not move the lead's stage, so without this the card counted almost nothing.
+  const { appointments } = useAppointments()
+  const metrics = useMemo(
+    () => computeMetrics(leads, { period, appointments }),
+    [leads, period, appointments],
+  )
 
   if (error) return <DataErrorState error={error} />
 
