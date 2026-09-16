@@ -31,8 +31,17 @@ export const dynamic = "force-dynamic"
  * fallback so Meta still gets a 200 (and the misconfiguration is logged once).
  */
 let processor: MetaLeadProcessor | null = null
+/**
+ * Log-only mode is a LOCAL DEVELOPMENT convenience, never a production
+ * fallback. Answering 200 without persisting would tell Meta the lead was
+ * delivered while it was silently dropped; a 503 lets Meta retry instead.
+ * Opt in explicitly, and only outside production.
+ */
+const LOG_ONLY_ALLOWED =
+  process.env.NODE_ENV !== "production" && process.env.META_WEBHOOK_LOG_ONLY === "1"
+
 let warnedNoAdmin = false
-function getProcessor(): MetaLeadProcessor {
+function getProcessor(): MetaLeadProcessor | null {
   if (processor) return processor
   try {
     processor = createFirestoreProcessor(getAdminDb())
@@ -40,10 +49,12 @@ function getProcessor(): MetaLeadProcessor {
     if (!warnedNoAdmin) {
       warnedNoAdmin = true
       console.error(
-        "[meta/webhook] persistence disabled:",
+        "[meta/webhook] persistence unavailable:",
         isAdminNotConfigured(err) ? err.message : "Firebase Admin init failed",
+        LOG_ONLY_ALLOWED ? "(log-only mode, development)" : "(refusing events so Meta retries)",
       )
     }
+    if (!LOG_ONLY_ALLOWED) return null
     processor = createLogOnlyProcessor()
   }
   return processor
@@ -128,10 +139,27 @@ export async function POST(request: Request) {
   }
 
   const active = getProcessor()
+  if (!active) {
+    // Signature already verified above: this is a real Meta event we cannot
+    // store. Not a 200 — Meta must see the failure and redeliver.
+    return new NextResponse("Persistence unavailable", { status: 503 })
+  }
   const summary = { resolved: 0, unresolved: 0, retryable: 0, duplicate: 0, error: 0 }
+  // Set when Firestore itself failed for any event in this delivery.
+  let persistenceFailed = false
+  /**
+   * Set for outcomes that `isReprocessable` will pick up again — today only
+   * `no_link` / `link_inactive`. They are stored as reprocessable but nothing
+   * reprocesses them, so a 200 would strand the lead until somebody noticed.
+   */
+  let awaitingLink = false
   for (const event of parsed.leadgen) {
     const outcome = await handleLeadgenEvent(event, active, lookupCampaignIdForAd)
     summary[outcome.status]++
+    if (outcome.status === "error" && outcome.persistence) persistenceFailed = true
+    if (outcome.status === "unresolved" && (outcome.reason === "no_link" || outcome.reason === "link_inactive")) {
+      awaitingLink = true
+    }
     if (outcome.status === "resolved") {
       // Attribution is ready; creating the lead needs `leads_retrieval` to
       // download field_data, which Meta has not granted yet (see META.md).
@@ -154,5 +182,28 @@ export async function POST(request: Request) {
     console.info(`[meta/webhook] ignored ${parsed.ignoredChanges} non-leadgen change(s)`)
   }
 
+  // `retryable` outcomes (Graph rate limits, transient lookup failures) have
+  // no internal worker to reprocess them. Acknowledging with 200 would abandon
+  // them, so Meta is asked to redeliver; `isReprocessable` marks these records
+  // reprocessable, which keeps the retry idempotent.
+  // A campaign with no link yet (or an inactive one) is not permanent: the
+  // distributor may assign it in a minute, and the stored record is marked
+  // reprocessable. Asking Meta to redeliver keeps the lead reachable, and
+  // `isReprocessable` makes the retry idempotent.
+  if (awaitingLink) {
+    console.error("[meta/webhook] campaign not linked yet, asking Meta to redeliver")
+    return new NextResponse("Campaign not linked", { status: 503 })
+  }
+  if (summary.retryable > 0) {
+    console.error(`[meta/webhook] ${summary.retryable} retryable event(s), asking Meta to redeliver`)
+    return new NextResponse("Retryable outcome", { status: 503 })
+  }
+  if (persistenceFailed) {
+    // At least one event could not be stored. Acknowledging with 200 would
+    // tell Meta the delivery landed; 5xx makes it redeliver, and the claim
+    // records keep that redelivery from duplicating anything.
+    console.error(`[meta/webhook] persistence failure, asking Meta to retry (errors=${summary.error})`)
+    return new NextResponse("Persistence failure", { status: 503 })
+  }
   return NextResponse.json({ received: true, leadgen: parsed.leadgen.length, ...summary })
 }
