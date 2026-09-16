@@ -62,13 +62,36 @@ export function MetaCampaignsTable({
       const map: Record<string, MetaCampaignLink> = {}
       for (const l of rows) map[l.metaCampaignId] = l
       setLinks(map)
+
+      // Meta may have paused (or resumed) a campaign since it was linked. The
+      // inventory on this screen carries the fresh state; a link whose stored
+      // state differs is re-upserted so the local mirror — what Campañas and
+      // the "Campañas activas" counter read — follows Meta. Admins only, and
+      // only when something actually changed.
+      if (canManageCampaignLinks) {
+        for (const l of rows) {
+          const fresh = campaigns.find((c) => c.id === l.metaCampaignId)
+          const status = fresh?.effectiveStatus ?? fresh?.status ?? null
+          if (!l.active || !status || status === (l.metaCampaignStatus ?? null)) continue
+          const updated = await assignCampaign({
+            metaCampaignId: l.metaCampaignId,
+            workspaceId: l.workspaceId,
+            objective: l.objective,
+            active: true,
+            metaCampaignName: fresh?.name ?? l.metaCampaignName,
+            metaCampaignStatus: status,
+          })
+          map[l.metaCampaignId] = updated
+        }
+        setLinks({ ...map })
+      }
     } catch (err) {
       console.error("[meta] campaign links:", err instanceof Error ? err.message : "unknown")
       toast.error(c.loadError)
     } finally {
       setLoadingLinks(false)
     }
-  }, [isSuperAdmin, workspaceId, canManageCampaignLinks])
+  }, [isSuperAdmin, workspaceId, canManageCampaignLinks, campaigns])
 
   useEffect(() => {
     void reload()
@@ -83,6 +106,9 @@ export function MetaCampaignsTable({
         objective,
         active: true,
         metaCampaignName: campaign.name,
+        // The real Meta state, so the local mirror is born and kept as
+        // active / paused instead of always "active".
+        metaCampaignStatus: campaign.effectiveStatus ?? campaign.status ?? null,
         adAccountId,
       })
       setLinks((prev) => ({ ...prev, [campaign.id]: link }))
