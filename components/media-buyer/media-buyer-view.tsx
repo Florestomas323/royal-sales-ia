@@ -125,9 +125,16 @@ export function MediaBuyerView() {
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <MetricCard label={m.summary.spend} value={noData(analysis.totals.spend) ? m.summary.noData : formatCurrency(analysis.totals.spend as number, true)} muted={noData(analysis.totals.spend)} emphasis />
-            <MetricCard label={m.summary.crmLeads} value={formatNumber(analysis.totals.crmLeads)} emphasis />
+            {/* The whole picture: 10 = 4 attributed + 6 with no campaign. */}
+            <MetricCard label={m.summary.crmLeads} value={formatNumber(analysis.totals.allCrmLeads)} emphasis />
+            <MetricCard label={m.summary.attributedLeads} value={formatNumber(analysis.totals.crmLeads)} />
             <MetricCard label={m.summary.metaLeads} value={noData(analysis.totals.metaLeads) ? m.summary.noData : formatNumber(analysis.totals.metaLeads as number)} muted={noData(analysis.totals.metaLeads)} emphasis />
             <MetricCard label={m.summary.cplCrm} value={noData(analysis.totals.cplCrm) ? m.summary.noData : formatCurrency(analysis.totals.cplCrm as number)} muted={noData(analysis.totals.cplCrm)} emphasis />
+            <MetricCard
+              label={m.summary.unattributedLeads}
+              value={formatNumber(analysis.totals.unattributedLeads)}
+              muted={analysis.totals.unattributedLeads === 0}
+            />
             <MetricCard label={m.summary.sales} value={formatNumber(analysis.totals.sales)} />
             <MetricCard label={m.summary.revenue} value={noData(analysis.totals.revenue) ? m.summary.noData : formatCurrency(analysis.totals.revenue as number, true)} muted={noData(analysis.totals.revenue)} />
             <MetricCard label={m.summary.roas} value={noData(analysis.totals.roas) ? m.summary.noData : `${(analysis.totals.roas as number).toFixed(2)}x`} muted={noData(analysis.totals.roas)} />
