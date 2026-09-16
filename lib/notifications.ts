@@ -78,6 +78,19 @@ export function notificationKey(
 }
 
 /**
+ * The key a SUPER ADMIN sees an event by: one row per lead, whoever it
+ * notified. A new lead fans out to every admin of the workspace, so keying by
+ * userId showed the same prospect several times to somebody who can read them
+ * all. Their read state lives in server-side receipts, never on the
+ * recipients' own documents.
+ */
+export function eventKey(
+  n: Pick<AppNotification, "workspaceId" | "type" | "leadId">,
+): string {
+  return `${n.workspaceId}__${n.type}__${n.leadId}`
+}
+
+/**
  * Collapses historical duplicates into one logical row.
  *
  * The newest copy supplies what is shown. If ANY copy is unread the logical
@@ -88,28 +101,44 @@ export function notificationKey(
 export interface LogicalNotification extends AppNotification {
   /** Ids of every document behind this row, newest first. */
   copies: string[]
+  /** The key this row was grouped by; a super admin's receipt uses it. */
+  eventKey: string
 }
 
-export function dedupeNotifications(items: AppNotification[]): LogicalNotification[] {
+export function dedupeNotifications(
+  items: AppNotification[],
+  /**
+   * How two documents count as "the same event". A normal member keys by
+   * recipient (their own copies); a super admin keys by lead, because they
+   * see every recipient's copy of the same prospect.
+   */
+  options: { byEvent?: boolean; readKeys?: ReadonlySet<string> } = {},
+): LogicalNotification[] {
+  const keyOf = options.byEvent ? eventKey : notificationKey
   const byKey = new Map<string, AppNotification[]>()
   for (const n of items) {
-    const key = notificationKey(n)
+    const key = keyOf(n)
     const list = byKey.get(key)
     if (list) list.push(n)
     else byKey.set(key, [n])
   }
   const rows: LogicalNotification[] = []
-  for (const group of byKey.values()) {
+  for (const [key, group] of byKey.entries()) {
     // Newest first: its content is what the row shows.
     const sorted = [...group].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""))
     const newest = sorted[0]
-    const anyUnread = sorted.some((n) => !n.read)
+    // For a super admin the read state is their OWN receipt, not the
+    // recipients': they may not write on somebody else's notification, and
+    // whether a distributor read theirs is not their read state.
+    const readByReceipt = options.readKeys?.has(key) ?? false
+    const anyUnread = options.byEvent ? !readByReceipt : sorted.some((n) => !n.read)
     rows.push({
       ...newest,
       // Unread wins: any copy still unread keeps the row unread.
       read: !anyUnread,
       readAt: anyUnread ? null : newest.readAt,
       copies: sorted.map((n) => n.id),
+      eventKey: key,
     })
   }
   return sortNotifications(rows) as LogicalNotification[]

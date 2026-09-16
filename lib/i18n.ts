@@ -172,6 +172,7 @@ export const t = {
   },
 
   notifications: {
+    markError: 'No pudimos marcar la notificación como leída.',
     title: 'Notificaciones',
     ariaLabel: 'Notificaciones',
     unread: (n: number) => (n === 1 ? '1 sin leer' : `${n} sin leer`),
@@ -1163,8 +1164,10 @@ export const t = {
       summary: {
         spend: 'Inversión',
         crmLeads: 'Prospectos CRM',
+        unattributedLeads: 'Sin campaña',
+        attributedLeads: 'Atribuidos a campañas',
         metaLeads: 'Leads Meta',
-        cplCrm: 'CPL CRM',
+        cplCrm: 'CPL atribuido',
         sales: 'Ventas',
         revenue: 'Ingresos',
         roas: 'ROAS',

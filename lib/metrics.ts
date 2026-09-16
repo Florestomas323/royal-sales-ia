@@ -1,6 +1,6 @@
 import { PIPELINES } from "@/lib/constants"
 import { hasClosedAmount, isActiveLead, isWon, leadTypeOf } from "@/lib/leads"
-import type { Lead, LeadType, PipelineStage } from "@/types"
+import type { Appointment, Lead, LeadType, PipelineStage } from "@/types"
 
 /**
  * Commercial metrics computed from REAL documents.
@@ -84,9 +84,16 @@ export function activeLeads(leads: Lead[]): Lead[] {
   return leads.filter(isActiveLead)
 }
 
-/** A lead counts as contacted only through a real WhatsApp / call action. */
-export function isContacted(lead: Pick<Lead, "lastContactAt">): boolean {
-  return typeof lead.lastContactAt === "string" && lead.lastContactAt.length > 0
+/**
+ * Contacted: a real WhatsApp / call recorded from the app, OR a lead that has
+ * clearly moved past its first stage. Somebody who reached "Demostración
+ * agendada" was obviously contacted, even if the outreach happened outside
+ * the app and never wrote `lastContactAt`.
+ */
+export function isContacted(lead: Pick<Lead, "lastContactAt" | "stage" | "leadType">): boolean {
+  if (typeof lead.lastContactAt === "string" && lead.lastContactAt.length > 0) return true
+  const pipeline = PIPELINES[leadTypeOf(lead)]
+  return lead.stage !== pipeline.initial && pipeline.stages.includes(lead.stage)
 }
 
 const APPOINTMENT_STAGE: Record<LeadType, PipelineStage> = {
@@ -134,6 +141,13 @@ export interface MetricsOptions {
   period?: Period
   /** Executed ad spend for the period. Pass null (default) while unavailable. */
   spend?: number | null
+  /**
+   * Real appointments of the workspace. Scheduling a meeting writes to the
+   * `appointments` collection and does NOT move the lead's stage, so counting
+   * `stage == 'appointment'` alone reported almost nothing. Pass them and the
+   * count reflects what is really on the calendar.
+   */
+  appointments?: Pick<Appointment, "leadId" | "leadType" | "scheduledAt" | "status">[]
 }
 
 export function computeMetrics(input: Lead[], options: MetricsOptions = {}): CommercialMetrics {
@@ -148,10 +162,29 @@ export function computeMetrics(input: Lead[], options: MetricsOptions = {}): Com
 
   const newLeads = created.filter((l) => l.stage === PIPELINES[leadTypeOf(l)].initial).length
   // Contact is attributed by lastContactAt, not by creation date.
-  const contacted = all.filter((l) => isContacted(l) && inPeriod(l.lastContactAt, period)).length
+  const contacted = all.filter(
+    (l) =>
+      isContacted(l)
+      // Dated by the contact itself when there is one; otherwise the lead
+      // progressed, so its creation date places it in the period.
+      && inPeriod(l.lastContactAt ?? l.createdAt, period),
+  ).length
 
-  const inAppointmentStage = sales.filter((l) => l.stage === APPOINTMENT_STAGE.sales).length
-  const inInterviewStage = recruiting.filter((l) => l.stage === APPOINTMENT_STAGE.recruiting).length
+  // A lead counts once, whether it reached the stage or has a real meeting
+  // scheduled in the period. Both are evidence of the same thing.
+  const activeIds = new Set(all.map((l) => l.id))
+  const booked = { sales: new Set<string>(), recruiting: new Set<string>() }
+  for (const a of options.appointments ?? []) {
+    // Cancelled meetings are not appointments; an archived lead counts for
+    // nothing (activeLeads already removed it from `all`).
+    if (a.status === "cancelled" || !activeIds.has(a.leadId)) continue
+    if (!inPeriod(a.scheduledAt, period)) continue
+    booked[a.leadType === "recruiting" ? "recruiting" : "sales"].add(a.leadId)
+  }
+  for (const l of sales) if (l.stage === APPOINTMENT_STAGE.sales) booked.sales.add(l.id)
+  for (const l of recruiting) if (l.stage === APPOINTMENT_STAGE.recruiting) booked.recruiting.add(l.id)
+  const inAppointmentStage = booked.sales.size
+  const inInterviewStage = booked.recruiting.size
 
   // Won leads are attributed by closedAt. Ones without it (pre-Phase F) are
   // reported separately instead of being dropped into an arbitrary period.
