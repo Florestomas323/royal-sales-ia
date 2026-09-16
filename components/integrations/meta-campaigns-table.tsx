@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { assignCampaign, fetchCampaignLinks, unassignCampaign } from "@/lib/integrations/meta"
+import { assignCampaign, fetchCampaignLinks, reconcileCampaignLinks, unassignCampaign } from "@/lib/integrations/meta"
 import { useCan, useWorkspace } from "@/lib/firebase/workspace-context"
 import { CAMPAIGN_OBJECTIVE_LABELS, LEAD_TYPES } from "@/lib/constants"
 import { t } from "@/lib/i18n"
@@ -54,7 +54,11 @@ export function MetaCampaignsTable({
   const reload = useCallback(async () => {
     setLoadingLinks(true)
     try {
-      const rows = await fetchCampaignLinks(isSuperAdmin ? null : workspaceId)
+      // Admins run the explicit mirror sync (a POST behind the manage
+      // permission); everyone else only lists. Reading never writes.
+      const rows =
+        (canManageCampaignLinks ? await reconcileCampaignLinks(isSuperAdmin ? null : workspaceId) : null)
+        ?? (await fetchCampaignLinks(isSuperAdmin ? null : workspaceId))
       const map: Record<string, MetaCampaignLink> = {}
       for (const l of rows) map[l.metaCampaignId] = l
       setLinks(map)
@@ -64,7 +68,7 @@ export function MetaCampaignsTable({
     } finally {
       setLoadingLinks(false)
     }
-  }, [isSuperAdmin, workspaceId])
+  }, [isSuperAdmin, workspaceId, canManageCampaignLinks])
 
   useEffect(() => {
     void reload()
