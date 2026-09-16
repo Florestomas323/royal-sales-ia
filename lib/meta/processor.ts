@@ -65,10 +65,23 @@ export type LeadgenOutcome =
   | { status: "unresolved"; reason: UnresolvedReason }
   | { status: "retryable"; reason: RetryableReason }
   | { status: "resolved"; owner: ResolvedOwner; via: "payload" | "graph" }
-  | { status: "error"; reason: string }
+  /**
+   * Something went wrong. `persistence: true` means Firestore itself failed
+   * (claim, link lookup or record) — the event may NOT have been stored, so
+   * the webhook must answer 5xx and let Meta redeliver. Without the flag it
+   * is a permanent, non-retryable problem that is already recorded.
+   */
+  | { status: "error"; reason: string; persistence?: boolean }
 
 export interface ClaimResult {
-  outcome: "claimed" | "duplicate"
+  /**
+   * `duplicate` is TERMINAL: the event already reached a final outcome.
+   * `in_flight` means a claim is open and not yet stale — another invocation
+   * may still be working on it, or one died mid-way. Acknowledging that with
+   * 200 would lose the event, so the caller answers 5xx and Meta redelivers
+   * once the claim goes stale.
+   */
+  outcome: "claimed" | "duplicate" | "in_flight"
   attempt: number
 }
 
@@ -171,6 +184,10 @@ export async function handleLeadgenEvent(
       ctx.attempt = claim.attempt
       if (claim.outcome === "duplicate") {
         outcome = { status: "duplicate" }
+      } else if (claim.outcome === "in_flight") {
+        // Nothing to record: another attempt owns this claim. Return without
+        // touching it so the open claim keeps its own timestamp.
+        return { status: "error", reason: "claim_in_flight", persistence: true }
       } else {
         // 1. campaign_id: from the payload if present, otherwise via ad_id → Graph.
         let campaignId = event.campaignId
@@ -208,13 +225,24 @@ export async function handleLeadgenEvent(
       }
     }
   } catch (err) {
-    outcome = { status: "error", reason: err instanceof Error ? err.name : "unknown" }
+    // Everything inside the block above talks to Firestore (claim,
+    // resolveLink). A throw here is infrastructure, not a permanent verdict
+    // about this lead, so it is flagged for the caller to answer 5xx.
+    outcome = {
+      status: "error",
+      reason: err instanceof Error ? err.name : "unknown",
+      persistence: true,
+    }
   }
 
   try {
     await processor.record(event, outcome, ctx)
   } catch (err) {
     console.error("[meta/processor] record failed:", err instanceof Error ? err.name : "unknown")
+    // The outcome was never written. The claim document stays in `received`
+    // and `isReprocessable` lets a redelivery pick it up again, so answering
+    // 5xx makes Meta retry WITHOUT creating a duplicate.
+    return { status: "error", reason: "record_failed", persistence: true }
   }
   return outcome
 }
@@ -277,7 +305,12 @@ export function createFirestoreProcessor(db: Firestore): MetaLeadProcessor {
         }
         const existing = snap.data() as Partial<ProcessedMetaLead>
         if (!isReprocessable(existing, Date.now())) {
-          return { outcome: "duplicate" as const, attempt: existing.attempts ?? 1 }
+          // An open, not-yet-stale claim is NOT a settled duplicate: its
+          // outcome was never written, so the event is still in doubt.
+          return {
+            outcome: existing.status === "received" ? ("in_flight" as const) : ("duplicate" as const),
+            attempt: existing.attempts ?? 1,
+          }
         }
         const attempt = (existing.attempts ?? 1) + 1
         tx.update(ref, { status: "received", updatedAt: now, attempts: attempt, reason: null })
