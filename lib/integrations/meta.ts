@@ -130,6 +130,25 @@ async function parseJson<T>(res: Response): Promise<T> {
  * Links visible to the caller. Super admin omits `workspaceId` to get them
  * all; the server ignores any workspace the caller is not a member of.
  */
+/**
+ * Explicit sync of local campaign mirrors (POST, manage permission). Called by
+ * Integraciones for admins; readers just list. Errors are swallowed — the
+ * list must load even if the sync cannot run.
+ */
+export async function reconcileCampaignLinks(workspaceId?: string | null): Promise<MetaCampaignLink[] | null> {
+  try {
+    const res = await fetch("/api/meta/campaign-links", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      body: JSON.stringify({ action: "reconcile", ...(workspaceId ? { workspaceId } : {}) }),
+    })
+    const body = await parseJson<{ links: MetaCampaignLink[] }>(res)
+    return body.links
+  } catch {
+    return null
+  }
+}
+
 export async function fetchCampaignLinks(workspaceId?: string | null): Promise<MetaCampaignLink[]> {
   try {
     const query = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ""
