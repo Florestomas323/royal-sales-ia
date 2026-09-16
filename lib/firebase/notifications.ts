@@ -98,3 +98,44 @@ export async function sendNewLeadEmail(leadId: string): Promise<void> {
     console.warn("[notifications] email request failed", err)
   }
 }
+
+/* ------------------------------------------------ super admin read receipts */
+
+/**
+ * A super admin cannot write on other people's notifications (the Rule only
+ * allows it on your own), so their read state lives in a server-side receipt
+ * collection reachable through /api/notifications/receipts. These two helpers
+ * are the only client access to it.
+ *
+ * Both fail soft: a receipt that cannot be fetched or stored leaves the event
+ * showing as unread, which is visible and harmless.
+ */
+/** Same pattern the email helper uses: the person's Firebase ID token. */
+async function authHeader(): Promise<Record<string, string>> {
+  const { auth } = await import("./client")
+  const token = await auth.currentUser?.getIdToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+export async function fetchReadReceipts(): Promise<Set<string>> {
+  try {
+    const res = await fetch("/api/notifications/receipts", {
+      headers: await authHeader(),
+      cache: "no-store",
+    })
+    const body = (await res.json().catch(() => ({}))) as { keys?: string[] }
+    return new Set(body.keys ?? [])
+  } catch {
+    return new Set()
+  }
+}
+
+export async function markReadReceipts(keys: string[]): Promise<void> {
+  if (keys.length === 0) return
+  const res = await fetch("/api/notifications/receipts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeader()) },
+    body: JSON.stringify({ keys }),
+  })
+  if (!res.ok) throw new Error(`receipts_failed_${res.status}`)
+}
