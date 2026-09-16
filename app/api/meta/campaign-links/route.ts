@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server"
 import { getAdminDb } from "@/lib/firebase/admin"
+import { readMetaConnection } from "@/lib/meta/connection-store"
+import { getCampaigns } from "@/lib/meta/graph"
 import {
   authenticateRequest,
   canAccessWorkspace,
@@ -70,6 +72,7 @@ interface UpsertBody {
   objective?: string
   active?: boolean
   metaCampaignName?: string | null
+  metaCampaignStatus?: string | null
   adAccountId?: string | null
 }
 
@@ -94,7 +97,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 })
     }
     const db = getAdminDb()
-    const links = await reconcileLocalCampaigns(db, await listCampaignLinks(db, scope))
+    const current = await listCampaignLinks(db, scope)
+    // Live Meta state for every ad account these links belong to, so a
+    // campaign paused in Meta shows as paused in Campañas without anybody
+    // having to open Integraciones first. Read-only on Meta; a Graph failure
+    // leaves the stored state untouched.
+    const statuses = await liveStatusesFor(db, current)
+    const links = await reconcileLocalCampaigns(db, current, statuses)
     const out: CampaignLinksResponse = { links }
     return NextResponse.json(out)
   }
@@ -117,6 +126,7 @@ export async function POST(request: Request) {
     objective: body.objective,
     active: body.active !== false,
     metaCampaignName: body.metaCampaignName ?? null,
+    metaCampaignStatus: body.metaCampaignStatus ?? null,
     adAccountId: body.adAccountId ?? null,
     assignedByUserId: auth.user.membership.userId,
   })
@@ -159,23 +169,63 @@ export async function DELETE(request: Request) {
  * swallowed: listing the links must keep working even if one mirror cannot
  * be created.
  */
+/**
+ * Meta's current status per campaign id, for the ad accounts of these links.
+ * One Graph read per distinct workspace connection. Failures are swallowed:
+ * the caller then keeps whatever status is stored.
+ */
+async function liveStatusesFor(
+  db: ReturnType<typeof getAdminDb>,
+  links: MetaCampaignLink[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const workspaces = [...new Set(links.filter((l) => l.active).map((l) => l.workspaceId))]
+  await Promise.all(
+    workspaces.map(async (wsId) => {
+      try {
+        const conn = await readMetaConnection(db, wsId)
+        if (!conn?.adAccount?.id) return
+        const res = await getCampaigns(conn.adAccount.id)
+        if (!res.ok) return
+        for (const c of res.data.data ?? []) {
+          const s = c.effective_status ?? c.status
+          if (s) out.set(c.id, s)
+        }
+      } catch {
+        /* stored status stays */
+      }
+    }),
+  )
+  return out
+}
+
 async function reconcileLocalCampaigns(
   db: ReturnType<typeof getAdminDb>,
   links: MetaCampaignLink[],
+  liveStatuses: Map<string, string> = new Map(),
 ): Promise<MetaCampaignLink[]> {
   return Promise.all(
     links.map(async (link) => {
-      if (!link.active || link.campaignId || !link.workspaceId) return link
+      if (!link.active || !link.workspaceId) return link
+      // Fresh state wins; the state stored at link time is the fallback.
+      const metaStatus = liveStatuses.get(link.metaCampaignId) ?? link.metaCampaignStatus ?? null
+      // A link that already has its mirror is only revisited when Meta's
+      // state changed; a link without one is created as before.
+      if (link.campaignId && (!metaStatus || metaStatus === (link.metaCampaignStatus ?? null))) return link
       try {
         const campaignId = await ensureLocalCampaign(db, {
           workspaceId: link.workspaceId,
           metaCampaignId: link.metaCampaignId,
           name: link.metaCampaignName ?? null,
           objective: link.objective,
+          metaStatus,
         })
         await db.collection("metaCampaignLinks").doc(link.metaCampaignId)
-          .set({ campaignId, updatedAt: new Date().toISOString() }, { merge: true })
-        return { ...link, campaignId }
+          .set(
+            { campaignId, metaCampaignStatus: metaStatus, updatedAt: new Date().toISOString() },
+            { merge: true },
+          )
+        return { ...link, campaignId, metaCampaignStatus: metaStatus }
       } catch (err) {
         console.error("[meta/campaign-links] reconcile failed", link.metaCampaignId, err)
         return link
