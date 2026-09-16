@@ -190,6 +190,13 @@ export interface LeadPatch {
   stage?: PipelineStage
   assignedToId?: string
   nextAction?: string
+  /**
+   * Manual attribution: the local `campaigns` document id, or "" for
+   * "Sin campaña". Always written together with `attributionSource: "manual"`.
+   * The campaign name is denormalised so lists need no extra read.
+   */
+  campaignId?: string
+  campaignName?: string
 }
 
 export class LeadValidationError extends Error {
@@ -234,6 +241,12 @@ export async function updateLead(
       throw new LeadValidationError("email", "El correo no es válido.")
     }
     data.email = email
+  }
+  if (patch.campaignId !== undefined) {
+    // A person picked this; from now on Media Buyer matches by it alone.
+    data.campaignId = patch.campaignId
+    data.campaignName = patch.campaignId ? (patch.campaignName ?? "") : ""
+    data.attributionSource = "manual"
   }
   if (patch.potentialValue !== undefined) {
     if (!Number.isFinite(patch.potentialValue) || patch.potentialValue < 0) {

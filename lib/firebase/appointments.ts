@@ -2,15 +2,17 @@
 
 import { useEffect, useState } from "react"
 import {
-  addDoc, deleteField, collection, doc, onSnapshot, query, updateDoc, where,
+  deleteField, collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where, writeBatch,
   type DocumentData, type Query,
 } from "firebase/firestore"
 import type { FieldValue } from "firebase/firestore"
 import { db } from "./client"
 import { useWorkspace } from "./workspace-context"
 import { sortForAgenda } from "@/lib/appointments"
+import { PIPELINES, STAGE_LABELS } from "@/lib/constants"
+import { stageActivity, type ActorContext } from "./activities"
 import type {
-  Appointment, AppointmentLocation, AppointmentStatus, AppointmentType, LeadType,
+  Appointment, AppointmentLocation, AppointmentStatus, AppointmentType, Lead, LeadType, PipelineStage,
 } from "@/types"
 
 /**
@@ -43,13 +45,106 @@ function stripUndefined<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as T
 }
 
-export async function createAppointment(input: NewAppointment): Promise<string> {
+/* -------------------------------------------------------------------------- */
+/*  Appointment ↔ pipeline stage                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `lead.stage` is THE source of truth for the pipeline: the Rules, the
+ * Kanban, the funnel and the audit trail all read it. So when a meeting is
+ * booked the lead is moved into "Demostración agendada" (or "Entrevista")
+ * in the SAME batch, with the same `stage_change` activity a manual move
+ * writes — and when the last active meeting is cancelled it moves back to
+ * follow-up. Two sources of truth that could disagree were the root cause of
+ * a demo visible in the calendar while the funnel showed zero.
+ *
+ * A lead already past the meeting stage (won, lost, follow-up) is left alone:
+ * booking a closing meeting must not drag a won lead backwards.
+ */
+function meetingStageFor(leadType: LeadType): PipelineStage {
+  return leadType === "recruiting" ? "rec_interview" : "appointment"
+}
+
+function followUpStageFor(leadType: LeadType): PipelineStage {
+  return leadType === "recruiting" ? "rec_follow_up" : "follow_up"
+}
+
+/** Stages BEFORE the meeting in each pipeline, from which a booking advances. */
+function isBeforeMeetingStage(leadType: LeadType, stage: PipelineStage): boolean {
+  const before = PIPELINES[leadType].stages
+  const idx = before.indexOf(stage)
+  const meetingIdx = before.indexOf(meetingStageFor(leadType))
+  return idx !== -1 && meetingIdx !== -1 && idx < meetingIdx
+}
+
+/**
+ * Adds "move this lead into its meeting stage" to a batch, if it is before
+ * that stage. Shared by booking and by the retroactive sync so both write the
+ * identical stage change and audit activity. Returns whether anything was
+ * staged — the sync counts on that to be idempotent.
+ */
+function stageMoveIntoMeeting(
+  batch: ReturnType<typeof writeBatch>,
+  lead: Lead & { id: string },
+  actor: ActorContext,
+): boolean {
+  const leadType: LeadType = lead.leadType ?? "sales"
+  if (!isBeforeMeetingStage(leadType, lead.stage)) return false
+  const to = meetingStageFor(leadType)
+  batch.update(doc(db, "leads", lead.id), { stage: to })
+  stageActivity(batch, { id: lead.id, workspaceId: lead.workspaceId }, actor, {
+    type: "stage_change",
+    payload: { from: lead.stage, to, fromLabel: STAGE_LABELS[lead.stage], toLabel: STAGE_LABELS[to] },
+  })
+  return true
+}
+
+/**
+ * Books a meeting and advances the lead into the meeting stage atomically.
+ * `actor` is REQUIRED: a meeting must never again be created without its
+ * stage following, which is how the funnel and the calendar drifted apart.
+ */
+export async function createAppointment(input: NewAppointment, actor: ActorContext): Promise<string> {
   const now = new Date().toISOString()
-  const ref = await addDoc(
-    appointmentsCol,
-    stripUndefined({ ...input, status: "scheduled" as AppointmentStatus, createdAt: now, updatedAt: now }),
-  )
+  const ref = doc(appointmentsCol)
+  const batch = writeBatch(db)
+  batch.set(ref, stripUndefined({ ...input, status: "scheduled" as AppointmentStatus, createdAt: now, updatedAt: now }))
+
+  const leadSnap = await getDoc(doc(db, "leads", input.leadId))
+  const lead = leadSnap.exists() ? ({ ...(leadSnap.data() as Lead), id: leadSnap.id }) : null
+  if (lead && lead.workspaceId === input.workspaceId) stageMoveIntoMeeting(batch, lead, actor)
+  await batch.commit()
   return ref.id
+}
+
+/**
+ * RETROACTIVE sync for meetings that existed before booking started moving
+ * the stage. Idempotent: it only ever advances a lead that is still BEFORE
+ * its meeting stage, so a second run finds nothing to do; won, lost and
+ * later stages are never touched. One batch per lead, each with its own
+ * `stage_change` activity — the same write a booking performs.
+ */
+export async function syncExistingAppointments(
+  workspaceId: string,
+  actor: ActorContext,
+): Promise<{ examined: number; moved: number }> {
+  const snap = await getDocs(
+    query(appointmentsCol, where("workspaceId", "==", workspaceId), where("status", "==", "scheduled")),
+  )
+  const leadIds = [...new Set(snap.docs.map((d) => (d.data() as Appointment).leadId))]
+  let moved = 0
+  for (const leadId of leadIds) {
+    const leadSnap = await getDoc(doc(db, "leads", leadId))
+    if (!leadSnap.exists()) continue
+    const lead = { ...(leadSnap.data() as Lead), id: leadSnap.id }
+    // Never across tenants, never a lead in the trash.
+    if (lead.workspaceId !== workspaceId || lead.archived === true) continue
+    const batch = writeBatch(db)
+    if (!stageMoveIntoMeeting(batch, lead, actor)) continue
+    await batch.commit()
+    moved += 1
+  }
+  return { examined: leadIds.length, moved }
 }
 
 /** Reschedule or edit. `workspaceId`, `leadId` and `createdBy` never change. */
@@ -72,8 +167,49 @@ export async function updateAppointment(
   await updateDoc(doc(appointmentsCol, id), payload)
 }
 
-export async function setAppointmentStatus(id: string, status: AppointmentStatus): Promise<void> {
-  await updateDoc(doc(appointmentsCol, id), { status, updatedAt: new Date().toISOString() })
+/**
+ * Completes, cancels or marks a no-show. A rescheduled meeting never comes
+ * through here (`updateAppointment` keeps its status), so the lead stays in
+ * the meeting stage with the new date. When the LAST active meeting of a lead
+ * is cancelled or missed, the lead moves back to follow-up in the same batch
+ * so a dead appointment cannot keep it in "Demostración agendada".
+ */
+export async function setAppointmentStatus(
+  id: string,
+  status: AppointmentStatus,
+  actor?: ActorContext,
+): Promise<void> {
+  const now = new Date().toISOString()
+  const batch = writeBatch(db)
+  batch.update(doc(appointmentsCol, id), { status, updatedAt: now })
+
+  if (actor && (status === "cancelled" || status === "no_show")) {
+    const apptSnap = await getDoc(doc(appointmentsCol, id))
+    const appt = apptSnap.exists() ? (apptSnap.data() as Appointment) : null
+    if (appt) {
+      const others = await getDocs(
+        query(
+          appointmentsCol,
+          where("workspaceId", "==", appt.workspaceId),
+          where("leadId", "==", appt.leadId),
+          where("status", "==", "scheduled"),
+        ),
+      )
+      const stillActive = others.docs.some((d) => d.id !== id)
+      const leadSnap = await getDoc(doc(db, "leads", appt.leadId))
+      const lead = leadSnap.exists() ? (leadSnap.data() as Lead) : null
+      const leadType: LeadType = lead?.leadType ?? appt.leadType
+      if (lead && !stillActive && lead.stage === meetingStageFor(leadType)) {
+        const to = followUpStageFor(leadType)
+        batch.update(doc(db, "leads", appt.leadId), { stage: to })
+        stageActivity(batch, { id: appt.leadId, workspaceId: appt.workspaceId }, actor, {
+          type: "stage_change",
+          payload: { from: lead.stage, to, fromLabel: STAGE_LABELS[lead.stage], toLabel: STAGE_LABELS[to] },
+        })
+      }
+    }
+  }
+  await batch.commit()
 }
 
 /**
