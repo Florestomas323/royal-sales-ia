@@ -44,6 +44,7 @@ export function CalendarView() {
   const [ownerFilter, setOwnerFilter] = useState<string>(ANY)
   const [typeFilter, setTypeFilter] = useState<string>(ANY)
   const [editing, setEditing] = useState<Appointment | null>(null)
+  const [syncing, setSyncing] = useState(false)
 
   const actor = useMemo(
     () => ({ role, userId: membership?.userId ?? null, workspaceId: membership?.workspaceId ?? null, isSuperAdmin }),
@@ -123,7 +124,6 @@ export function CalendarView() {
    * idempotent — a second run reports zero moves.
    */
   const canSync = Boolean(workspaceId && membership?.userId && role) && (isSuperAdmin || role === "client_admin" || role === "manager")
-  const [syncing, setSyncing] = useState(false)
   async function handleSync() {
     if (!canSync || !workspaceId || !membership?.userId || !role || syncing) return
     setSyncing(true)
