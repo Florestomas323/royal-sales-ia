@@ -54,19 +54,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 })
   }
 
-  const db = getAdminDb()
-  // Links assigned before the local mirror existed carry `campaignId: null`,
-  // so Campañas showed nothing while Media Buyer worked (it reads the link,
-  // not the local document). Reconcile them here, where the bridge already
-  // runs: find-or-create the mirror and store its id. Idempotent — a link
-  // that already points somewhere is left untouched — and it never reads or
-  // writes anything belonging to Meta itself.
-  const links = await reconcileLocalCampaigns(db, await listCampaignLinks(db, scope))
+  // READ ONLY. Reconciling local campaign mirrors is a write and lives in
+  // POST { action: "reconcile" }, behind the manage permission: loading a
+  // page must never perform administrative writes on the caller's behalf.
+  const links = await listCampaignLinks(getAdminDb(), scope)
   const body: CampaignLinksResponse = { links }
   return NextResponse.json(body)
 }
 
 interface UpsertBody {
+  /** "reconcile" runs the local-mirror sync instead of an upsert. */
+  action?: "reconcile"
   metaCampaignId?: string
   workspaceId?: string
   objective?: string
@@ -84,6 +82,21 @@ export async function POST(request: Request) {
     body = (await request.json()) as UpsertBody
   } catch {
     return NextResponse.json({ error: "invalid_body" }, { status: 400 })
+  }
+
+  // Explicit write action: make sure every active link of the scope has its
+  // local `campaigns` mirror. Same permission as assigning a campaign, and a
+  // super admin may reconcile everything; anyone else only their workspace.
+  if (body.action === "reconcile") {
+    const isSuperAdmin = auth.user.membership.role === "super_admin"
+    const scope = isSuperAdmin ? (body.workspaceId?.trim() || null) : auth.user.membership.workspaceId
+    if (!isSuperAdmin && (!scope || !canManageCampaignLinks(auth.user, scope))) {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 })
+    }
+    const db = getAdminDb()
+    const links = await reconcileLocalCampaigns(db, await listCampaignLinks(db, scope))
+    const out: CampaignLinksResponse = { links }
+    return NextResponse.json(out)
   }
 
   const metaCampaignId = body.metaCampaignId?.trim()
