@@ -449,6 +449,8 @@ export interface MetaCampaignLink {
   formIds: string[]
   /** Campaign name at assignment time, so the admin UI reads well offline. */
   metaCampaignName: string | null
+  /** Meta's `effective_status` at link/sync time (ACTIVE, PAUSED, …). */
+  metaCampaignStatus?: string | null
   /** Ad account the campaign belongs to ("act_123"). Informational. */
   adAccountId: string | null
   /** users.id of whoever assigned it (audit). */
@@ -633,6 +635,14 @@ export interface Lead {
   source: Platform
   campaignId: string
   campaignName: string
+  /**
+   * Where `campaignId` came from. `meta` (or absent, on older leads) means
+   * the integration set it; `manual` means a person picked the campaign in
+   * the lead form. Manual wins: Media Buyer then matches ONLY by `campaignId`,
+   * so a lead never lands in two campaigns.
+   */
+  attributionSource?: 'meta' | 'manual' | 'web'
+
   score: number
   temperature: LeadTemperature
   stage: PipelineStage
