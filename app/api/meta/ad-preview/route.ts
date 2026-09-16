@@ -150,11 +150,22 @@ export async function GET(request: Request) {
   }
 }
 
+/**
+ * Hosts Meta hands out as shorteners. `preview_shareable_link` often comes
+ * back as `http://fb.me/...`, which resolves to "content not available" for
+ * anyone who is not inside the ad account — so it is worse than no button.
+ * Rejected here rather than in the UI, so no caller can surface one.
+ */
+const SHORTENER_HOSTS = ["fb.me", "m.me", "fb.watch", "l.facebook.com", "lm.facebook.com"]
+
 function safeUrl(v: string | undefined): string | null {
   if (!v) return null
   try {
     const u = new URL(v)
-    return u.protocol === "https:" || u.protocol === "http:" ? v : null
+    if (u.protocol !== "https:" && u.protocol !== "http:") return null
+    const host = u.hostname.replace(/^www\./, "").toLowerCase()
+    if (SHORTENER_HOSTS.includes(host)) return null
+    return v
   } catch {
     return null
   }
