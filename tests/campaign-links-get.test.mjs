@@ -47,6 +47,10 @@ const fakes = {
       || ((u.membership.role === "client_admin" || u.membership.role === "manager")
           && u.membership.workspaceId === ws),
   },
+  // The reconcile action reads Meta's live campaign states. On a GET neither
+  // is ever reached; on the POST tests the fakes report "no connection".
+  "@/lib/meta/connection-store": { readMetaConnection: async () => null },
+  "@/lib/meta/graph": { getCampaigns: async () => ({ ok: false, kind: "not_configured", detail: "test" }) },
   "@/lib/meta/campaign-links": {
     listCampaignLinks: async (_db, scope) => state.links.filter((l) => scope === null || l.workspaceId === scope),
     ensureLocalCampaign: async () => { state.reconciled = true; return "local-x" },
