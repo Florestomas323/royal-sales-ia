@@ -4,10 +4,11 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { CampaignsTable } from "@/components/campaigns/campaigns-table"
 import { ConversionFunnelSection } from "@/components/campaigns/conversion-funnel-section"
-import { useMemo } from "react"
+import { useEffect, useMemo } from "react"
 import { useCampaigns } from "@/lib/firebase/collections"
 import { useLeads } from "@/lib/firebase/leads"
-import { useWorkspace } from "@/lib/firebase/workspace-context"
+import { useCan, useWorkspace } from "@/lib/firebase/workspace-context"
+import { reconcileCampaignLinks } from "@/lib/integrations/meta"
 import { useMediaBuyer } from "@/lib/media-buyer/client"
 import { analyzeCampaignPerformance } from "@/lib/media-buyer/analyzer"
 import { mergeCampaigns, mergedTotals } from "@/lib/campaigns/merged"
@@ -39,12 +40,31 @@ export function CampaignsLive() {
     () => (data ? analyzeCampaignPerformance(data.campaigns, leads, { period: crmPeriod }).campaigns : []),
     [data, leads, crmPeriod],
   )
-  const rows = useMemo(() => mergeCampaigns(campaigns, metrics), [campaigns, metrics])
+  /**
+   * Self-healing: an admin opening Campañas runs the explicit mirror sync
+   * (POST, manage permission), which reads Meta's live state, so a campaign
+   * paused in Meta shows as paused here without a detour through
+   * Integraciones. Readers only list. The live Firestore listener then
+   * delivers the updated mirror by itself.
+   */
+  const { canManageCampaignLinks } = useCan()
+  useEffect(() => {
+    if (!canManageCampaignLinks) return
+    void reconcileCampaignLinks(isSuperAdmin ? null : workspaceId)
+  }, [canManageCampaignLinks, isSuperAdmin, workspaceId])
+
+  // Only the states the product supports are listed: archived/deleted
+  // campaigns are kept out rather than shown as something they are not.
+  const supported = useMemo(
+    () => campaigns.filter((c) => c.status === "active" || c.status === "paused"),
+    [campaigns],
+  )
+  const rows = useMemo(() => mergeCampaigns(supported, metrics), [supported, metrics])
   // Ads come straight from Meta, one card per linked campaign. A campaign
   // with no Meta link has no ads to read and renders nothing.
   const metaCampaigns = useMemo(
-    () => campaigns.filter((c) => Boolean(c.externalId)),
-    [campaigns],
+    () => supported.filter((c) => Boolean(c.externalId)),
+    [supported],
   )
   const totals = useMemo(() => mergedTotals(rows), [rows])
 
