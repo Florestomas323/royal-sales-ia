@@ -139,6 +139,20 @@ export interface Analysis {
     revenue: number | null
     roas: number | null
     ctr: number | null
+    /**
+     * CRM leads of the workspace that no campaign claims — created manually,
+     * or arrived without attribution. Reported instead of being silently
+     * dropped, so `crmLeads + unattributedLeads` reconciles with the total the
+     * dashboard shows. NEVER attributed to a campaign to make numbers agree.
+     */
+    unattributedLeads: number
+    /**
+     * Every active CRM lead of the scope in the period: attributed plus
+     * unattributed, counted ONCE even if two campaigns could claim it.
+     * `crmLeads` stays the attributed figure, because the CPL divides real
+     * campaign spend and the unattributed ones did not come from it.
+     */
+    allCrmLeads: number
   }
   findings: Finding[]
   recommendations: Recommendation[]
@@ -237,8 +251,12 @@ export function analyzeCampaignPerformance(
 
   // 1. Per-campaign metrics. CRM leads are counted by `createdAt` inside the
   // period; sales and revenue by `closedAt` — the same rule as Phase F.
+  // Every lead any campaign claims, kept BY ID so a lead two campaigns can
+  // claim is one lead in the totals. Each campaign card still counts it.
+  const attributed = new Map<string, Lead>()
   const base = insights.map((c) => {
     const matched = leadsForCampaign(active, c)
+    for (const l of matched) attributed.set(l.id, l)
     const crm = matched.filter((l) => withinPeriod(l.createdAt, period))
     const closed = salesInPeriod(matched, period)
     return { c, matched, crm, sales: closed.length, revenue: revenueOf(closed) }
@@ -320,12 +338,20 @@ export function analyzeCampaignPerformance(
   // 2. Totals.
   const spendKnown = campaigns.filter((c) => c.spend !== null)
   const totalSpend = spendKnown.length > 0 ? spendKnown.reduce((s, c) => s + (c.spend as number), 0) : null
-  const totalCrm = campaigns.reduce((s, c) => s + c.crmLeads, 0)
+  /**
+   * UNIQUE attributed leads in the period. Summing `c.crmLeads` across
+   * campaigns double-counted a lead that two campaigns could claim — and made
+   * the CPL divide the spend by an inflated denominator. The per-campaign
+   * cards are unaffected: each still reports its own matches.
+   */
+  const attributedInPeriod = [...attributed.values()].filter((l) => withinPeriod(l.createdAt, period))
+  const totalCrm = attributedInPeriod.length
   const metaKnown = campaigns.filter((c) => c.metaLeads !== null)
   const totalMeta = metaKnown.length > 0 ? metaKnown.reduce((s, c) => s + (c.metaLeads as number), 0) : null
-  const totalSales = campaigns.reduce((s, c) => s + c.sales, 0)
-  const revKnown = campaigns.filter((c) => c.revenue !== null)
-  const totalRevenue = revKnown.length > 0 ? revKnown.reduce((s, c) => s + (c.revenue as number), 0) : null
+  // Same reasoning for money: a sale is counted once, whatever claims it.
+  const uniqueSales = salesInPeriod([...attributed.values()], period)
+  const totalSales = uniqueSales.length
+  const totalRevenue = revenueOf(uniqueSales)
   const clicksKnown = campaigns.filter((c) => c.clicks !== null && c.impressions !== null)
   const totalCtr =
     clicksKnown.length > 0
@@ -425,7 +451,25 @@ export function analyzeCampaignPerformance(
 
   return {
     campaigns: campaigns.sort((a, b) => (b.spend ?? -1) - (a.spend ?? -1)),
-    totals: { spend: totalSpend, crmLeads: totalCrm, metaLeads: totalMeta, cplCrm: ratio(totalSpend, totalCrm), sales: totalSales, revenue: totalRevenue, roas: ratio(totalRevenue, totalSpend), ctr: totalCtr === null ? null : totalCtr * 100 },
+    totals: {
+      spend: totalSpend,
+      crmLeads: totalCrm,
+      metaLeads: totalMeta,
+      cplCrm: ratio(totalSpend, totalCrm),
+      sales: totalSales,
+      revenue: totalRevenue,
+      roas: ratio(totalRevenue, totalSpend),
+      ctr: totalCtr === null ? null : totalCtr * 100,
+      // Same workspace scope and same period rule as the per-campaign counts.
+      unattributedLeads: active.filter(
+        (l) => !attributed.has(l.id) && withinPeriod(l.createdAt, period),
+      ).length,
+      // Unique leads: a lead matched by two campaigns is counted once here,
+      // even though each campaign card still shows it. The identity
+      // crmLeads + unattributedLeads === allCrmLeads holds by construction,
+      // since all three count the same period over the same `active` list.
+      allCrmLeads: active.filter((l) => withinPeriod(l.createdAt, period)).length,
+    },
     findings,
     recommendations,
     dataQuality,
