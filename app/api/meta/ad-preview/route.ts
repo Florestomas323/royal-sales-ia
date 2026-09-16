@@ -118,6 +118,10 @@ export async function GET(request: Request) {
     }
 
     const preview = normalizeCreative(result.data)
+    // The destination goes through the same filter as the shareable link:
+    // an `fb.me` destination is not something anybody can open, so it is
+    // dropped and the dialog shows the creative without a "Destino" line.
+    preview.linkUrl = safeUrl(preview.linkUrl ?? undefined)
 
     // Optional extras, each swallowed on failure.
     stage = "extras"
