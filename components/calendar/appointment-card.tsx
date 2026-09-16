@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { setAppointmentStatus } from "@/lib/firebase/appointments"
+import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
 import { AddToCalendar } from "@/components/appointments/add-to-calendar"
 import { formatLocation, isPast } from "@/lib/appointments"
@@ -58,12 +59,18 @@ export function AppointmentCard({
   const [busy, setBusy] = useState(false)
   const past = isPast(appointment)
   const address = formatLocation(appointment.location)
+  const { membership, role } = useWorkspace()
 
   async function setStatus(status: AppointmentStatus, message: string) {
     if (busy) return
     setBusy(true)
     try {
-      await setAppointmentStatus(appointment.id, status)
+      // The actor lets the lead's stage follow the meeting (cancel / no-show).
+      await setAppointmentStatus(
+        appointment.id,
+        status,
+        membership && role ? { userId: membership.userId, role } : undefined,
+      )
       toast.success(message)
     } catch (err) {
       toast.error(c.actionError, { description: describeError(err).message })

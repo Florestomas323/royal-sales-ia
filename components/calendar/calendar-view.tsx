@@ -2,14 +2,18 @@
 
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Lock } from "lucide-react"
+import { Lock, RefreshCw } from "lucide-react"
+import { toast } from "sonner"
+import { Button } from "@/components/ui/button"
+import { describeError } from "@/lib/firebase/errors"
+import { cn } from "@/lib/utils"
 import { AppointmentCard } from "@/components/calendar/appointment-card"
 import { ScheduleDialog } from "@/components/appointments/schedule-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { DataErrorState } from "@/components/shared/data-error-state"
-import { useAppointments } from "@/lib/firebase/appointments"
+import { syncExistingAppointments, useAppointments } from "@/lib/firebase/appointments"
 import { useLeads } from "@/lib/firebase/leads"
 import { isActiveLead } from "@/lib/leads"
 import { useUsersForWorkspace, useUsers } from "@/lib/firebase/collections"
@@ -113,8 +117,37 @@ export function CalendarView() {
   // person in the filter, and choosing an owner must not hide the rest.
   const owners = users.filter((u) => allowed.some((a) => a.assignedToId === u.id))
 
+  /**
+   * Retroactive sync: meetings booked before the stage followed them. Only
+   * Distribuidor / Asistente (super admin included), only this workspace,
+   * idempotent — a second run reports zero moves.
+   */
+  const canSync = Boolean(workspaceId && membership?.userId && role) && (isSuperAdmin || role === "client_admin" || role === "manager")
+  const [syncing, setSyncing] = useState(false)
+  async function handleSync() {
+    if (!canSync || !workspaceId || !membership?.userId || !role || syncing) return
+    setSyncing(true)
+    try {
+      const { examined, moved } = await syncExistingAppointments(workspaceId, { userId: membership.userId, role })
+      toast.success(c.sync.done(moved, examined))
+    } catch (err) {
+      toast.error(c.sync.error, { description: describeError(err).message })
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
+      {canSync && (
+        <div className="flex flex-col gap-2 rounded-lg border border-dashed px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground text-pretty">{c.sync.description}</p>
+          <Button variant="outline" size="sm" className="h-11 shrink-0 sm:h-9" onClick={handleSync} disabled={syncing}>
+            <RefreshCw className={cn("size-3.5", syncing && "animate-spin")} data-icon="inline-start" />
+            {c.sync.action}
+          </Button>
+        </div>
+      )}
       {!canSchedule(actor) && (
         <p className="flex items-start gap-2 rounded-lg border border-dashed px-4 py-3 text-sm text-muted-foreground">
           <Lock className="mt-0.5 size-4 shrink-0" />
