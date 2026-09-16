@@ -20,6 +20,8 @@ export interface CampaignLinkInput {
   objective: LeadType
   active: boolean
   metaCampaignName?: string | null
+  /** Meta's effective_status, so the local mirror shows the real state. */
+  metaCampaignStatus?: string | null
   adAccountId?: string | null
   assignedByUserId: string | null
 }
@@ -63,9 +65,39 @@ export async function listCampaignLinks(db: Firestore, workspaceId: string | nul
  * Meta id. Spend and performance are NOT copied — they keep coming live from
  * Meta through the insights route, so nothing is invented or goes stale.
  */
+/**
+ * Meta's campaign status → the local one.
+ *
+ *   ACTIVE                     → "active"
+ *   PAUSED / CAMPAIGN_PAUSED   → "paused"
+ *   ANY other non-empty state  → "ended"   (ARCHIVED, DELETED, IN_PROCESS,
+ *                                           WITH_ISSUES, anything new)
+ *   null / undefined / ""      → null      (Meta said nothing)
+ *
+ * Only the first two are listed in Campañas and offered for attribution.
+ * Everything else lands on `ended` on purpose: a campaign that stops being
+ * ACTIVE must not keep an "active" mirror, and an unrecognised state must
+ * never be presented as running or as merely paused. `null` means "no
+ * information", which leaves a stored status untouched.
+ */
+export function localStatusFor(metaStatus: string | null | undefined): "active" | "paused" | "ended" | null {
+  const s = (metaStatus ?? "").trim().toUpperCase()
+  if (s === "") return null
+  if (s === "ACTIVE") return "active"
+  if (s === "PAUSED" || s === "CAMPAIGN_PAUSED") return "paused"
+  return "ended"
+}
+
 export async function ensureLocalCampaign(
   db: Firestore,
-  input: { workspaceId: string; metaCampaignId: string; name: string | null; objective: LeadType },
+  input: {
+    workspaceId: string
+    metaCampaignId: string
+    name: string | null
+    objective: LeadType
+    /** Meta's effective_status; when unknown the stored status is kept. */
+    metaStatus?: string | null
+  },
 ): Promise<string> {
   const campaigns = db.collection("campaigns")
   const found = await campaigns
@@ -75,11 +107,18 @@ export async function ensureLocalCampaign(
     .get()
   if (!found.empty) {
     const doc = found.docs[0]
-    const current = doc.data() as { name?: string; objective?: LeadType }
-    // Keep the name in step with Meta if the operator renamed it there, and
-    // the objective in step with the assignment. Nothing else is rewritten.
+    const current = doc.data() as { name?: string; objective?: LeadType; status?: string }
+    // Keep the name in step with Meta if the operator renamed it there, the
+    // objective in step with the assignment, and the STATUS in step with
+    // Meta (active / paused). Nothing else is rewritten.
     const patch: Record<string, unknown> = {}
     if (input.name && current.name !== input.name) patch.name = input.name
+    if (input.metaStatus != null) {
+      const status = localStatusFor(input.metaStatus)
+      // An unrecognised Meta state changes nothing: better a stale but
+      // truthful status than a wrong one.
+      if (status !== null && current.status !== status) patch.status = status
+    }
     if (current.objective !== input.objective) { patch.objective = input.objective; patch.campaignType = input.objective }
     if (Object.keys(patch).length > 0) await doc.ref.set({ ...patch, updatedAt: new Date().toISOString() }, { merge: true })
     return doc.id
@@ -92,7 +131,11 @@ export async function ensureLocalCampaign(
     campaignType: input.objective,
     name: input.name ?? input.metaCampaignId,
     platform: "meta",
-    status: "active",
+    // A brand new mirror whose state Meta has not confirmed is NOT assumed to
+    // be running: it starts as `ended`, so it neither shows in the normal list
+    // nor inflates "Campañas activas". The reconcile promotes it to active or
+    // paused as soon as Meta reports one of those.
+    status: localStatusFor(input.metaStatus) ?? "ended",
     spend: 0, leads: 0, cpl: 0, appointments: 0, sales: 0, revenue: 0, roas: 0,
     clientId: "",
     externalId: input.metaCampaignId,
@@ -117,6 +160,7 @@ export async function upsertCampaignLink(db: Firestore, input: CampaignLinkInput
     metaCampaignId: input.metaCampaignId,
     name: input.metaCampaignName ?? previous?.metaCampaignName ?? null,
     objective: input.objective,
+    metaStatus: input.metaCampaignStatus ?? previous?.metaCampaignStatus ?? null,
   })
 
   const link: MetaCampaignLink = {
@@ -128,6 +172,7 @@ export async function upsertCampaignLink(db: Firestore, input: CampaignLinkInput
     pageId: previous?.pageId ?? null,
     formIds: previous?.formIds ?? [],
     metaCampaignName: input.metaCampaignName ?? previous?.metaCampaignName ?? null,
+    metaCampaignStatus: input.metaCampaignStatus ?? previous?.metaCampaignStatus ?? null,
     adAccountId: input.adAccountId ?? previous?.adAccountId ?? null,
     assignedByUserId: input.assignedByUserId,
     createdAt: previous?.createdAt ?? now,
