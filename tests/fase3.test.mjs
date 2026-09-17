@@ -227,6 +227,13 @@ test("an fb.me destination is dropped from the preview; the creative stays", () 
 import { evaluate, ruleFunction } from "./helpers/cel.mjs"
 const RULES = read("firestore.rules")
 
+/** Set semantics for the .toSet()/.difference() pair some rules use. */
+const methods = {
+  toSet: (list) => ({ __set: [...new Set(list)].sort() }),
+  difference: (a, b) => ({ __set: a.__set.filter((x) => !b.__set.includes(x)) }),
+  concat: (a, b) => [...a, ...b],
+}
+
 test("createAppointment now REQUIRES an actor: no meeting without its stage", () => {
   const src = read("lib/firebase/appointments.ts")
   assert.match(src, /export async function createAppointment\(input: NewAppointment, actor: ActorContext\)/)
@@ -413,4 +420,188 @@ test("attributionSource: absent is legacy-valid, null is not a value", () => {
 test("the workspace isolation of manual attribution is untouched", () => {
   assert.match(RULES, /attributedCampaign\(\)\.workspaceId == resource\.data\.workspaceId/)
   assert.match(RULES, /request\.resource\.data\.get\('campaignName', ''\) == attributedCampaign\(\)\.name/)
+})
+
+/* ============ V4: guardar campaña y editar canal ======================== */
+
+test("the edit form re-seeds only when a DIFFERENT lead opens", () => {
+  // Root cause: leads-view replaces `selected` with a new object on every
+  // Firestore snapshot, so depending on `lead` wiped the in-progress edit and
+  // the patch came out empty.
+  const dlg = read("components/leads/edit-lead-dialog.tsx")
+  assert.match(dlg, /\}, \[open, lead\.id, type\]\)/)
+  assert.doesNotMatch(dlg, /\}, \[open, lead, type\]\)/)
+})
+
+test("the campaign patch carries id, name and manual source together", () => {
+  const src = read("lib/firebase/leads.ts")
+  const block = src.slice(src.indexOf("if (patch.campaignId !== undefined) {"))
+  assert.match(block.slice(0, 300), /data\.campaignId = patch\.campaignId/)
+  assert.match(block.slice(0, 300), /data\.campaignName = patch\.campaignId \? \(patch\.campaignName \?\? ""\) : ""/)
+  assert.match(block.slice(0, 300), /data\.attributionSource = "manual"/)
+})
+
+test("save errors are surfaced, not swallowed", () => {
+  const dlg = read("components/leads/edit-lead-dialog.tsx")
+  assert.match(dlg, /setFormError\(/)
+  assert.match(dlg, /describeError\(/)
+})
+
+/* ------------------------------------------- channel: one field, reused - */
+
+test("the channel reuses lead.source and the existing platform list", () => {
+  const dlg = read("components/leads/edit-lead-dialog.tsx")
+  assert.match(dlg, /React\.useState<Platform>\(lead\.source\)/)
+  assert.match(dlg, /PLATFORMS\.map\(\(p\) =>/)
+  assert.match(dlg, /PLATFORM_LABELS\[p\]/)
+  // Derived from the label map: the two cannot drift.
+  assert.match(read("lib/constants.ts"), /export const PLATFORMS = Object\.keys\(PLATFORM_LABELS\) as Platform\[\]/)
+})
+
+test("changing the channel does NOT touch the campaign or the Meta trail", () => {
+  const src = read("lib/firebase/leads.ts")
+  const block = src.slice(src.indexOf("if (patch.source !== undefined) {"), src.indexOf("if (patch.campaignId !== undefined) {"))
+  assert.match(block, /data\.source = patch\.source/)
+  assert.doesNotMatch(block, /campaignId|attribution/)
+  // `attribution` remains frozen for everyone in the Rules.
+  assert.match(RULES, /hasAny\(\['workspaceId', 'attribution', 'createdAt', 'clientId', 'webForm'\]\)/)
+})
+
+test("an invalid channel is refused in the app and in the Rules", () => {
+  assert.match(read("lib/firebase/leads.ts"), /if \(!PLATFORMS\.includes\(patch\.source\)\)/)
+  const fn = ruleFunction(RULES, "validPlatform")
+  const run = (v) => evaluate(fn, { vars: { v }, methods })
+  for (const v of ["meta", "whatsapp", "referral", "organic"]) assert.equal(run(v), true, v)
+  for (const v of ["", "META", "telegram", "inventado"]) assert.equal(run(v), false, JSON.stringify(v))
+})
+
+test("the Rules platform list matches the app's, value by value", () => {
+  const labels = read("lib/constants.ts")
+  const map = labels.slice(labels.indexOf("PLATFORM_LABELS: Record<Platform, string> = {"))
+  const names = [...map.slice(0, map.indexOf("}")).matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1])
+  const list = RULES.match(/function validPlatform\(v\) \{[\s\S]*?\]/)[0]
+  assert.ok(names.length >= 10)
+  for (const n of names) assert.ok(list.includes(`'${n}'`), `${n} missing from the Rules list`)
+})
+
+test("only an admin may correct the channel; Telemarketing cannot", () => {
+  const fn = ruleFunction(RULES, "channelChangeIsValid")
+  const run = ({ changed, admin, source = "meta" }) =>
+    evaluate(fn, {
+      vars: { request: { resource: { data: { source } } }, resource: { data: { workspaceId: "ws-A" } } },
+      methods,
+      fns: {
+        changedKeys: () => changed,
+        isSuperAdmin: () => admin === "super",
+        isWsAdmin: () => admin === "ws",
+        validPlatform: (v) => ["meta", "whatsapp"].includes(v),
+      },
+    })
+  assert.equal(run({ changed: ["name"], admin: null }), true, "not touching source is fine for anybody")
+  assert.equal(run({ changed: ["source"], admin: "ws" }), true)
+  assert.equal(run({ changed: ["source"], admin: "super" }), true)
+  assert.equal(run({ changed: ["source"], admin: null }), false, "a rep cannot change the channel")
+  assert.equal(run({ changed: ["source"], admin: "ws", source: "inventado" }), false)
+  // The rule must actually invoke it in allow update.
+  const leadsBlock = RULES.slice(RULES.indexOf("match /leads/{leadId}"))
+  assert.match(leadsBlock, /&& channelChangeIsValid\(\)/)
+  // And `source` is not in the rep whitelist either.
+  const wl = RULES.match(/function repEditableFields\(\) \{[\s\S]*?\]/)[0]
+  assert.ok(!wl.includes("'source'"))
+})
+
+test("workspace isolation of attribution is untouched by the channel change", () => {
+  assert.match(RULES, /attributedCampaign\(\)\.workspaceId == resource\.data\.workspaceId/)
+})
+
+/* ========== V5: prospectos sin leadType (compatibilidad legacy) ========== */
+/*
+ * NOTE: these evaluate the rule conditions with the CEL interpreter in
+ * tests/helpers/cel.mjs. That is NOT Firestore. The end-to-end proof lives in
+ * tests/emulator/rules.emulator.test.mjs, which must be run against the
+ * emulator — it could not be run where this was written (the emulator JAR
+ * comes from storage.googleapis.com, blocked there).
+ */
+
+test("every leadType read on the UPDATE path is legacy-tolerant", () => {
+  const leadsBlock = RULES.slice(RULES.indexOf("match /leads/{leadId}"), RULES.indexOf("match /leads/{leadId}/activities"))
+  const update = leadsBlock.slice(leadsBlock.indexOf("allow update:"), leadsBlock.indexOf("allow delete:"))
+  // No direct read survives in the update rule itself…
+  assert.doesNotMatch(update, /validLeadType\(request\.resource\.data\.leadType\)/)
+  assert.doesNotMatch(update, /stageMatchesType\(request\.resource\.data\.leadType/)
+  assert.match(update, /validLeadType\(leadTypeAfter\(\)\)/)
+  assert.match(update, /stageMatchesType\(leadTypeAfter\(\), request\.resource\.data\.stage\)/)
+  // …nor in the helpers the update path calls.
+  for (const fn of ["isWonNow", "closingInvariants", "customerLinkOnlyOnRealClose"]) {
+    const body = ruleFunction(RULES, fn)
+    assert.doesNotMatch(body, /request\.resource\.data\.leadType/, `${fn} still reads the field directly`)
+  }
+})
+
+test("create stays strict: a new lead must declare its type", () => {
+  const leadsBlock = RULES.slice(RULES.indexOf("match /leads/{leadId}"))
+  const create = leadsBlock.slice(leadsBlock.indexOf("allow create:"), leadsBlock.indexOf("allow update:"))
+  assert.match(create, /validLeadType\(request\.resource\.data\.leadType\)/)
+  assert.doesNotMatch(create, /leadTypeAfter\(\)/)
+})
+
+test("the default applies only when the field is ABSENT; an invalid value is still refused", () => {
+  const after = ruleFunction(RULES, "leadTypeAfter")
+  const run = (data) => evaluate(after, { vars: { request: { resource: { data } } }, methods })
+  assert.equal(run({ stage: "new_lead" }), "sales", "absent → sales")
+  assert.equal(run({ leadType: "recruiting" }), "recruiting", "present → itself")
+  assert.equal(run({ leadType: "inventado" }), "inventado", "…and an invalid value is NOT masked")
+  // validLeadType then rejects it.
+  const valid = ruleFunction(RULES, "validLeadType")
+  assert.equal(evaluate(valid, { vars: { v: "inventado" }, methods }), false)
+  assert.equal(evaluate(valid, { vars: { v: "sales" }, methods }), true)
+})
+
+test("a legacy lead now passes the two conditions that blocked every update", () => {
+  const expr = "validLeadType(leadTypeAfter()) && stageMatchesType(leadTypeAfter(), request.resource.data.stage)"
+  const run = (data) =>
+    evaluate(expr, {
+      vars: { request: { resource: { data } } },
+      methods,
+      fns: {
+        leadTypeAfter: () => data.leadType ?? "sales",
+        validLeadType: (v) => ["sales", "recruiting"].includes(v),
+        stageMatchesType: (t, s) =>
+          t === "sales"
+            ? ["new_lead", "contact", "contacted", "interested", "appointment", "follow_up", "sale", "not_interested"].includes(s)
+            : String(s).startsWith("rec_"),
+      },
+    })
+  assert.equal(run({ stage: "new_lead" }), true, "legacy lead being archived / scheduled")
+  assert.equal(run({ stage: "appointment" }), true, "legacy lead moved by a booking")
+  assert.equal(run({ leadType: "sales", stage: "new_lead" }), true)
+  assert.equal(run({ leadType: "recruiting", stage: "rec_interview" }), true)
+  assert.equal(run({ leadType: "inventado", stage: "new_lead" }), false, "invalid is still refused")
+  assert.equal(run({ leadType: "sales", stage: "rec_interview" }), false, "pipelines stay separate")
+})
+
+test("role and workspace restrictions are untouched by the legacy default", () => {
+  const leadsBlock = RULES.slice(RULES.indexOf("match /leads/{leadId}"))
+  assert.match(leadsBlock, /isWsAdmin\(resource\.data\.workspaceId\)/)
+  assert.match(leadsBlock, /isWsRep\(resource\.data\.workspaceId\)\s*\n\s*&& resource\.data\.assignedToId == myUserId\(\)/)
+  assert.match(leadsBlock, /changedKeys\(\)\.hasOnly\(repEditableFields\(\)\)/)
+})
+
+test("the scheduling copy no longer contradicts Fase 3", () => {
+  const i18n = read("lib/i18n.ts")
+  assert.doesNotMatch(i18n, /Agendar no cambia la etapa/)
+  assert.match(i18n, /pasa automáticamente a la etapa de cita/)
+})
+
+test("the emulator suite exists and covers both lead shapes and the five actions", () => {
+  const emu = read("tests/emulator/rules.emulator.test.mjs")
+  for (const needle of ["books a meeting", "archives and restores", "cancels a meeting", "attributes a campaign", "corrects the channel"]) {
+    assert.ok(emu.includes(needle), `missing scenario: ${needle}`)
+  }
+  assert.ok(emu.includes("WITHOUT leadType (legacy)"))
+  for (const role of ["super_admin", "client_admin (Distribuidora)", "manager (Asistente)"]) {
+    assert.ok(emu.includes(role), `missing role: ${role}`)
+  }
+  // It must not be picked up by `pnpm test`, which has no emulator.
+  assert.doesNotMatch(emu, /^\s*import .*from "\.\.\/helpers/m)
 })
