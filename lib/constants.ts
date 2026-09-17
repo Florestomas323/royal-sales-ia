@@ -233,6 +233,12 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
   organic: 'Orgánico',
 }
 
+/**
+ * Selectable channels, derived from the label map so the two can never drift.
+ * Same values `Lead.source` already uses; no parallel list.
+ */
+export const PLATFORMS = Object.keys(PLATFORM_LABELS) as Platform[]
+
 /** Short mark shown inside the platform badge. */
 export const PLATFORM_MARK: Record<Platform, string> = {
   meta: 'M',

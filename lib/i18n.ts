@@ -526,6 +526,8 @@ export const t = {
       phoneInvalid: 'Revisa el teléfono: debe tener entre 8 y 15 dígitos con el código de país.',
       valueLabel: 'Valor potencial (USD)',
       stageLabel: 'Etapa',
+      sourceLabel: 'Canal / origen',
+      sourceHint: 'Corrige el canal por el que llegó. No cambia la campaña ni borra los identificadores originales de Meta.',
       campaignLabel: 'Campaña atribuida',
       noCampaign: 'Sin campaña',
       campaignHint: 'Solo campañas de este workspace, activas o pausadas. Media Buyer se recalcula al guardar.',
@@ -1497,7 +1499,7 @@ export const t = {
         error: 'No se pudo guardar la cita',
         invalidDate: 'Elige una fecha y hora válidas.',
         invalidType: 'Elige un tipo de cita del flujo correspondiente.',
-        pipelineNotice: 'Agendar no cambia la etapa del prospecto: muévelo tú cuando corresponda.',
+        pipelineNotice: 'Al agendar, el prospecto pasa automáticamente a la etapa de cita si aún no había llegado. Cancelar o marcar que no asistió lo devuelve a Seguimiento.',
       },
       leadSection: {
         title: 'Citas',
