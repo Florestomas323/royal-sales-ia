@@ -1347,12 +1347,28 @@ service cloud.firestore {
         return resource.data.get('leadType', 'sales');
       }
 
+      /**
+       * The lead's type as it ends up, tolerant of legacy documents in exactly
+       * the same way `leadTypeBefore()` already was.
+       *
+       * Reading `request.resource.data.leadType` directly meant that ANY
+       * update to a lead created before the field existed was rejected for
+       * every role, super admin included — archiving, scheduling (which moves
+       * the stage), changing the campaign or the channel. The default applies
+       * ONLY when the field is absent: a present-but-invalid value is still
+       * refused by validLeadType() below, and `create` stays strict, so no new
+       * lead can be born without declaring its type.
+       */
+      function leadTypeAfter() {
+        return request.resource.data.get('leadType', 'sales');
+      }
+
       function wasWon() {
         return resource.data.stage == wonStageOf(leadTypeBefore());
       }
 
       function isWonNow() {
-        return request.resource.data.stage == wonStageOf(request.resource.data.leadType);
+        return request.resource.data.stage == wonStageOf(leadTypeAfter());
       }
 
       /** A field counts as absent when it is missing or explicitly null. */
@@ -1375,13 +1391,13 @@ service cloud.firestore {
 
       function closingInvariants() {
         //  1. A hire is not revenue: recruiting never carries an amount.
-        return (request.resource.data.leadType == 'sales' || !hasClosedValue())
+        return (leadTypeAfter() == 'sales' || !hasClosedValue())
         //  2. Closing data only moves on a real won transition.
         && (!closingDataChanged() || !wasWon() == isWonNow())
         //  3. Entering the won stage: a sale needs a positive amount and a
         //     date; a hire needs the date and no amount.
         && ((wasWon() || !isWonNow()) || (
-              request.resource.data.leadType == 'sales'
+              leadTypeAfter() == 'sales'
                 ? (closedValueIsValid() && hasClosedAt())
                 : (!hasClosedValue() && hasClosedAt())
             ))
@@ -1442,7 +1458,7 @@ service cloud.firestore {
               customerIdBefore() == ''
               && resource.data.stage != 'sale'
               && request.resource.data.stage == 'sale'
-              && request.resource.data.leadType == 'sales'
+              && leadTypeAfter() == 'sales'
               && linkedCustomerIsValid()
             );
       }
@@ -1538,6 +1554,24 @@ service cloud.firestore {
       }
 
       /**
+       * Correcting the channel (`source`). Admins only, to one of the values
+       * the product defines, and never together with a rewrite of the
+       * attribution trail — which the freeze above already guarantees.
+       * Telemarketing cannot: `source` is not in its whitelist.
+       */
+      function validPlatform(v) {
+        return v in ['meta', 'facebook', 'instagram', 'tiktok', 'google', 'youtube',
+                     'indeed', 'whatsapp', 'web', 'landing_page', 'referral',
+                     'manual', 'other', 'organic'];
+      }
+
+      function channelChangeIsValid() {
+        return !changedKeys().hasAny(['source'])
+          || ((isSuperAdmin() || isWsAdmin(resource.data.workspaceId))
+              && validPlatform(request.resource.data.source));
+      }
+
+      /**
        * Manual campaign attribution. The selector in the app is scoped to the
        * workspace, but a tampered client could send any id — so the tenant
        * check lives here: a non-empty `campaignId` must be a real campaign of
@@ -1616,9 +1650,16 @@ service cloud.firestore {
       //  4. the role checks are exactly the previous ones, plus: a rep may not
       //     reassign the lead nor change its type.
       allow update: if validLeadShape()
-        && validLeadType(request.resource.data.leadType)
-        && stageMatchesType(request.resource.data.leadType, request.resource.data.stage)
-        && !changedKeys().hasAny(['workspaceId', 'source', 'attribution', 'createdAt', 'clientId', 'webForm'])
+        // Legacy-tolerant on BOTH halves: correcting only one keeps the block,
+        // because an absent field fails the pipeline check just as hard.
+        && validLeadType(leadTypeAfter())
+        && stageMatchesType(leadTypeAfter(), request.resource.data.stage)
+        // `attribution` stays frozen for everyone: the Meta ids are the record
+        // of where the lead really came from, and correcting the channel must
+        // never erase them. Only `source` (the channel shown in the app) may
+        // be corrected, and only by an admin — see channelChangeIsValid().
+        && !changedKeys().hasAny(['workspaceId', 'attribution', 'createdAt', 'clientId', 'webForm'])
+        && channelChangeIsValid()
         && closingInvariants()
         && customerLinkIsWriteOnce()
         && customerLinkOnlyOnRealClose()
@@ -1632,7 +1673,7 @@ service cloud.firestore {
           !changedKeys().hasAny(['leadType'])
           || (
             (isSuperAdmin() || isWsAdmin(resource.data.workspaceId))
-            && request.resource.data.stage == initialStageFor(request.resource.data.leadType)
+            && request.resource.data.stage == initialStageFor(leadTypeAfter())
           )
         )
         && (
