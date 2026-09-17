@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/select"
 import { PhoneField } from "@/components/leads/phone-field"
 import { useCampaigns, useUsersForWorkspace } from "@/lib/firebase/collections"
-import { CAMPAIGN_STATUS_LABELS } from "@/lib/constants"
+import { CAMPAIGN_STATUS_LABELS, PLATFORMS, PLATFORM_LABELS } from "@/lib/constants"
 import { LeadValidationError, updateLead, type LeadPatch } from "@/lib/firebase/leads"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
@@ -31,7 +31,7 @@ import { PIPELINES, STAGE_LABELS } from "@/lib/constants"
 import { canReassignLead, displayStage, eligibleAssignees, isValidE164, leadTypeOf, splitPhone, toE164 } from "@/lib/leads"
 import { memberLabel } from "@/lib/team"
 import { t } from "@/lib/i18n"
-import type { Lead, PipelineStage } from "@/types"
+import type { Lead, PipelineStage, Platform } from "@/types"
 
 const NO_OWNER = "__none__"
 const NO_CAMPAIGN = "__no_campaign__"
@@ -80,12 +80,28 @@ export function EditLeadDialog({
   const { campaigns, loading: campaignsLoading } = useCampaigns()
   const canAttribute = isSuperAdmin || role === "client_admin" || role === "manager"
   const [campaignId, setCampaignId] = React.useState(lead.campaignId || NO_CAMPAIGN)
+  /**
+   * Channel = the existing `lead.source` (Platform). No parallel field: the
+   * badge, the filters and Media Buyer already read it. Changing it never
+   * touches `attribution`, so the Meta ids and the original trail survive and
+   * the campaign is not silently reassigned.
+   */
+  const [source, setSource] = React.useState<Platform>(lead.source)
   const [nextAction, setNextAction] = React.useState(lead.nextAction ?? "")
   const [errors, setErrors] = React.useState<Partial<Record<keyof LeadPatch, string>>>({})
   const [formError, setFormError] = React.useState<string | null>(null)
   const [saving, setSaving] = React.useState(false)
 
-  // Re-seed the form whenever a different lead is opened.
+  /**
+   * Re-seed the form whenever a DIFFERENT lead is opened — keyed by id, not
+   * by the object.
+   *
+   * `leads-view` replaces `selected` with a fresh object on every Firestore
+   * snapshot, so depending on `lead` re-ran this effect constantly and wiped
+   * whatever was being edited. A campaign picked a moment earlier was reset
+   * to the stored value before Guardar ran, the patch came out empty, and the
+   * change appeared to "not save".
+   */
   React.useEffect(() => {
     if (!open) return
     const p = splitPhone(lead.phone)
@@ -96,10 +112,12 @@ export function EditLeadDialog({
     setStage(displayStage(lead))
     setAssignedToId(lead.assignedToId || NO_OWNER)
     setCampaignId(lead.campaignId || NO_CAMPAIGN)
+    setSource(lead.source)
     setNextAction(lead.nextAction ?? "")
     setErrors({})
     setFormError(null)
-  }, [open, lead, type])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, lead.id, type])
 
   // Already scoped to lead.workspaceId by the query; eligibleAssignees drops
   // inactive members and keeps the workspace check as a second guard.
@@ -127,6 +145,7 @@ export function EditLeadDialog({
       if (next !== lead.assignedToId) patch.assignedToId = next
     }
     if (nextAction.trim() !== (lead.nextAction ?? "")) patch.nextAction = nextAction
+    if (canAttribute && source !== lead.source) patch.source = source
     if (canAttribute) {
       const nextCampaign = campaignId === NO_CAMPAIGN ? "" : campaignId
       if (nextCampaign !== (lead.campaignId ?? "")) {
@@ -282,6 +301,25 @@ export function EditLeadDialog({
                 ) : null}
               </Field>
             </div>
+
+            {canAttribute && (
+              <Field>
+                <FieldLabel>{t.leads.editDialog.sourceLabel}</FieldLabel>
+                <Select value={source} onValueChange={(v) => v && setSource(v as Platform)} disabled={saving}>
+                  <SelectTrigger className="h-11 w-full sm:h-9">
+                    <SelectValue>{(v: string) => PLATFORM_LABELS[v as Platform] ?? v}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[60svh]">
+                    {PLATFORMS.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {PLATFORM_LABELS[p]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FieldDescription>{t.leads.editDialog.sourceHint}</FieldDescription>
+              </Field>
+            )}
 
             {canAttribute && (
               <Field>
