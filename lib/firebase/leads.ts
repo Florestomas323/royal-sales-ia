@@ -17,7 +17,7 @@ import {
 import { db } from "./client"
 import { NOTIFICATIONS, buildNotification, newLeadNotificationId, recipientsFor } from "@/lib/notifications"
 import { useWorkspace } from "./workspace-context"
-import { PIPELINES } from "@/lib/constants"
+import { PIPELINES, PLATFORMS } from "@/lib/constants"
 import {
   closedFieldsFor,
   isStageOf,
@@ -197,6 +197,11 @@ export interface LeadPatch {
    */
   campaignId?: string
   campaignName?: string
+  /**
+   * Channel / origin (`Platform`). `attribution` is NOT rewritten, so the
+   * original Meta ids stay as the record of where the lead really came from.
+   */
+  source?: Platform
 }
 
 export class LeadValidationError extends Error {
@@ -241,6 +246,12 @@ export async function updateLead(
       throw new LeadValidationError("email", "El correo no es válido.")
     }
     data.email = email
+  }
+  if (patch.source !== undefined) {
+    if (!PLATFORMS.includes(patch.source)) {
+      throw new LeadValidationError("source", "Canal no válido.")
+    }
+    data.source = patch.source
   }
   if (patch.campaignId !== undefined) {
     // A person picked this; from now on Media Buyer matches by it alone.
