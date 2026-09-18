@@ -428,16 +428,17 @@ test("13-14. el modal exige VACIAR y bloquea dobles clics", () => {
   assert.match(dlg, /disabled=\{archivedCount === 0\}/)
 })
 
-test("super admin con «Todos los workspaces»: el botón queda oculto", () => {
+test("super admin con «Todos los workspaces»: no hay destino y el vaciado se deshabilita", () => {
   const view = read("components/leads/leads-view.tsx")
-  // Sin respaldo a activeWorkspaceId: null significa «todos» y no hay destino.
+  // Sin respaldo a activeWorkspaceId: null significa «todos los workspaces».
   assert.match(view, /const id = isSuperAdmin \? workspaceFilter : activeWorkspaceId/)
   assert.doesNotMatch(view, /workspaceFilter \?\? activeWorkspaceId/)
-  assert.match(view, /showArchived && trashWorkspace &&/)
-  // Y el contador es el del workspace objetivo, no el del ámbito visible.
+  // El acceso a Papelera SIEMPRE se ve; lo que queda deshabilitado con un
+  // aviso es el vaciado, porque no hay un workspace al que aplicarlo.
+  assert.match(view, /t\.leads\.trashLabel\(archivedCount\)/)
+  assert.match(view, /t\.leads\.emptyTrash\.pickWorkspace/)
   assert.match(view, /l\.workspaceId === trashWorkspace\.id/)
   assert.match(view, /archivedCount=\{trashTargetCount\}/)
-  assert.doesNotMatch(view, /archivedCount=\{scope\.length\}/)
 })
 
 test("1. un parcial con cero eliminados NO dice «ya está vacía» y deja el modal abierto", () => {

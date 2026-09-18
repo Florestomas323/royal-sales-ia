@@ -100,8 +100,13 @@ test("several meetings of one lead never duplicate it in Centro de mando", () =>
   assert.equal(m.inAppointmentStage, 1)
 })
 
-test("the callers pass the actor so the audit activity is written", () => {
-  assert.match(read("components/appointments/schedule-dialog.tsx"), /createAppointment\(\{[\s\S]*?\}, \{ userId: membership\.userId, role \}\)/)
+test("the callers no longer sign the write themselves: the server derives the actor", () => {
+  // Booking moved to POST /api/appointments, which reads the actor from the
+  // membership. Cancelling still goes through the client helper with an actor.
+  const sched = read("components/appointments/schedule-dialog.tsx")
+  assert.match(sched, /await bookAppointment\(\{/)
+  assert.doesNotMatch(sched, /await createAppointment\(/)
+  assert.match(read("app/api/appointments/route.ts"), /actorId: membership\.userId/)
   assert.match(read("components/calendar/appointment-card.tsx"), /setAppointmentStatus\(\s*appointment\.id,\s*status,\s*membership && role/)
 })
 
