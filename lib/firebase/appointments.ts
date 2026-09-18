@@ -11,6 +11,7 @@ import { useWorkspace } from "./workspace-context"
 import { sortForAgenda } from "@/lib/appointments"
 import { PIPELINES, STAGE_LABELS } from "@/lib/constants"
 import { stageActivity, type ActorContext } from "./activities"
+import { MutationError } from "./leads"
 import type {
   Appointment, AppointmentLocation, AppointmentStatus, AppointmentType, Lead, LeadType, PipelineStage,
 } from "@/types"
@@ -309,4 +310,42 @@ export function useLeadAppointments(leadId: string | null, workspaceId: string |
   }, [leadId, workspaceId, status, ownOnly, ownUserId])
 
   return { appointments, loading }
+}
+
+/* ------------------------------------------ booking, via the server route */
+
+/**
+ * Books through the authenticated server route.
+ *
+ * The client batch had to satisfy three rule blocks at once and trusted
+ * `workspaceId`, `leadName`, `leadType`, `createdBy` and `actorRole` as sent.
+ * The route derives all of those from the lead and the membership, and writes
+ * the appointment, the stage change and the audit activity in one
+ * transaction.
+ */
+export async function bookAppointment(input: {
+  leadId: string
+  scheduledAt: string
+  durationMinutes: number
+  type: AppointmentType
+  notes?: string
+  location?: AppointmentLocation
+  assignedToId?: string
+}): Promise<{ appointmentId: string; stageMoved: boolean }> {
+  const { auth } = await import("./client")
+  const token = await auth.currentUser?.getIdToken()
+  if (!token) throw new MutationError("unauthenticated")
+  const res = await fetch("/api/appointments", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input),
+  })
+  const parsed = (await res.json().catch(() => ({}))) as {
+    error?: string
+    operationId?: string
+    appointmentId?: string
+    stageMoved?: boolean
+  }
+  if (!res.ok) throw new MutationError(parsed.error ?? "internal", parsed.operationId)
+  return { appointmentId: parsed.appointmentId ?? "", stageMoved: parsed.stageMoved === true }
 }

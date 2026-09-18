@@ -589,3 +589,64 @@ export async function emptyTrash(workspaceId: string): Promise<EmptyTrashResult>
     ...(body.partial ? { partial: true } : {}),
   }
 }
+
+/* --------------------------------------------- campaign, via the server */
+
+/** Specific server codes → actionable Spanish messages. */
+const MUTATION_MESSAGES: Record<string, string> = {
+  unauthenticated: "Tu sesión expiró. Vuelve a iniciar sesión.",
+  invalid_token: "Tu sesión no es válida. Vuelve a iniciar sesión.",
+  membership_inactive: "Tu cuenta está desactivada en este workspace.",
+  membership_missing: "Tu cuenta no tiene membresía en este workspace.",
+  identity_inconsistent:
+    "Tus datos de acceso no coinciden entre sí (perfil, membresía o cupos). Pide a un administrador que ejecute la reparación de identidad.",
+  wrong_workspace: "Ese prospecto pertenece a otro workspace.",
+  insufficient_role: "Tu rol no puede realizar esta acción.",
+  lead_not_found: "El prospecto ya no existe.",
+  lead_archived: "El prospecto está en la papelera. Restáuralo primero.",
+  campaign_not_found: "Esa campaña ya no existe.",
+  campaign_wrong_workspace: "Esa campaña pertenece a otro workspace.",
+  campaign_type_mismatch: "Esa campaña no corresponde al tipo de prospecto.",
+  address_required: "Una demostración de ventas necesita la dirección completa.",
+  invalid_body: "Faltan datos obligatorios.",
+  server_not_configured: "El servidor no está configurado. Avisa al administrador.",
+  internal: "No se pudo completar la operación. Inténtalo de nuevo.",
+}
+
+export class MutationError extends Error {
+  readonly code: string
+  readonly operationId?: string
+  constructor(code: string, operationId?: string) {
+    super(MUTATION_MESSAGES[code] ?? MUTATION_MESSAGES.internal)
+    this.name = "MutationError"
+    this.code = code
+    this.operationId = operationId
+  }
+}
+
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const token = await auth.currentUser?.getIdToken()
+  if (!token) throw new MutationError("unauthenticated")
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  })
+  const parsed = (await res.json().catch(() => ({}))) as { error?: string; operationId?: string }
+  if (!res.ok) throw new MutationError(parsed.error ?? "internal", parsed.operationId)
+  return parsed as T
+}
+
+/**
+ * Attributes a campaign through the authenticated server route.
+ *
+ * The browser sends only WHICH campaign; the server derives the workspace
+ * from the lead, the name from the campaign and the role from the membership,
+ * and returns a specific code instead of a bare permission error.
+ */
+export async function setLeadCampaign(
+  leadId: string,
+  campaignId: string,
+): Promise<{ campaignId: string; campaignName: string }> {
+  return postJson(`/api/leads/${encodeURIComponent(leadId)}/campaign`, { campaignId })
+}

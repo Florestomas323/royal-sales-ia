@@ -49,7 +49,32 @@ const MESSAGES: Record<DataErrorKind, string> = {
   unknown: "Ocurrió un error inesperado al cargar los datos.",
 }
 
+/**
+ * A server mutation error already carries an actionable Spanish message and a
+ * correlation id — duck-typed here so this module does not import the leads
+ * module and create a cycle.
+ */
+function asMutationError(err: unknown): { message: string; code: string; operationId?: string } | null {
+  if (!(err instanceof Error) || err.name !== "MutationError") return null
+  const e = err as Error & { code?: unknown; operationId?: unknown }
+  return typeof e.code === "string"
+    ? { message: err.message, code: e.code, operationId: typeof e.operationId === "string" ? e.operationId : undefined }
+    : null
+}
+
 export function describeError(err: unknown): DataError {
+  // Checked FIRST: these already know exactly what went wrong. Falling
+  // through to `unknown` replaced "Esa campaña pertenece a otro workspace"
+  // with "Ocurrió un error inesperado", which is worse than useless.
+  const mutation = asMutationError(err)
+  if (mutation) {
+    return {
+      kind: "unknown",
+      message: mutation.message,
+      // The operation id lets a report be matched with the server log.
+      detail: mutation.operationId ? `${mutation.code} · ${mutation.operationId}` : mutation.code,
+    }
+  }
   if (err instanceof TenancyError) {
     return { kind: err.kind, message: MESSAGES[err.kind], detail: err.message }
   }
