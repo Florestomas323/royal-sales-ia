@@ -382,3 +382,81 @@ test("a lead shaped like a website integration lead (source web, empty assignedT
   await assertSucceeds(restore(db, ACTORS.asistente, "X5"))
   await assertSucceeds(bookMeeting(db, ACTORS.asistente, { leadId: "X5" }))
 })
+
+/* ============ purge fields are SERVER-ONLY (real client writes) ========== */
+
+for (const field of ["purgeClaimId", "purgeClaimedAt", "purgeState"]) {
+  test(`a client cannot CREATE a lead carrying ${field}`, async () => {
+    const db = asActor(ACTORS.distribuidora)
+    await assertFails(
+      setDoc(doc(db, "leads", `new-${field}`), {
+        workspaceId: WS, leadType: "sales", name: "Nuevo", phone: "+15555550123", email: "",
+        source: "meta", campaignId: "", campaignName: "", score: 50, temperature: "warm",
+        stage: "new_lead", assignedToId: "u-eva", potentialValue: 0,
+        createdAt: new Date().toISOString(), lastContactAt: null, nextFollowUpAt: null,
+        nextAction: "", attribution: {}, clientId: "",
+        [field]: field === "purgeState" ? "claimed" : "forjado",
+      }),
+    )
+  })
+
+  for (const [label, actor] of [
+    ["client_admin", ACTORS.distribuidora],
+    ["manager", ACTORS.asistente],
+    ["super_admin", ACTORS.superAdmin],
+  ]) {
+    test(`${label} cannot WRITE ${field} on an existing lead`, async () => {
+      await seedLead(`P-${field}-${label}`)
+      await assertFails(
+        updateDoc(doc(asActor(actor), "leads", `P-${field}-${label}`), {
+          [field]: field === "purgeState" ? "claimed" : "forjado",
+        }),
+      )
+    })
+
+    test(`${label} cannot DELETE ${field} written by the server`, async () => {
+      const id = `D-${field}-${label}`
+      await seedLead(id)
+      // The server (Admin SDK) stamps the purge bookkeeping.
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        const { deleteField } = await import("firebase/firestore")
+        void deleteField
+        await updateDoc(doc(ctx.firestore(), "leads", id), {
+          purgeClaimId: "run-1", purgeClaimedAt: new Date().toISOString(), purgeState: "purging",
+        })
+      })
+      const { deleteField } = await import("firebase/firestore")
+      await assertFails(updateDoc(doc(asActor(actor), "leads", id), { [field]: deleteField() }))
+    })
+  }
+}
+
+test("a client cannot restore a lead while a purge claim is held", async () => {
+  await seedLead("LOCKED", { stage: "new_lead" })
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), "leads", "LOCKED"), {
+      archived: true, archivedAt: new Date().toISOString(), archivedBy: "u-eva",
+      purgeClaimId: "run-1", purgeClaimedAt: new Date().toISOString(), purgeState: "purging",
+    })
+  })
+  // The restore the app performs: clearing `archived`.
+  await assertFails(
+    updateDoc(doc(asActor(ACTORS.distribuidora), "leads", "LOCKED"), {
+      archived: false, archivedAt: null, archivedBy: null, archivedByName: null,
+    }),
+  )
+})
+
+test("without a claim, restoring works normally", async () => {
+  await seedLead("FREE")
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), "leads", "FREE"), {
+      archived: true, archivedAt: new Date().toISOString(), archivedBy: "u-eva",
+    })
+  })
+  await assertSucceeds(
+    updateDoc(doc(asActor(ACTORS.distribuidora), "leads", "FREE"), {
+      archived: false, archivedAt: null, archivedBy: null, archivedByName: null,
+    }),
+  )
+})
