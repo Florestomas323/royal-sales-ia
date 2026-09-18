@@ -1,4 +1,5 @@
 import { PIPELINES } from "@/lib/constants"
+import { sameLeadIdentity } from "@/lib/lead-dedup"
 import { normalizePhone } from "@/lib/leads"
 import type { Attribution, Lead, LeadType, WebFormSubmission, WebsiteLeadPayload } from "@/types"
 
@@ -240,17 +241,15 @@ export function buildWebsiteLead(
 }
 
 /**
- * Same person, same workspace: same phone (normalised) or same email
- * (lower-cased). Cross-workspace matches are never even looked at.
+ * Same person only when workspace + normalised phone + normalised name match.
+ * Email is deliberately not an identity key: shared or mistyped addresses
+ * must not collapse two different prospects.
  */
 export function isSameContact(
-  a: Pick<Lead, "phone" | "email">,
-  b: Pick<Lead, "phone" | "email">,
+  a: Pick<Lead, "workspaceId" | "name" | "phone">,
+  b: Pick<Lead, "workspaceId" | "name" | "phone">,
 ): boolean {
-  const phoneA = normalizePhone(a.phone ?? ""), phoneB = normalizePhone(b.phone ?? "")
-  if (phoneA && phoneB && phoneA === phoneB) return true
-  const emailA = (a.email ?? "").trim().toLowerCase(), emailB = (b.email ?? "").trim().toLowerCase()
-  return Boolean(emailA && emailB && emailA === emailB)
+  return sameLeadIdentity(a, b)
 }
 
 /** Integration keys look like `rsw_` + 40 hex chars. The prefix helps eyeballing. */

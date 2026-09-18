@@ -499,6 +499,36 @@ export const t = {
     create: 'Crear prospecto',
     createdTitle: 'Prospecto creado',
     createdDescription: (name: string) => `${name} se agregó a Nuevo prospecto.`,
+    duplicateTitle: 'Este prospecto ya existe',
+    duplicateDescription: (name: string) =>
+      `${name} ya estaba registrado con el mismo nombre y teléfono. No se creó otro registro.`,
+    duplicateEnrichedTitle: 'Prospecto actualizado',
+    duplicateRestoredEnrichedTitle: 'Prospecto restaurado y actualizado',
+    // Field NAMES only — never their values.
+    enrichedFieldLabels: {
+      email: 'correo',
+      source: 'canal',
+      campaignId: 'campaña',
+      campaignName: 'campaña',
+      attributionSource: 'origen de atribución',
+      temperature: 'temperatura',
+      nextAction: 'próxima acción',
+      clientId: 'cliente',
+      attribution: 'atribución',
+      webForm: 'datos del formulario',
+      recruiting: 'datos de reclutamiento',
+    } as Record<string, string>,
+    duplicateEnrichedDescription: (name: string, fields: string[]) =>
+      fields.length > 0
+        ? `${name} ya existía. Completamos: ${fields.join(', ')}.`
+        : `${name} ya existía y se actualizó.`,
+    duplicateRestoredEnrichedDescription: (name: string, fields: string[]) =>
+      fields.length > 0
+        ? `${name} estaba en la papelera. Lo restauramos y completamos: ${fields.join(', ')}.`
+        : `${name} estaba en la papelera y lo restauramos.`,
+    duplicateRestoredTitle: 'Prospecto restaurado',
+    duplicateRestoredDescription: (name: string) =>
+      `${name} ya existía en la papelera. Se restauró el registro original.`,
     createError: 'No se pudo crear el prospecto. Inténtalo de nuevo.',
     defaultName: 'Nuevo prospecto',
     searchPlaceholder: 'Busca por nombre, correo, teléfono o campaña...',
