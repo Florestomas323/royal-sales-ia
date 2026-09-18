@@ -544,3 +544,48 @@ export function useLeadTypeCounts(refreshKey: unknown = null, workspaceOverride:
 
   return { counts, error }
 }
+
+/* ------------------------------------------------------------ empty trash */
+
+export interface EmptyTrashResult {
+  success: boolean
+  workspaceId: string
+  deletedCount: number
+  /** Present when some deletions failed or conflicted; never a silent success. */
+  partial?: boolean
+  /** Leads left behind this run (failed relations + conflicts). */
+  pendingCount: number
+  /** Of those, skipped because they stopped being archived or moved. */
+  conflictCount: number
+}
+
+/**
+ * Permanently deletes the archived prospects of a workspace.
+ *
+ * Privileged deletion happens ONLY on the server with the Admin SDK; the
+ * browser cannot delete these documents (the Rules never allowed it). The
+ * workspace is sent so a super admin can name the one they selected, and the
+ * server re-derives and re-authorises it regardless of what is sent.
+ */
+export async function emptyTrash(workspaceId: string): Promise<EmptyTrashResult> {
+  const token = await auth.currentUser?.getIdToken()
+  if (!token) throw new Error("missing_auth_token")
+  const response = await fetch("/api/leads/empty-trash", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ workspaceId }),
+  })
+  const body = (await response.json().catch(() => ({}))) as Partial<EmptyTrashResult> & { error?: string }
+  // 207 means partial: it is not an error, and it is not a full success.
+  if (!response.ok && response.status !== 207) {
+    throw new Error(body.error ?? `empty_trash_failed_${response.status}`)
+  }
+  return {
+    success: body.success === true,
+    workspaceId: body.workspaceId ?? workspaceId,
+    deletedCount: typeof body.deletedCount === "number" ? body.deletedCount : 0,
+    pendingCount: typeof body.pendingCount === "number" ? body.pendingCount : 0,
+    conflictCount: typeof body.conflictCount === "number" ? body.conflictCount : 0,
+    ...(body.partial ? { partial: true } : {}),
+  }
+}

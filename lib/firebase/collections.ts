@@ -497,6 +497,51 @@ export async function setMemberStatus(
 /*  Campaigns                                                                  */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Campaigns of a SPECIFIC workspace — the lead's, not the one the person is
+ * currently browsing.
+ *
+ * `useCampaigns()` is bound to the ACTIVE workspace. Using it to attribute a
+ * lead meant that editing an APC prospect while Impact Enterprises was the
+ * active workspace offered Impact's campaigns; picking one produced a
+ * cross-tenant write that the Security Rules correctly refused, surfacing as
+ * permission-denied. Same pattern as `useUsersForWorkspace`.
+ */
+export function useCampaignsForWorkspace(workspaceId: string | null) {
+  const { status } = useWorkspace()
+  const [campaigns, setCampaigns] = useState<Campaign[]>([])
+  const [loading, setLoading] = useState(Boolean(workspaceId))
+  const [error, setError] = useState<Error | null>(null)
+
+  useEffect(() => {
+    if (status !== "ready" || !workspaceId) {
+      setCampaigns([])
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    setError(null)
+    const q = query(collection(db, "campaigns"), where("workspaceId", "==", workspaceId))
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const rows = snap.docs.map((d) => ({ ...(d.data() as Campaign), id: d.id }))
+        rows.sort(byName)
+        setCampaigns(rows)
+        setLoading(false)
+      },
+      (err) => {
+        console.error("[firestore] campaigns(workspace) subscription failed:", err)
+        setError(err)
+        setLoading(false)
+      },
+    )
+    return unsub
+  }, [status, workspaceId])
+
+  return { campaigns, loading, error }
+}
+
 export function useCampaigns() {
   const { data, loading, error } = useWorkspaceCollection<Campaign>("campaigns", byName)
   return { campaigns: data, loading, error }
