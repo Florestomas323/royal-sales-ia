@@ -2,9 +2,9 @@ import { NextResponse } from "next/server"
 import { getAdminDb, isAdminNotConfigured } from "@/lib/firebase/admin"
 import { resolveByKey, touchLastReceived } from "@/lib/website/integration-store"
 import { allow } from "@/lib/website/rate-limit"
-import { buildWebsiteLead, isSameContact, keyLooksValid, parseWebsiteLead } from "@/lib/website-leads"
+import { buildWebsiteLead, keyLooksValid, parseWebsiteLead } from "@/lib/website-leads"
+import { createOrReuseLeadAtomic, leadOutcomeOf } from "@/lib/lead-dedup-server"
 import { notifyNewLeadServer } from "@/lib/notifications/server"
-import type { Lead } from "@/types"
 
 /** Where the email's "Ver prospecto" points. Configurable; falls back to this deployment. */
 function appUrlFrom(request: Request): string {
@@ -45,7 +45,15 @@ const json = (body: unknown, status = 200) => NextResponse.json(body, { status }
  */
 const ok = (
   prospectId: string,
-  extra: { duplicate: boolean; reason?: string },
+  extra: {
+    duplicate: boolean
+    reason?: string
+    /** created | restored | enriched | unchanged. */
+    outcome?: "created" | "restored" | "enriched" | "unchanged"
+    restored?: boolean
+    enriched?: boolean
+    enrichedFields?: string[]
+  },
   status = 200,
 ) =>
   json({ success: true, prospectId, ok: true, leadId: prospectId, ...extra }, status)
@@ -126,64 +134,43 @@ export async function POST(request: Request) {
     })
 
     const db = getAdminDb()
-    const leads = db.collection("leads")
     const now = new Date().toISOString()
     const draft = buildWebsiteLead(integration.workspaceId, parsed.payload, now)
 
-    // Idempotency first: a retry carrying the id the origin system already
-    // assigned must never produce a second lead, even if the person legitimately
-    // filled the form twice with different details.
-    const externalId = draft.webForm?.externalId
-    if (externalId) {
-      const prior = await leads
-        .where("workspaceId", "==", integration.workspaceId)
-        .where("webForm.externalId", "==", externalId)
-        .limit(1)
-        .get()
-      if (!prior.empty) {
-        await touchLastReceived(integration.workspaceId, now)
-        log("duplicate", { workspaceId: integration.workspaceId, prospectId: prior.docs[0].id, reason: "external_id", status: 200 })
-        return ok(prior.docs[0].id, { duplicate: true, reason: "external_id" })
-      }
-    }
+    // Idempotency by external id now lives INSIDE the central helper, so the
+    // retry is restored and enriched in the same transaction instead of
+    // returning bare. The route no longer implements it separately.
 
-    // Then reasonable de-duplication, always INSIDE the resolved workspace:
-    // same phone or same email. Two equality filters, no composite index.
-    const [byPhone, byEmail] = await Promise.all([
-      leads.where("workspaceId", "==", integration.workspaceId).where("phone", "==", draft.phone).limit(1).get(),
-      draft.email
-        ? leads.where("workspaceId", "==", integration.workspaceId).where("email", "==", draft.email).limit(1).get()
-        : Promise.resolve(null),
-    ])
-    const existing = [...byPhone.docs, ...(byEmail?.docs ?? [])]
-      .find((d) => isSameContact(d.data() as Lead, draft))
-
-    if (existing) {
-      // Known contact: record that they came back, do not create a second lead.
-      await Promise.all([
-        existing.ref.set({ receivedAt: now }, { merge: true }),
-        touchLastReceived(integration.workspaceId, now),
-      ])
-      log("duplicate", { workspaceId: integration.workspaceId, prospectId: existing.id, reason: "contact", status: 200 })
-      return ok(existing.id, { duplicate: true, reason: "contact" })
-    }
-
-    const ref = leads.doc()
-    await ref.set(draft, { merge: false })
-
-    // Success is only claimed once Firestore confirms the document is really
-    // there. `set()` resolving is normally enough, but this endpoint is the
-    // landing's gate to its own flow: a false success locks a visitor out of
-    // the roulette with a prospect that does not exist, so it is read back.
-    const written = await ref.get()
-    if (!written.exists) {
-      log("write_unconfirmed", { workspaceId: integration.workspaceId, status: 500 })
-      return json({ error: "write_unconfirmed" }, 500)
-    }
+    // Atomic identity claim: workspace + normalised phone + normalised name.
+    // The claim and the prospect are one transaction, so simultaneous form
+    // submissions cannot race into two documents.
+    const result = await createOrReuseLeadAtomic({
+      lead: draft,
+      duplicatePatch: { receivedAt: now },
+    }, db)
     await touchLastReceived(integration.workspaceId, now)
+
+    if (result.duplicate) {
+      log("duplicate", {
+        workspaceId: integration.workspaceId,
+        prospectId: result.leadId,
+        reason: result.matchedBy ?? "name_phone",
+        restored: result.restored,
+        status: 200,
+      })
+      return ok(result.leadId, {
+        duplicate: true,
+        outcome: leadOutcomeOf(result),
+        restored: result.restored,
+        enriched: result.enriched,
+        enrichedFields: result.enrichedFields,
+        reason: result.matchedBy === "external_id" ? "external_id" : result.restored ? "contact_restored" : "contact",
+      })
+    }
+
     log("lead_created", {
       workspaceId: integration.workspaceId,
-      prospectId: ref.id,
+      prospectId: result.leadId,
       campaignId: draft.campaignId || null,
       campaignSource: draft.attribution?.externalFormId ?? draft.source,
       stage: draft.stage,
@@ -194,14 +181,14 @@ export async function POST(request: Request) {
     // Best-effort by design — a failed notification never undoes the lead.
     try {
       await notifyNewLeadServer(
-        { ...draft, id: ref.id },
+        { ...draft, id: result.leadId },
         parsed.payload.form ?? null,
         { appUrl: appUrlFrom(request) },
       )
     } catch (err) {
       console.error("[website/leads] notify failed", err)
     }
-    return ok(ref.id, { duplicate: false }, 201)
+    return ok(result.leadId, { duplicate: false, outcome: "created" }, 201)
   } catch (err) {
     if (isAdminNotConfigured(err)) {
       log("server_not_configured", { status: 503, hint: "FIREBASE_SERVICE_ACCOUNT_JSON missing or invalid" })
