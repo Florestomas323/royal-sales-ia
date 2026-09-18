@@ -24,7 +24,8 @@ import {
 import { PhoneField } from "@/components/leads/phone-field"
 import { useCampaignsForWorkspace, useUsersForWorkspace } from "@/lib/firebase/collections"
 import { CAMPAIGN_STATUS_LABELS, PLATFORMS, PLATFORM_LABELS } from "@/lib/constants"
-import { LeadValidationError, updateLead, type LeadPatch } from "@/lib/firebase/leads"
+import { LeadValidationError, MutationError, setLeadCampaign, updateLead, type LeadPatch } from "@/lib/firebase/leads"
+import { describeSaveFailure, planLeadSave } from "@/lib/leads/save-plan"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { describeError } from "@/lib/firebase/errors"
 import { PIPELINES, STAGE_LABELS } from "@/lib/constants"
@@ -138,6 +139,8 @@ export function EditLeadDialog({
     }
 
     const patch: LeadPatch = {}
+    /** null = sin cambio; "" = quitar la campaña. */
+    let campaignChange: string | null = null
     if (name.trim() !== lead.name) patch.name = name
     if (email.trim().toLowerCase() !== lead.email) patch.email = email
     if (phone !== lead.phone) patch.phone = phone
@@ -162,38 +165,63 @@ export function EditLeadDialog({
           toast.error(t.leads.editDialog.campaignInvalid)
           return
         }
-        patch.campaignId = nextCampaign
-        patch.campaignName = chosen?.name ?? ""
+        // La atribución NO viaja en el patch directo: la escribe la ruta de
+        // servidor, que deriva workspace y nombre de los documentos reales y
+        // devuelve un código específico si algo no cuadra.
+        campaignChange = nextCampaign
       }
     }
 
-    if (Object.keys(patch).length === 0) {
+    // The decision lives in planLeadSave so it can be tested directly: a
+    // submit that changes ONLY the campaign is NOT "sin cambios".
+    const plan = planLeadSave(Object.keys(patch).length, campaignChange)
+    if (plan.noop) {
       toast.info(t.leads.editDialog.nothingChanged)
       onOpenChange(false)
       return
     }
 
     setSaving(true)
+    /** Which write was in flight, so a failure can be reported truthfully. */
+    let writeStage: "campaign" | "patch" = "campaign"
     try {
-      await updateLead(
-        lead.id,
-        lead,
-        patch,
-        // Stage / assignment changes are audited in the same batch.
-        membership?.userId && role
-          ? {
-              actor: { userId: membership.userId, role },
-              memberName: (id) => members.find((m) => m.id === id)?.name ?? "",
-            }
-          : undefined,
-      )
+      // The campaign goes first, through its authenticated route.
+      if (plan.campaign !== null) {
+        await setLeadCampaign(lead.id, plan.campaign)
+      }
+      writeStage = "patch"
+      if (plan.patch) {
+        await updateLead(
+          lead.id,
+          lead,
+          patch,
+          // Stage / assignment changes are audited in the same batch.
+          membership?.userId && role
+            ? {
+                actor: { userId: membership.userId, role },
+                memberName: (id) => members.find((m) => m.id === id)?.name ?? "",
+              }
+            : undefined,
+        )
+      }
       // Firestore confirmed: the live subscription refreshes the sheet/list.
       toast.success(t.leads.editDialog.saved)
       onOpenChange(false)
     } catch (err) {
-      // Keep everything the person typed; show what failed.
-      if (err instanceof LeadValidationError) setErrors({ [err.field]: err.message })
-      else setFormError(describeError(err).message)
+      // A failure after the campaign already landed is NOT a clean failure:
+      // saying "no se guardó nada" would be false and the person would redo
+      // work that is already stored.
+      const outcome = describeSaveFailure(plan, writeStage)
+      const message =
+        err instanceof MutationError || err instanceof LeadValidationError
+          ? err.message
+          : describeError(err).message
+      if (outcome === "partial_campaign_saved") {
+        toast.warning(t.leads.editDialog.partialSave, { description: message })
+      } else {
+        setFormError(message)
+      }
+      // The dialog stays open in both cases, with whatever was typed intact.
     } finally {
       setSaving(false)
     }

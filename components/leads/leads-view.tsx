@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Search, SlidersHorizontal, ArrowUpDown, Inbox, Building2, Archive } from "lucide-react"
+import { Search, SlidersHorizontal, ArrowUpDown, Inbox, Building2, Archive, Trash2 } from "lucide-react"
 import type { Lead, LeadType, PipelineStage, Platform, LeadTemperature } from "@/types"
 import {
   Table,
@@ -23,11 +23,11 @@ import {
 } from "@/components/ui/select"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { Badge } from "@/components/ui/badge"
-import { Switch } from "@/components/ui/switch"
 import { ScoreBadge, StageBadge } from "@/components/shared/score-badge"
 import { PlatformMark } from "@/components/shared/platform-badge"
 import { LeadTypeBadge } from "@/components/shared/lead-type-badge"
 import { LeadDetailSheet } from "@/components/leads/lead-detail-sheet"
+import { Button } from "@/components/ui/button"
 import { EmptyTrashDialog } from "@/components/leads/empty-trash-dialog"
 import { LeadCard } from "@/components/leads/lead-card"
 import {
@@ -145,9 +145,21 @@ export function LeadsView({
   // Keep the open sheet in sync with live updates (stage / type changes).
   useEffect(() => {
     if (!selected) return
+    // A prospect belonging to a workspace that is no longer in scope must not
+    // stay open. WorkspaceScope remounts this view on a switch, so this is
+    // the belt to that braces: it also covers a lead that left the scope
+    // because its workspace filter changed, without a remount.
+    const stillInScope =
+      (isSuperAdmin ? !workspaceFilter || selected.workspaceId === workspaceFilter : true)
+      && (!activeWorkspaceId || isSuperAdmin || selected.workspaceId === activeWorkspaceId)
+    if (!stillInScope) {
+      setOpen(false)
+      setSelected(null)
+      return
+    }
     const fresh = leads.find((l) => l.id === selected.id)
     if (fresh && fresh !== selected) setSelected(fresh)
-  }, [leads, selected])
+  }, [leads, selected, isSuperAdmin, workspaceFilter, activeWorkspaceId])
 
   /**
    * The list this view works on. Papelera is an EXCLUSIVE view of deleted
@@ -371,22 +383,39 @@ export function LeadsView({
           {/* Denominator is the list on screen: active leads, or the trash. */}
           {t.leads.count(filtered.length, scope.length)}
         </p>
-        {archivedCount > 0 && (
-          <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-            <Switch checked={showArchived} onCheckedChange={setShowArchived} />
-            {t.leads.showArchived} · {t.leads.archivedCount(archivedCount)}
-          </label>
+        {/* ALWAYS visible for the roles that may use it, with its count —
+            including zero. The trash used to be a switch that only appeared
+            once something was already archived, so it was undiscoverable
+            exactly when somebody went looking for it. */}
+        {canEmptyTrash && (
+          <Button
+            variant={showArchived ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => setShowArchived(!showArchived)}
+            aria-pressed={showArchived}
+            className="h-11 sm:h-9"
+          >
+            <Trash2 className="size-3.5" data-icon="inline-start" />
+            {t.leads.trashLabel(archivedCount)}
+          </Button>
         )}
-        {/* Only inside the trash view, and only for one explicit workspace:
-            a super admin browsing every workspace at once has none selected,
-            so the button stays hidden rather than risking a global wipe. */}
-        {showArchived && trashWorkspace && (
-          <EmptyTrashDialog
-            workspaceId={trashWorkspace.id}
-            workspaceName={trashWorkspace.name}
-            archivedCount={trashTargetCount}
-            canEmpty={canEmptyTrash}
-          />
+        {/* Inside the trash, the empty button is always SHOWN. With "Todos
+            los workspaces" it is disabled with an explanation, because a
+            global wipe must never be possible. */}
+        {showArchived && canEmptyTrash && (
+          trashWorkspace ? (
+            <EmptyTrashDialog
+              workspaceId={trashWorkspace.id}
+              workspaceName={trashWorkspace.name}
+              archivedCount={trashTargetCount}
+              canEmpty
+            />
+          ) : (
+            <Button variant="outline" size="sm" disabled className="h-11 sm:h-9">
+              <Trash2 className="size-3.5" data-icon="inline-start" />
+              {t.leads.emptyTrash.pickWorkspace}
+            </Button>
+          )
         )}
       </div>
 
