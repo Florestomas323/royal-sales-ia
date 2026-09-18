@@ -151,7 +151,8 @@ test("saving a campaign marks the attribution as manual, in the same write", () 
 
 test("the selector lists ACTIVE and PAUSED campaigns of the workspace, with their state", () => {
   const dlg = read("components/leads/edit-lead-dialog.tsx")
-  assert.match(dlg, /const \{ campaigns, loading: campaignsLoading \} = useCampaigns\(\)/)
+  // Ahora ligado al workspace del PROSPECTO, no al activo.
+  assert.match(dlg, /useCampaignsForWorkspace\(lead\.workspaceId\)/)
   assert.match(dlg, /\.filter\(\(c\) => c\.status === "active" \|\| c\.status === "paused"\)/)
   assert.match(dlg, /CAMPAIGN_STATUS_LABELS\[c\.status\]/)
   assert.match(dlg, /<SelectItem value=\{NO_CAMPAIGN\}>/)
@@ -159,10 +160,10 @@ test("the selector lists ACTIVE and PAUSED campaigns of the workspace, with thei
 
 test("a campaign of another workspace is NOT available: the list is scoped and the id is re-checked", () => {
   const dlg = read("components/leads/edit-lead-dialog.tsx")
-  // useCampaigns() is bound to the active workspace by construction.
-  assert.match(read("lib/firebase/collections.ts"), /export function useCampaigns\(\) \{[\s\S]{0,200}useWorkspaceCollection<Campaign>\("campaigns"/)
-  // And the chosen id must be in that list before anything is written.
-  assert.match(dlg, /const chosen = nextCampaign \? campaigns\.find\(\(c\) => c\.id === nextCampaign\) : undefined/)
+  // The list is queried for the LEAD's workspace…
+  assert.match(read("lib/firebase/collections.ts"), /export function useCampaignsForWorkspace[\s\S]{0,600}where\("workspaceId", "==", workspaceId\)/)
+  // …and the chosen id is re-checked against it before anything is written.
+  assert.match(dlg, /c\.id === nextCampaign && c\.workspaceId === lead\.workspaceId/)
   assert.match(dlg, /if \(nextCampaign && !chosen\)[\s\S]{0,80}campaignInvalid/)
 })
 

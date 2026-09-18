@@ -287,3 +287,195 @@ test("the manual client keeps outcome, enriched and enrichedFields", () => {
   assert.match(dlg, /t\.leads\.enrichedFieldLabels\[f\] \?\? f/)
   assert.doesNotMatch(dlg, /result\.enrichedFields\.map\(\(f\) => result/)
 })
+
+const build = buildDir
+
+/* ============ Vaciar papelera: autorización de la RUTA ================== */
+/*
+ * Only the authorisation half lives here, and it is exercised by calling the
+ * real route handler with injected fakes. What gets deleted is proven by
+ * tests/empty-trash.test.mjs and the emulator suite, which run the real
+ * helper — no regex over source code.
+ */
+
+const routeFakes = {
+  auth: null,
+  emptied: [],
+  outcome: { workspaceId: "", deletedCount: 0, pendingCount: 0, conflictCount: 0, success: true },
+}
+
+Module._load = (function (original) {
+  return function (request, ...rest) {
+    if (request === "next/server") {
+      return { NextResponse: { json: (body, init) => ({ status: init?.status ?? 200, body }) } }
+    }
+    if (request === "@/lib/firebase/admin") {
+      return { getAdminDb: () => ({}), isAdminNotConfigured: () => false }
+    }
+    if (request === "@/lib/firebase/server-auth") {
+      const real = original.call(this, join(build, "lib/firebase/server-auth.js"), ...rest)
+      return { ...real, authenticateRequest: async () => routeFakes.auth }
+    }
+    if (request === "@/lib/leads/empty-trash-server") {
+      return {
+        emptyWorkspaceTrash: async (_db, workspaceId) => {
+          routeFakes.emptied.push(workspaceId)
+          return { ...routeFakes.outcome, workspaceId }
+        },
+      }
+    }
+    return original.call(this, request, ...rest)
+  }
+})(Module._load)
+
+const emptyTrashRoute = require(join(build, "app/api/leads/empty-trash/route.js"))
+
+const asUser = (role, workspaceId) => ({
+  ok: true,
+  user: { uid: "u", email: null, membership: { role, workspaceId, userId: "user-1", email: "u@x" } },
+})
+const post = (body) =>
+  emptyTrashRoute.POST(new Request("http://x/api/leads/empty-trash", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  }))
+
+test("1-2. Distribuidor y Asistente pueden vaciar la papelera de SU workspace", async () => {
+  for (const role of ["client_admin", "manager"]) {
+    routeFakes.auth = asUser(role, "ws-APC")
+    routeFakes.emptied = []
+    const res = await post({ workspaceId: "ws-APC" })
+    assert.equal(res.status, 200, role)
+    assert.equal(res.body.success, true)
+    assert.deepEqual(routeFakes.emptied, ["ws-APC"])
+  }
+})
+
+test("3. Telemarketing recibe 403 y no se borra nada", async () => {
+  routeFakes.auth = asUser("sales_rep", "ws-APC")
+  routeFakes.emptied = []
+  const res = await post({ workspaceId: "ws-APC" })
+  assert.equal(res.status, 403)
+  assert.deepEqual(routeFakes.emptied, [], "la eliminación nunca se invoca")
+})
+
+test("viewer también recibe 403", async () => {
+  routeFakes.auth = asUser("viewer", "ws-APC")
+  routeFakes.emptied = []
+  assert.equal((await post({ workspaceId: "ws-APC" })).status, 403)
+  assert.deepEqual(routeFakes.emptied, [])
+})
+
+test("4. un usuario sin sesión válida no llega a la lógica", async () => {
+  routeFakes.auth = { ok: false, status: 401, error: "missing_token" }
+  routeFakes.emptied = []
+  const res = await post({ workspaceId: "ws-APC" })
+  assert.equal(res.status, 401)
+  assert.deepEqual(routeFakes.emptied, [])
+})
+
+test("5. nadie vacía la papelera de otro workspace", async () => {
+  routeFakes.auth = asUser("client_admin", "ws-APC")
+  routeFakes.emptied = []
+  const res = await post({ workspaceId: "ws-otro" })
+  assert.equal(res.status, 403, "el cuerpo no puede elegir otro destino")
+  assert.deepEqual(routeFakes.emptied, [])
+})
+
+test("el workspace se deriva de la membresía, no del cuerpo", async () => {
+  routeFakes.auth = asUser("manager", "ws-APC")
+  routeFakes.emptied = []
+  const res = await post({})
+  assert.equal(res.status, 200)
+  assert.deepEqual(routeFakes.emptied, ["ws-APC"], "usa el suyo aunque el cuerpo calle")
+})
+
+test("el super admin SIN workspace explícito es rechazado: no hay vía global", async () => {
+  routeFakes.auth = asUser("super_admin", "ws-propio")
+  routeFakes.emptied = []
+  const res = await post({})
+  assert.equal(res.status, 400)
+  assert.equal(res.body.error, "workspace_required")
+  assert.deepEqual(routeFakes.emptied, [], "ninguna papelera se toca")
+})
+
+test("el super admin CON workspace explícito vacía solo ese", async () => {
+  routeFakes.auth = asUser("super_admin", "ws-propio")
+  routeFakes.emptied = []
+  const res = await post({ workspaceId: "ws-APC" })
+  assert.equal(res.status, 200)
+  assert.deepEqual(routeFakes.emptied, ["ws-APC"], "solo el workspace nombrado")
+})
+
+test("15. un resultado parcial responde 207 y no se presenta como éxito", async () => {
+  routeFakes.auth = asUser("client_admin", "ws-APC")
+  routeFakes.outcome = { deletedCount: 3, pendingCount: 2, conflictCount: 1, success: false }
+  const res = await post({ workspaceId: "ws-APC" })
+  assert.equal(res.status, 207)
+  assert.equal(res.body.success, false)
+  assert.equal(res.body.partial, true)
+  assert.equal(res.body.deletedCount, 3)
+  assert.equal(res.body.pendingCount, 2)
+  // Counts only: nothing identifying leaves the route.
+  assert.doesNotMatch(JSON.stringify(res.body), /leadId|phone|name/)
+  routeFakes.outcome = { deletedCount: 0, pendingCount: 0, conflictCount: 0, success: true }
+})
+
+test("13-14. el modal exige VACIAR y bloquea dobles clics", () => {
+  const dlg = read("components/leads/empty-trash-dialog.tsx")
+  assert.match(dlg, /const CONFIRM_WORD = "VACIAR"/)
+  assert.match(dlg, /const matches = typed\.trim\(\) === CONFIRM_WORD/)
+  assert.match(dlg, /if \(!matches \|\| busy\) return/)
+  assert.match(dlg, /disabled=\{archivedCount === 0\}/)
+})
+
+test("super admin con «Todos los workspaces»: el botón queda oculto", () => {
+  const view = read("components/leads/leads-view.tsx")
+  // Sin respaldo a activeWorkspaceId: null significa «todos» y no hay destino.
+  assert.match(view, /const id = isSuperAdmin \? workspaceFilter : activeWorkspaceId/)
+  assert.doesNotMatch(view, /workspaceFilter \?\? activeWorkspaceId/)
+  assert.match(view, /showArchived && trashWorkspace &&/)
+  // Y el contador es el del workspace objetivo, no el del ámbito visible.
+  assert.match(view, /l\.workspaceId === trashWorkspace\.id/)
+  assert.match(view, /archivedCount=\{trashTargetCount\}/)
+  assert.doesNotMatch(view, /archivedCount=\{scope\.length\}/)
+})
+
+test("1. un parcial con cero eliminados NO dice «ya está vacía» y deja el modal abierto", () => {
+  const dlg = read("components/leads/empty-trash-dialog.tsx")
+  const handler = dlg.slice(dlg.indexOf("const result = await emptyTrash"), dlg.indexOf("} catch (err)"))
+  // La incompletitud se evalúa ANTES que deletedCount === 0.
+  assert.ok(
+    handler.indexOf("!result.success || result.partial") < handler.indexOf("result.deletedCount === 0"),
+    "el caso parcial debe comprobarse primero",
+  )
+  // Y en ese caso no se cierra el modal.
+  const partialBranch = handler.slice(handler.indexOf("!result.success || result.partial"), handler.indexOf("if (result.deletedCount === 0)"))
+  assert.match(partialBranch, /setBusy\(false\)\s*\n\s*return/)
+  assert.doesNotMatch(partialBranch, /setOpen\(false\)/)
+  // El contrato del cliente lleva los contadores.
+  const lib = read("lib/firebase/leads.ts")
+  assert.match(lib, /pendingCount: typeof body\.pendingCount === "number"/)
+  assert.match(lib, /conflictCount: typeof body\.conflictCount === "number"/)
+})
+
+test("2. las reglas impiden restaurar mientras la purga tiene reclamo", () => {
+  const rules = read("firestore.rules")
+  assert.match(rules, /function purgeClaimHeld\(\)/)
+  assert.match(rules, /resource\.data\.get\('purgeClaimId', null\) != null/)
+  assert.match(rules, /function notRestoringDuringPurge\(\)/)
+  // Y la condición se aplica de verdad en el allow update de leads.
+  const leadsBlock = rules.slice(rules.indexOf("match /leads/{leadId}"), rules.indexOf("match /leads/{leadId}/activities"))
+  assert.match(leadsBlock, /&& notRestoringDuringPurge\(\)/)
+  // Solo bloquea el desarchivado; el resto del documento sigue editable.
+  const fn = rules.slice(rules.indexOf("function unarchivingNow()"), rules.indexOf("function notRestoringDuringPurge()"))
+  assert.match(fn, /resource\.data\.get\('archived', false\) == true/)
+  assert.match(fn, /request\.resource\.data\.get\('archived', false\) != true/)
+})
+
+test("5. la ruta propaga los contadores acumulados cuando la purga se corta", () => {
+  const route = read("app/api/leads/empty-trash/route.ts")
+  assert.match(route, /deletedCount: outcome\.deletedCount/)
+  assert.match(route, /outcome\.errored \? \{ errored: true \} : \{\}/)
+  // El 500 solo ocurre si el helper lanza, y ahí no hubo progreso que perder.
+  assert.match(route, /outcome = await emptyWorkspaceTrash\(getAdminDb\(\), workspaceId\)/)
+})
