@@ -380,14 +380,20 @@ import { readFileSync } from "node:fs"
 const read = (p) => readFileSync(join(root, p), "utf8")
 
 test("1a. el contenido operativo se remonta con una key por workspace", () => {
-  const scope = read("components/shell/workspace-scope.tsx")
-  // La key incluye el caso "Todos los workspaces" como ámbito propio.
-  assert.match(scope, /workspaceId \?\? \(isSuperAdmin \? ALL_WORKSPACES : "none"\)/)
-  assert.match(scope, /<div key=\{scope\}/)
+  // La regla de la key se EJECUTA: dos workspaces distintos, y \"Todos\",
+  // nunca pueden compartir ámbito, porque compartirla es no desmontar.
+  const key = (ws, superAdmin = true, status = "ready") =>
+    workspaceScopeKey(status, ws, superAdmin, "__all__")
+  assert.notEqual(key("ws-A"), key("ws-B"))
+  assert.notEqual(key("ws-A"), key(null))
+  assert.notEqual(key(null), key(null, false))
+  assert.notEqual(key("ws-A", true, "loading"), key("ws-A"))
+  assert.equal(key("ws-A"), key("ws-A"), "el mismo workspace no se remonta solo")
   // Va DENTRO de los providers: no se desmonta Auth ni se cierra sesión.
-  const layout = read("app/(app)/layout.tsx")
-  const inner = layout.slice(layout.indexOf("<WorkspaceProvider>"), layout.indexOf("</WorkspaceProvider>"))
-  assert.match(inner, /<WorkspaceScope>\{children\}<\/WorkspaceScope>/)
+  // La jerarquía completa (TopBar incluida) se verifica ejecutando el layout
+  // en tests/workspace-switch.test.mjs.
+  const scope = read("components/shell/workspace-scope.tsx")
+  assert.match(scope, /<div key=\{scope\}/)
   assert.doesNotMatch(scope, /RequireAuth|signOut|WorkspaceProvider/)
 })
 
@@ -422,9 +428,10 @@ test("5b. dentro de la papelera el botón se muestra siempre; sin workspace, des
 })
 
 test("5c. nunca existe un vaciado global", () => {
+  // Sin workspace individual NO hay destino: se ejecuta la decisión real.
+  assert.equal(resolveTrashTarget(null, null, [{ id: "ws-A", name: "A" }]), null)
   const view = read("components/leads/leads-view.tsx")
-  // Sin workspace individual no se renderiza el diálogo, solo el aviso.
-  assert.match(view, /const id = isSuperAdmin \? workspaceFilter : activeWorkspaceId/)
+  assert.match(view, /t\.leads\.emptyTrash\.pickWorkspace/)
   const route = read("app/api/leads/empty-trash/route.ts")
   assert.match(route, /if \(isSuper && !asked\)[\s\S]{0,120}workspace_required/)
 })
@@ -514,6 +521,7 @@ test("los códigos del servidor se traducen a mensajes accionables, no a «no ti
 const { planLeadSave, describeSaveFailure } = require(join(build, "lib/leads/save-plan.js"))
 const { describeError } = require(join(build, "lib/firebase/errors.js"))
 const { MutationError } = require(join(build, "lib/firebase/leads.js"))
+const { resolveTrashTarget, workspaceScopeKey } = require(join(build, "lib/leads/workspace-switch.js"))
 
 /** Ejecuta la decisión del submit con dobles, como hace el diálogo. */
 async function runSubmit({ patchKeys, campaignChange, failCampaign = false, failPatch = false }) {

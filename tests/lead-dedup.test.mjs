@@ -81,6 +81,7 @@ Module._load = function (request, ...rest) {
   return loadOriginal.call(this, request, ...rest)
 }
 const { enrichmentPatch, leadOutcomeOf } = require(join(buildDir, "lib/lead-dedup-server.js"))
+const trash = require(join(buildDir, "lib/leads/workspace-switch.js"))
 
 const existing = (o = {}) => ({
   id: "L1", workspaceId: "ws-A", leadType: "sales", name: "María González", phone: "+15125550100",
@@ -429,15 +430,25 @@ test("13-14. el modal exige VACIAR y bloquea dobles clics", () => {
 })
 
 test("super admin con «Todos los workspaces»: no hay destino y el vaciado se deshabilita", () => {
-  const view = read("components/leads/leads-view.tsx")
-  // Sin respaldo a activeWorkspaceId: null significa «todos los workspaces».
-  assert.match(view, /const id = isSuperAdmin \? workspaceFilter : activeWorkspaceId/)
-  assert.doesNotMatch(view, /workspaceFilter \?\? activeWorkspaceId/)
+  const workspaces = [{ id: "ws-APC", name: "APC" }, { id: "ws-imp", name: "Impact" }]
+  // «Todos los workspaces» y sin elección local: no hay destino posible.
+  assert.equal(trash.resolveTrashTarget(null, null, workspaces), null)
+  // Con un workspace concreto (global o elegido) el destino es ESE, uno solo.
+  assert.deepEqual(trash.resolveTrashTarget(null, "ws-imp", workspaces), { id: "ws-imp", name: "Impact" })
+  assert.deepEqual(trash.resolveTrashTarget("ws-APC", null, workspaces), { id: "ws-APC", name: "APC" })
+  // Y el contador promete solo los archivados de ese workspace.
+  const leads = [
+    { workspaceId: "ws-imp", archived: true },
+    { workspaceId: "ws-APC", archived: true },
+    { workspaceId: "ws-imp", archived: false },
+  ]
+  assert.equal(trash.countArchivedIn(leads, "ws-imp"), 1)
+  assert.equal(trash.countArchivedIn(leads, null), 0)
   // El acceso a Papelera SIEMPRE se ve; lo que queda deshabilitado con un
-  // aviso es el vaciado, porque no hay un workspace al que aplicarlo.
+  // aviso es el vaciado cuando no hay un workspace al que aplicarlo.
+  const view = read("components/leads/leads-view.tsx")
   assert.match(view, /t\.leads\.trashLabel\(archivedCount\)/)
   assert.match(view, /t\.leads\.emptyTrash\.pickWorkspace/)
-  assert.match(view, /l\.workspaceId === trashWorkspace\.id/)
   assert.match(view, /archivedCount=\{trashTargetCount\}/)
 })
 
