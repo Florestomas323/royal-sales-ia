@@ -259,6 +259,19 @@ Los secretos de estas integraciones **nunca** van en el frontend ni en variables
 
 ## 9. Decisiones y deuda técnica
 
+### Identidad única de prospectos
+
+- La creación manual (`POST /api/leads`) y la integración web
+  (`POST /api/website/leads`) convergen en `createOrReuseLeadAtomic`.
+- La identidad es `workspaceId + teléfono normalizado + nombre normalizado`.
+  Nunca se compara entre distribuidores.
+- `leadIdentityKeys/{sha256}` es un índice privado, escrito únicamente con
+  Firebase Admin en la misma transacción que el prospecto. Dos solicitudes
+  simultáneas no pueden crear dos documentos.
+- Los prospectos anteriores se adoptan de forma progresiva: la primera vez que
+  reaparecen, la transacción encuentra el documento histórico y crea su clave.
+- Si el documento canónico estaba archivado, se restaura; no nace otra copia.
+
 - `next.config.mjs` tiene `typescript.ignoreBuildErrors: true`. El typecheck está limpio hoy (`pnpm exec tsc --noEmit` pasa); considerar poner el flag en `false` para que los errores de tipo bloqueen el build.
 - `images.unoptimized: true` está activo (compatibilidad con la preview de v0). Revisar al optimizar para producción.
 - Guard de rutas del lado cliente (limitación del SDK web). Las Security Rules son la salvaguarda real.
