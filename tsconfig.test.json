@@ -26,6 +26,14 @@
     "lib/lead-dedup-server.ts",
     "lib/leads/empty-trash-server.ts",
     "app/api/leads/empty-trash/route.ts",
-    "lib/firebase/server-auth.ts"
+    "lib/firebase/server-auth.ts",
+    "lib/server/mutation-errors.ts",
+    "app/api/leads/[id]/campaign/route.ts",
+    "app/api/appointments/route.ts",
+    "app/api/admin/identity/route.ts",
+    "lib/appointments.ts",
+    "lib/leads/save-plan.ts",
+    "lib/firebase/errors.ts",
+    "lib/firebase/leads.ts"
   ]
 }
