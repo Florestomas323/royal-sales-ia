@@ -529,8 +529,12 @@ test("every leadType read on the UPDATE path is legacy-tolerant", () => {
   // No direct read survives in the update rule itself…
   assert.doesNotMatch(update, /validLeadType\(request\.resource\.data\.leadType\)/)
   assert.doesNotMatch(update, /stageMatchesType\(request\.resource\.data\.leadType/)
-  assert.match(update, /validLeadType\(leadTypeAfter\(\)\)/)
-  assert.match(update, /stageMatchesType\(leadTypeAfter\(\), request\.resource\.data\.stage\)/)
+  // Since the APC-compatible rules, the pipeline check runs only when the
+  // write touches it, inside pipelineChangeIsValid().
+  assert.match(update, /pipelineChangeIsValid\(\)/)
+  const pipeline = ruleFunction(RULES, "pipelineChangeIsValid")
+  assert.match(pipeline, /validLeadType\(leadTypeAfter\(\)\)/)
+  assert.match(pipeline, /stageMatchesType\(leadTypeAfter\(\), request\.resource\.data\.stage\)/)
   // …nor in the helpers the update path calls.
   for (const fn of ["isWonNow", "closingInvariants", "customerLinkOnlyOnRealClose"]) {
     const body = ruleFunction(RULES, fn)
@@ -547,10 +551,15 @@ test("create stays strict: a new lead must declare its type", () => {
 
 test("the default applies only when the field is ABSENT; an invalid value is still refused", () => {
   const after = ruleFunction(RULES, "leadTypeAfter")
-  const run = (data) => evaluate(after, { vars: { request: { resource: { data } } }, methods })
-  assert.equal(run({ stage: "new_lead" }), "sales", "absent → sales")
+  // The default now needs the field to be null/absent BEFORE and AFTER, so a
+  // valid type cannot be nulled out and silently read as "sales".
+  const run = (data, before = {}) =>
+    evaluate(after, { vars: { request: { resource: { data } }, resource: { data: before } }, methods })
+  assert.equal(run({ stage: "new_lead" }), "sales", "absent before and after → sales")
+  assert.equal(run({ leadType: null }, { leadType: null }), "sales", "explicit null on a legacy doc → sales")
   assert.equal(run({ leadType: "recruiting" }), "recruiting", "present → itself")
   assert.equal(run({ leadType: "inventado" }), "inventado", "…and an invalid value is NOT masked")
+  assert.equal(run({ leadType: null }, { leadType: "sales" }), null, "nulling a valid type is NOT masked")
   // validLeadType then rejects it.
   const valid = ruleFunction(RULES, "validLeadType")
   assert.equal(evaluate(valid, { vars: { v: "inventado" }, methods }), false)
