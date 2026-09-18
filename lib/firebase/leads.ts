@@ -14,8 +14,7 @@ import {
   type DocumentData,
   type QueryConstraint,
 } from "firebase/firestore"
-import { db } from "./client"
-import { NOTIFICATIONS, buildNotification, newLeadNotificationId, recipientsFor } from "@/lib/notifications"
+import { auth, db } from "./client"
 import { useWorkspace } from "./workspace-context"
 import { PIPELINES, PLATFORMS } from "@/lib/constants"
 import {
@@ -35,7 +34,6 @@ import type {
   PipelineStage,
   Platform,
   RecruitingProfile,
-  User,
 } from "@/types"
 
 const leadsCol = collection(db, "leads")
@@ -379,89 +377,59 @@ export interface NewLeadInput {
   /** Optional attribution details known at creation (UTMs, landing page…). */
   attribution?: Partial<Omit<Attribution, "platform">>
   recruiting?: RecruitingProfile
-  /** When present, a `lead_created` activity is written in the same batch. */
-  actor?: ActorContext
-  /**
-   * Team of the workspace, so "new lead" notifications for its admins (and
-   * the assignee) are written in the SAME batch as the lead. Absent means no
-   * in-app notification — never a silent partial write.
-   */
-  notify?: Pick<User, "id" | "workspaceId" | "role" | "status">[]
 }
 
-function stripUndefined<T extends object>(obj: T): T {
-  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as T
+export interface CreateLeadResult {
+  leadId: string
+  created: boolean
+  duplicate: boolean
+  restored: boolean
+  /** One word for what happened, straight from the server. */
+  outcome: "created" | "restored" | "enriched" | "unchanged"
+  /** True when empty fields of the existing prospect were filled in. */
+  enriched: boolean
+  /**
+   * Which fields were filled. Field NAMES only — never their values, so the
+   * confirmation can say "se completó el correo" without showing it.
+   */
+  enrichedFields: string[]
 }
 
-/** Create a new lead with sensible defaults for the fields the UI omits. */
-export async function createLead(input: NewLeadInput) {
-  const now = new Date().toISOString()
-  const campaignName = input.campaignName ?? ""
-  /**
-   * Attribution is only written when there is something REAL to record.
-   *
-   * A manual entry has no campaign, ad set, ad or creative: filling them with
-   * "Entrada manual" and "—" produced fake attribution that later read as a
-   * genuine ad platform. Now those fields are simply absent, and `source`
-   * remains the single source of truth for the lead's origin.
-   */
-  const attribution: Attribution = stripUndefined({
-    platform: input.source,
-    ...(campaignName ? { campaign: campaignName } : {}),
-    ...input.attribution,
+/**
+ * Manual creation goes through the authenticated server route so the same
+ * atomic identity claim protects manual forms and external integrations.
+ */
+export async function createLead(input: NewLeadInput): Promise<CreateLeadResult> {
+  const token = await auth.currentUser?.getIdToken()
+  if (!token) throw new Error("missing_auth_token")
+  const response = await fetch("/api/leads", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input),
   })
-
-  const lead: Omit<Lead, "id"> = {
-    workspaceId: input.workspaceId,
-    leadType: input.leadType,
-    name: input.name,
-    phone: normalizePhone(input.phone ?? ""),
-    email: (input.email ?? "").trim().toLowerCase(),
-    source: input.source,
-    campaignId: input.campaignId ?? "",
-    campaignName,
-    score: 50,
-    temperature: "warm",
-    stage: PIPELINES[input.leadType].initial,
-    assignedToId: input.assignedToId ?? "",
-    potentialValue: input.potentialValue ?? 0,
-    createdAt: now,
-    lastContactAt: null,
-    nextFollowUpAt: null,
-    nextAction: "Primer contacto",
-    attribution,
-    clientId: input.clientId ?? "",
-    ...(input.leadType === "recruiting" && input.recruiting
-      ? { recruiting: stripUndefined(input.recruiting) }
-      : {}),
+  const body = (await response.json().catch(() => ({}))) as Partial<CreateLeadResult> & { error?: string }
+  if (!response.ok || !body.leadId) throw new Error(body.error ?? `lead_create_failed_${response.status}`)
+  return {
+    leadId: body.leadId,
+    created: body.created === true,
+    duplicate: body.duplicate === true,
+    restored: body.restored === true,
+    // Carried through from the server instead of being dropped, so the
+    // dialog can tell "unchanged" from "enriched" from "restored".
+    enriched: body.enriched === true,
+    enrichedFields: Array.isArray(body.enrichedFields) ? body.enrichedFields : [],
+    outcome:
+      body.outcome === "created" || body.outcome === "restored"
+        || body.outcome === "enriched" || body.outcome === "unchanged"
+        ? body.outcome
+        : body.created === true
+          ? "created"
+          : body.restored === true
+            ? "restored"
+            : body.enriched === true
+              ? "enriched"
+              : "unchanged",
   }
-  // The lead and its `lead_created` activity are born in the same batch:
-  // Rules use getAfter() so the activity can reference a lead that does not
-  // exist yet, and reject `lead_created` on a lead that already existed.
-  const ref = doc(leadsCol)
-  const batch = writeBatch(db)
-  batch.set(ref, lead)
-  if (input.actor) {
-    stageActivity(batch, { id: ref.id, workspaceId: input.workspaceId }, input.actor, {
-      type: "lead_created",
-    })
-  }
-  // Central "new lead" trigger, client side: one notification per recipient,
-  // in the same batch, so either the lead and its notifications all land or
-  // none do. Rules verify each recipient belongs to the lead's workspace.
-  if (input.notify) {
-    const now = new Date().toISOString()
-    for (const userId of recipientsFor({ workspaceId: input.workspaceId, assignedToId: lead.assignedToId }, input.notify)) {
-      // Deterministic id: this lead + this recipient can only ever be ONE
-      // document, whichever path creates it.
-      batch.set(
-        doc(db, NOTIFICATIONS, newLeadNotificationId(ref.id, userId)),
-        buildNotification({ ...lead, id: ref.id }, input.attribution?.externalFormId ?? null, userId, now),
-      )
-    }
-  }
-  await batch.commit()
-  return ref.id
 }
 
 /**
