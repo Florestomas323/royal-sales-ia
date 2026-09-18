@@ -25,6 +25,16 @@ export type MutationErrorCode =
   | "campaign_type_mismatch"
   | "address_required"
   | "invalid_body"
+  /* Creación de prospectos (POST /api/leads). */
+  | "missing_workspace"
+  | "forbidden"
+  | "invalid_assignee"
+  | "invalid_campaign"
+  | "invalid_identity"
+  | "invalid_email"
+  | "invalid_lead_type"
+  | "invalid_source"
+  | "invalid_source_for_type"
   | "server_not_configured"
   | "internal"
 
@@ -45,6 +55,17 @@ export const ERROR_STATUS: Record<MutationErrorCode, number> = {
   campaign_type_mismatch: 422,
   address_required: 422,
   invalid_body: 400,
+  missing_workspace: 400,
+  forbidden: 403,
+  // 403 when a rep tries to assign to somebody else; 400 when the member
+  // simply does not belong to this workspace. The route chooses.
+  invalid_assignee: 400,
+  invalid_campaign: 400,
+  invalid_identity: 400,
+  invalid_email: 400,
+  invalid_lead_type: 400,
+  invalid_source: 400,
+  invalid_source_for_type: 400,
   server_not_configured: 503,
   internal: 500,
 }
