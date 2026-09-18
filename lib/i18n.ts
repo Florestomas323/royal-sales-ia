@@ -543,6 +543,23 @@ export const t = {
     emptyDescription: 'Prueba quitando un filtro o ajustando tu búsqueda.',
     searchPlaceholderShort: 'Buscar prospectos…',
     filtersLabel: 'Filtros',
+    emptyTrash: {
+      action: 'Vaciar papelera',
+      title: 'Vaciar papelera',
+      warning: (n: number, ws: string) =>
+        `Esta acción eliminará definitivamente ${n} ${n === 1 ? 'prospecto archivado' : 'prospectos archivados'} de ${ws} y sus datos relacionados. No se puede deshacer.`,
+      confirmLabel: 'Escribe VACIAR para continuar.',
+      confirm: 'Vaciar papelera',
+      working: 'Eliminando…',
+      done: (n: number) => `Papelera vaciada: ${n} ${n === 1 ? 'prospecto eliminado' : 'prospectos eliminados'}.`,
+      alreadyEmpty: 'La papelera ya está vacía.',
+      partial: (n: number, pending: number) =>
+        n > 0
+          ? `Se eliminaron ${n} prospectos; quedaron ${pending} pendientes.`
+          : `No se pudo eliminar ningún prospecto: quedaron ${pending} pendientes.`,
+      partialHint: 'Puedes volver a intentarlo: la operación es segura de repetir.',
+      error: 'No se pudo vaciar la papelera.',
+    },
     showArchived: 'Mostrar papelera',
     archivedCount: (n: number) => (n === 1 ? '1 en papelera' : `${n} en papelera`),
     editDialog: {
