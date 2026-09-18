@@ -401,14 +401,21 @@ export interface CreateLeadResult {
  */
 export async function createLead(input: NewLeadInput): Promise<CreateLeadResult> {
   const token = await auth.currentUser?.getIdToken()
-  if (!token) throw new Error("missing_auth_token")
+  if (!token) throw new MutationError("unauthenticated")
   const response = await fetch("/api/leads", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify(input),
   })
-  const body = (await response.json().catch(() => ({}))) as Partial<CreateLeadResult> & { error?: string }
-  if (!response.ok || !body.leadId) throw new Error(body.error ?? `lead_create_failed_${response.status}`)
+  const body = (await response.json().catch(() => ({}))) as Partial<CreateLeadResult> & {
+    error?: string
+    operationId?: string
+  }
+  // A MutationError, never a bare Error: `describeError` then shows the real
+  // reason (and the operation id) instead of "Ocurrió un error inesperado".
+  if (!response.ok || !body.leadId) {
+    throw new MutationError(body.error ?? "internal", body.operationId)
+  }
   return {
     leadId: body.leadId,
     created: body.created === true,
@@ -595,6 +602,21 @@ export async function emptyTrash(workspaceId: string): Promise<EmptyTrashResult>
 /** Specific server codes → actionable Spanish messages. */
 const MUTATION_MESSAGES: Record<string, string> = {
   unauthenticated: "Tu sesión expiró. Vuelve a iniciar sesión.",
+  // Creación de prospectos: cada código del servidor dice qué corregir.
+  // Sin esto, cambiar de workspace y guardar mostraba «Ocurrió un error
+  // inesperado» cuando el motivo real era un responsable del workspace anterior.
+  missing_workspace: "Selecciona un workspace antes de crear el prospecto.",
+  invalid_assignee:
+    "El responsable seleccionado no pertenece a este workspace. Elige uno de la lista.",
+  invalid_campaign:
+    "Esa campaña no pertenece a este workspace o no corresponde al tipo de prospecto.",
+  forbidden: "Tu rol no puede crear prospectos en este workspace.",
+  invalid_identity:
+    "Revisa el nombre y el teléfono: el teléfono debe tener formato internacional.",
+  invalid_email: "El correo no tiene un formato válido.",
+  invalid_lead_type: "Selecciona un tipo de prospecto válido: Ventas o Reclutamiento.",
+  invalid_source: "La fuente seleccionada no es válida.",
+  invalid_source_for_type: "Esa fuente no está permitida para este tipo de prospecto.",
   invalid_token: "Tu sesión no es válida. Vuelve a iniciar sesión.",
   membership_inactive: "Tu cuenta está desactivada en este workspace.",
   membership_missing: "Tu cuenta no tiene membresía en este workspace.",
