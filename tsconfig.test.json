@@ -34,6 +34,11 @@
     "lib/appointments.ts",
     "lib/leads/save-plan.ts",
     "lib/firebase/errors.ts",
-    "lib/firebase/leads.ts"
+    "lib/firebase/leads.ts",
+    "lib/leads/workspace-switch.ts",
+    "app/api/leads/route.ts",
+    "app/(app)/layout.tsx",
+    "components/shell/top-bar.tsx",
+    "components/shell/workspace-scope.tsx"
   ]
 }
