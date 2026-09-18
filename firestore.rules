@@ -1344,7 +1344,9 @@ service cloud.firestore {
 
       /** Legacy docs may lack `leadType`; they were migrated as sales. */
       function leadTypeBefore() {
-        return resource.data.get('leadType', 'sales');
+        return resource.data.get('leadType', null) == null
+          ? 'sales'
+          : resource.data.leadType;
       }
 
       /**
@@ -1360,7 +1362,13 @@ service cloud.firestore {
        * lead can be born without declaring its type.
        */
       function leadTypeAfter() {
-        return request.resource.data.get('leadType', 'sales');
+        // Explicit null also existed in some Admin-SDK/imported documents.
+        // It is tolerated only when it was already null/absent; changing a
+        // valid type to null still returns null and is rejected downstream.
+        return request.resource.data.get('leadType', null) == null
+            && resource.data.get('leadType', null) == null
+          ? 'sales'
+          : request.resource.data.get('leadType', null);
       }
 
       function wasWon() {
@@ -1554,6 +1562,120 @@ service cloud.firestore {
       }
 
       /**
+       * UPDATE compatibility for server-written and historical leads.
+       *
+       * `validLeadShape()` remains mandatory on CREATE, so no client can
+       * introduce malformed data. On UPDATE we validate every field the
+       * request actually changes, instead of re-validating unrelated values
+       * already stored in the document. This matters because Admin SDK
+       * integrations bypass Rules and older imports may contain e.g. a
+       * numeric campaign id, a Timestamp date or an explicit null. Those
+       * historical values must not prevent an admin from archiving the lead,
+       * booking a meeting, or progressively correcting its attribution.
+       *
+       * Security is not relaxed for new writes: changing a field to an
+       * invalid value is still denied, immutable fields stay frozen below,
+       * and the role/workspace checks are unchanged.
+       */
+      function changedToString(f) {
+        return !changedKeys().hasAny([f])
+          || request.resource.data[f] is string;
+      }
+
+      function changedToNonEmptyString(f) {
+        return !changedKeys().hasAny([f])
+          || (request.resource.data[f] is string
+              && request.resource.data[f].size() > 0);
+      }
+
+      function changedToOptionalString(f) {
+        return !changedKeys().hasAny([f])
+          || !(f in request.resource.data)
+          || request.resource.data[f] == null
+          || request.resource.data[f] is string;
+      }
+
+      function changedToOptionalBool(f) {
+        return !changedKeys().hasAny([f])
+          || !(f in request.resource.data)
+          || request.resource.data[f] == null
+          || request.resource.data[f] is bool;
+      }
+
+      function changedToOptionalNumber(f) {
+        return !changedKeys().hasAny([f])
+          || !(f in request.resource.data)
+          || request.resource.data[f] == null
+          || request.resource.data[f] is number;
+      }
+
+      function validChangedLeadShape() {
+        return changedToNonEmptyString('workspaceId')
+          && changedToNonEmptyString('name')
+          && changedToString('phone')
+          && changedToString('assignedToId')
+          && changedToString('source')
+          && changedToString('createdAt')
+          && changedToOptionalString('email')
+          && changedToOptionalString('assignedToName')
+          && changedToOptionalString('campaignId')
+          && changedToOptionalString('campaignName')
+          && changedToOptionalString('clientId')
+          && changedToOptionalString('receivedAt')
+          && changedToOptionalString('updatedAt')
+          && changedToOptionalString('emailNotifiedAt')
+          && changedToOptionalString('notes')
+          && (!changedKeys().hasAny(['temperature'])
+              || !('temperature' in request.resource.data)
+              || request.resource.data.temperature == null
+              || request.resource.data.temperature in ['hot', 'warm', 'cold'])
+          && (!changedKeys().hasAny(['attributionSource'])
+              || !('attributionSource' in request.resource.data)
+              || request.resource.data.attributionSource in ['meta', 'manual', 'web'])
+          && changedToOptionalString('lastContactAt')
+          && changedToOptionalString('nextFollowUpAt')
+          && changedToOptionalString('nextAction')
+          && changedToOptionalString('archivedAt')
+          && changedToOptionalString('archivedBy')
+          && changedToOptionalString('archivedByName')
+          && changedToOptionalString('closedAt')
+          && changedToOptionalString('customerId')
+          && changedToOptionalBool('archived')
+          && changedToOptionalNumber('closedValue')
+          && changedToOptionalNumber('potentialValue')
+          && changedToOptionalNumber('score')
+          && (!changedKeys().hasAny(['attribution'])
+              || !('attribution' in request.resource.data)
+              || request.resource.data.attribution == null
+              || request.resource.data.attribution is map)
+          && (!changedKeys().hasAny(['webForm'])
+              || !('webForm' in request.resource.data)
+              || request.resource.data.webForm == null
+              || request.resource.data.webForm is map)
+          && (!changedKeys().hasAny(['recruiting'])
+              || !('recruiting' in request.resource.data)
+              || request.resource.data.recruiting == null
+              || request.resource.data.recruiting is map);
+      }
+
+      /** Only a pipeline write needs the pipeline to be re-validated. */
+      function pipelineChangeIsValid() {
+        return !changedKeys().hasAny(['leadType', 'stage'])
+          || (validLeadType(leadTypeAfter())
+              && stageMatchesType(leadTypeAfter(), request.resource.data.stage));
+      }
+
+      /**
+       * Closing consistency is relevant when the pipeline/closing state
+       * changes. An archive or attribution edit must not be blocked by stale
+       * closing metadata that it neither reads nor modifies.
+       */
+      function closingChangeIsValid() {
+        return !changedKeys().hasAny(['leadType', 'stage', 'closedValue', 'closedAt'])
+          || closingInvariants();
+      }
+
+      /**
        * Correcting the channel (`source`). Admins only, to one of the values
        * the product defines, and never together with a rewrite of the
        * attribution trail — which the freeze above already guarantees.
@@ -1649,18 +1771,17 @@ service cloud.firestore {
       //     the stage to that pipeline's initial stage, and only for admins;
       //  4. the role checks are exactly the previous ones, plus: a rep may not
       //     reassign the lead nor change its type.
-      allow update: if validLeadShape()
-        // Legacy-tolerant on BOTH halves: correcting only one keeps the block,
-        // because an absent field fails the pipeline check just as hard.
-        && validLeadType(leadTypeAfter())
-        && stageMatchesType(leadTypeAfter(), request.resource.data.stage)
+      allow update: if validChangedLeadShape()
+        // Revalidate the pipeline only when this write changes it. Archive,
+        // campaign and channel edits may preserve unrelated legacy values.
+        && pipelineChangeIsValid()
         // `attribution` stays frozen for everyone: the Meta ids are the record
         // of where the lead really came from, and correcting the channel must
         // never erase them. Only `source` (the channel shown in the app) may
         // be corrected, and only by an admin — see channelChangeIsValid().
         && !changedKeys().hasAny(['workspaceId', 'attribution', 'createdAt', 'clientId', 'webForm'])
         && channelChangeIsValid()
-        && closingInvariants()
+        && closingChangeIsValid()
         && customerLinkIsWriteOnce()
         && customerLinkOnlyOnRealClose()
         // Attribution moves only by an admin, and only to a campaign of the
