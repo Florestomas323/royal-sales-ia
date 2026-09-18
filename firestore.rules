@@ -1676,6 +1676,44 @@ service cloud.firestore {
       }
 
       /**
+       * A purge in progress holds the lead: `purgeClaimId` is stamped by the
+       * server (Admin SDK) BEFORE it starts deleting the lead's activities,
+       * appointments, notifications and dedup key. Letting a restore clear
+       * `archived` during that window would leave an active prospect whose
+       * related data had already been deleted.
+       *
+       * So while a claim is held, an update may not un-archive the lead.
+       * Everything else about the lead stays editable, the claim itself is
+       * only ever written by the Admin SDK (which bypasses these rules), and
+       * a crashed run releases its grip after STALE_CLAIM_MS, so no lead is
+       * ever permanently locked.
+       */
+      function purgeClaimHeld() {
+        return resource.data.get('purgeClaimId', null) != null;
+      }
+
+      function unarchivingNow() {
+        return resource.data.get('archived', false) == true
+          && request.resource.data.get('archived', false) != true;
+      }
+
+      function notRestoringDuringPurge() {
+        return !unarchivingNow() || !purgeClaimHeld();
+      }
+
+      /**
+       * The purge fields are SERVER-ONLY. They are written exclusively by the
+       * Admin SDK, which bypasses these rules, so no client — not even a
+       * workspace admin or a super admin acting from the browser — may
+       * create, change or delete them. Without this, an admin could clear
+       * `purgeClaimId` and then restore a lead whose relations were already
+       * being deleted, which is the very race the claim exists to prevent.
+       */
+      function purgeFieldsUntouched() {
+        return !changedKeys().hasAny(['purgeClaimId', 'purgeClaimedAt', 'purgeState']);
+      }
+
+      /**
        * Correcting the channel (`source`). Admins only, to one of the values
        * the product defines, and never together with a rewrite of the
        * attribution trail — which the freeze above already guarantees.
@@ -1756,6 +1794,8 @@ service cloud.firestore {
             || request.resource.data.attribution.platform == request.resource.data.source)
         // A lead is never born converted: the link only appears on a close.
         && !request.resource.data.keys().hasAny(['customerId'])
+        // Purge bookkeeping is server-only and never present at birth.
+        && !request.resource.data.keys().hasAny(['purgeClaimId', 'purgeClaimedAt', 'purgeState'])
         && (
           isSuperAdmin()
           || isWsAdmin(request.resource.data.workspaceId)
@@ -1781,6 +1821,10 @@ service cloud.firestore {
         // be corrected, and only by an admin — see channelChangeIsValid().
         && !changedKeys().hasAny(['workspaceId', 'attribution', 'createdAt', 'clientId', 'webForm'])
         && channelChangeIsValid()
+        // A restore cannot win a race against a purge that already holds the lead.
+        && notRestoringDuringPurge()
+        // …and no client may touch the purge bookkeeping itself.
+        && purgeFieldsUntouched()
         && closingChangeIsValid()
         && customerLinkIsWriteOnce()
         && customerLinkOnlyOnRealClose()

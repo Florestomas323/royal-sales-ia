@@ -23,6 +23,9 @@
     "app/api/meta/ad-preview/route.ts",
     "lib/meta/campaign-links.ts",
     "lib/campaigns/merged.ts",
-    "lib/lead-dedup-server.ts"
+    "lib/lead-dedup-server.ts",
+    "lib/leads/empty-trash-server.ts",
+    "app/api/leads/empty-trash/route.ts",
+    "lib/firebase/server-auth.ts"
   ]
 }
