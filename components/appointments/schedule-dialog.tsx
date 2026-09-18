@@ -13,7 +13,7 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useUsersForWorkspace } from "@/lib/firebase/collections"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
-import { createAppointment, updateAppointment } from "@/lib/firebase/appointments"
+import { bookAppointment, updateAppointment } from "@/lib/firebase/appointments"
 import { describeError } from "@/lib/firebase/errors"
 import { eligibleAssignees } from "@/lib/leads"
 import { AddressFields } from "@/components/appointments/address-fields"
@@ -146,19 +146,21 @@ export function ScheduleDialog({
           toast.error(d.error)
           return
         }
-        const id = await createAppointment({
-          workspaceId: target.workspaceId,
+        // validateDraft ya garantizó una fecha válida; este guard satisface
+        // al tipo sin duplicar la validación.
+        if (!scheduledAt) {
+          setErrors({ scheduledAt: d.invalidDate })
+          return
+        }
+        const { appointmentId: id } = await bookAppointment({
           leadId: target.leadId,
-          leadName: target.leadName,
-          leadType,
-          assignedToId: ownerId,
-          scheduledAt: scheduledAt as string,
+          scheduledAt,
           durationMinutes: duration,
           type,
-          notes: notes.trim() || undefined,
-          location: storedLocation,
-          createdBy: membership.userId,
-        }, { userId: membership.userId, role })
+          ...(notes.trim() ? { notes: notes.trim() } : {}),
+          ...(locationPatch ? { location: locationPatch } : {}),
+          ...(canReassign ? { assignedToId: ownerId } : {}),
+        })
         toast.success(d.created)
         // The dialog switches to a success step offering the export. The
         // appointment already exists: this step can be dismissed freely.
