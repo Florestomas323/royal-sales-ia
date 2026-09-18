@@ -545,6 +545,9 @@ export const t = {
     filtersLabel: 'Filtros',
     emptyTrash: {
       action: 'Vaciar papelera',
+      // Names the workspace that will REALLY be emptied and how many
+      // prospects that is, so the button can never be read as a global wipe.
+      actionFor: (ws: string, n: number) => `Vaciar papelera de ${ws} (${n})`,
       pickWorkspace: 'Selecciona un workspace para vaciar su papelera',
       title: 'Vaciar papelera',
       warning: (n: number, ws: string) =>
