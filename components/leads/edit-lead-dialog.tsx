@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { PhoneField } from "@/components/leads/phone-field"
-import { useCampaigns, useUsersForWorkspace } from "@/lib/firebase/collections"
+import { useCampaignsForWorkspace, useUsersForWorkspace } from "@/lib/firebase/collections"
 import { CAMPAIGN_STATUS_LABELS, PLATFORMS, PLATFORM_LABELS } from "@/lib/constants"
 import { LeadValidationError, updateLead, type LeadPatch } from "@/lib/firebase/leads"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
@@ -77,7 +77,9 @@ export function EditLeadDialog({
    * later. Only Distribuidor / Asistente may attribute; the Rules whitelist
    * for a Telemarketing user does not include `campaignId`.
    */
-  const { campaigns, loading: campaignsLoading } = useCampaigns()
+  // Scoped to the LEAD's workspace, never to the one being browsed: a
+  // campaign of another workspace would be refused by the Rules.
+  const { campaigns, loading: campaignsLoading } = useCampaignsForWorkspace(lead.workspaceId)
   const canAttribute = isSuperAdmin || role === "client_admin" || role === "manager"
   const [campaignId, setCampaignId] = React.useState(lead.campaignId || NO_CAMPAIGN)
   /**
@@ -151,7 +153,11 @@ export function EditLeadDialog({
       if (nextCampaign !== (lead.campaignId ?? "")) {
         // Never a campaign outside this workspace: the list is scoped, and
         // this re-checks the id against it before anything is written.
-        const chosen = nextCampaign ? campaigns.find((c) => c.id === nextCampaign) : undefined
+        // Re-checked against the lead's own workspace before writing, so a
+        // stale list can never produce a cross-tenant attribution.
+        const chosen = nextCampaign
+          ? campaigns.find((c) => c.id === nextCampaign && c.workspaceId === lead.workspaceId)
+          : undefined
         if (nextCampaign && !chosen) {
           toast.error(t.leads.editDialog.campaignInvalid)
           return

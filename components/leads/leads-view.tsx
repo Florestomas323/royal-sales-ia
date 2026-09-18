@@ -28,6 +28,7 @@ import { ScoreBadge, StageBadge } from "@/components/shared/score-badge"
 import { PlatformMark } from "@/components/shared/platform-badge"
 import { LeadTypeBadge } from "@/components/shared/lead-type-badge"
 import { LeadDetailSheet } from "@/components/leads/lead-detail-sheet"
+import { EmptyTrashDialog } from "@/components/leads/empty-trash-dialog"
 import { LeadCard } from "@/components/leads/lead-card"
 import {
   STAGE_LABELS,
@@ -94,7 +95,7 @@ export function LeadsView({
   // workspace, owner names must be read from that workspace, not the ambient one.
   const usersMap = useUsersMap(workspaceFilter)
   const isNarrow = useIsNarrow()
-  const { isSuperAdmin, workspaces } = useWorkspace()
+  const { isSuperAdmin, workspaces, workspaceId: activeWorkspaceId, role } = useWorkspace()
   // The list of workspaces comes from Firestore under Security Rules (see
   // useWorkspaces): it is the SAME authorization source the sidebar uses, so
   // this filter can only narrow what the person may already read.
@@ -179,6 +180,37 @@ export function LeadsView({
   }, [scope, query, stage, platform, temp, sort])
 
   const archivedCount = useMemo(() => leads.filter((l) => !isActiveLead(l)).length, [leads])
+
+  /**
+   * The ONE workspace whose trash the button would empty. A super admin must
+   * have selected a workspace explicitly (`workspaceFilter`, or the active
+   * one); with "all workspaces" there is no target and the button is hidden.
+   */
+  const trashWorkspace = useMemo(() => {
+    // For a super admin, `workspaceFilter === null` means "all workspaces".
+    // There is NO fallback to the active one: with no explicit selection
+    // there is no single target, so the button disappears entirely.
+    const id = isSuperAdmin ? workspaceFilter : activeWorkspaceId
+    if (!id) return null
+    const ws = workspaces.find((w) => w.id === id)
+    return ws ? { id: ws.id, name: ws.name } : null
+  }, [isSuperAdmin, workspaceFilter, activeWorkspaceId, workspaces])
+
+  /**
+   * Archived prospects OF THE TARGET WORKSPACE. `scope` can hold several
+   * workspaces for a super admin, so using its length would show — and
+   * promise to delete — a number that does not match what the route removes.
+   */
+  const trashTargetCount = useMemo(
+    () =>
+      trashWorkspace
+        ? leads.filter((l) => !isActiveLead(l) && l.workspaceId === trashWorkspace.id).length
+        : 0,
+    [leads, trashWorkspace],
+  )
+
+  // The server re-checks this; hiding the control is convenience only.
+  const canEmptyTrash = isSuperAdmin || role === "client_admin" || role === "manager"
 
   function openLead(lead: Lead) {
     setSelected(lead)
@@ -344,6 +376,17 @@ export function LeadsView({
             <Switch checked={showArchived} onCheckedChange={setShowArchived} />
             {t.leads.showArchived} · {t.leads.archivedCount(archivedCount)}
           </label>
+        )}
+        {/* Only inside the trash view, and only for one explicit workspace:
+            a super admin browsing every workspace at once has none selected,
+            so the button stays hidden rather than risking a global wipe. */}
+        {showArchived && trashWorkspace && (
+          <EmptyTrashDialog
+            workspaceId={trashWorkspace.id}
+            workspaceName={trashWorkspace.name}
+            archivedCount={trashTargetCount}
+            canEmpty={canEmptyTrash}
+          />
         )}
       </div>
 
