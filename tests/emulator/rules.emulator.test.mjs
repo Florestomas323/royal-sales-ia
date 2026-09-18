@@ -41,8 +41,16 @@ let env
 
 /* ------------------------------------------------------------------ setup */
 
+/**
+ * Topology that matches production: the super admin's membership lives in
+ * workspace A (his own), and every lead under test lives in workspace B
+ * (APC). The earlier version of this file seeded both in the same workspace,
+ * which could never reproduce a cross-workspace failure.
+ */
+const SUPER_HOME = OTHER_WS
 const ACTORS = {
-  superAdmin: { uid: "auth-super", userId: "u-super", role: "super_admin", workspaceId: null },
+  superAdmin: { uid: "auth-super", userId: "u-super", role: "super_admin", workspaceId: SUPER_HOME },
+  outsider: { uid: "auth-outsider", userId: "u-out", role: "client_admin", workspaceId: OTHER_WS },
   distribuidora: { uid: "auth-eva-ca", userId: "u-eva", role: "client_admin", workspaceId: WS },
   asistente: { uid: "auth-eva-mg", userId: "u-eva", role: "manager", workspaceId: WS },
   telemarketing: { uid: "auth-tm", userId: "u-tm", role: "sales_rep", workspaceId: WS },
@@ -295,4 +303,82 @@ test("a lead of another workspace stays unreachable", async () => {
     })
   })
   await assertFails(updateDoc(doc(asActor(ACTORS.distribuidora), "leads", "L-other"), { stage: "follow_up" }))
+})
+
+/* ================== cross-workspace, exactly as in production ============ */
+
+test("the super admin's membership is NOT in the lead's workspace (precondition of these tests)", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const m = await getDoc(doc(ctx.firestore(), "memberships", ACTORS.superAdmin.uid))
+    assert.notEqual(m.data().workspaceId, WS)
+  })
+})
+
+for (const legacy of [false, true]) {
+  const shape = legacy ? "WITHOUT leadType (legacy)" : "with leadType"
+
+  test(`super admin from workspace A archives, restores and books on a workspace-B lead ${shape}`, async () => {
+    await seedLead("X1", { legacy })
+    const db = asActor(ACTORS.superAdmin)
+    await assertSucceeds(archive(db, ACTORS.superAdmin, "X1"))
+    await assertSucceeds(restore(db, ACTORS.superAdmin, "X1"))
+    await assertSucceeds(bookMeeting(db, ACTORS.superAdmin, { leadId: "X1" }))
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const snap = await getDoc(doc(ctx.firestore(), "leads", "X1"))
+      assert.equal(snap.data().stage, "appointment")
+      assert.equal(snap.data().workspaceId, WS, "the lead never moves workspace")
+    })
+  })
+
+  test(`super admin from workspace A changes campaign and channel on a workspace-B lead ${shape}`, async () => {
+    await seedLead("X2", { legacy })
+    const db = asActor(ACTORS.superAdmin)
+    await assertSucceeds(updateDoc(doc(db, "leads", "X2"), { campaignId: "c-own", campaignName: "Campaña propia", attributionSource: "manual" }))
+    await assertSucceeds(updateDoc(doc(db, "leads", "X2"), { source: "whatsapp" }))
+    // …but never to a campaign of a third workspace.
+    await assertFails(updateDoc(doc(db, "leads", "X2"), { campaignId: "c-foreign", campaignName: "Campaña ajena", attributionSource: "manual" }))
+  })
+}
+
+test("an admin of workspace A is refused on every operation in workspace B", async () => {
+  await seedLead("X3")
+  const db = asActor(ACTORS.outsider)
+  await assertFails(getDoc(doc(db, "leads", "X3")))
+  await assertFails(archive(db, ACTORS.outsider, "X3"))
+  await assertFails(bookMeeting(db, ACTORS.outsider, { leadId: "X3" }))
+  await assertFails(updateDoc(doc(db, "leads", "X3"), { campaignId: "c-own", campaignName: "Campaña propia", attributionSource: "manual" }))
+  await assertFails(updateDoc(doc(db, "leads", "X3"), { source: "whatsapp" }))
+})
+
+test("the full booking batch is atomic: appointment + stage + activity, or nothing", async () => {
+  await seedLead("X4")
+  const db = asActor(ACTORS.distribuidora)
+  await assertSucceeds(bookMeeting(db, ACTORS.distribuidora, { leadId: "X4" }))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const adb = ctx.firestore()
+    const lead = await getDoc(doc(adb, "leads", "X4"))
+    assert.equal(lead.data().stage, "appointment")
+    const { getDocs, collection } = await import("firebase/firestore")
+    const acts = await getDocs(collection(adb, "leads", "X4", "activities"))
+    assert.equal(acts.size, 1)
+    assert.equal(acts.docs[0].data().type, "stage_change")
+    assert.equal(acts.docs[0].data().actorRole, "client_admin")
+  })
+})
+
+test("a lead shaped like a website integration lead (source web, empty assignedToId) is writable", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "leads", "X5"), {
+      workspaceId: WS, leadType: "sales", name: "Web Lead", phone: "+15555550199", email: "",
+      source: "web", campaignId: "", campaignName: "", score: 50, temperature: "warm",
+      stage: "new_lead", assignedToId: "", potentialValue: 0,
+      createdAt: "2026-09-10T00:00:00Z", lastContactAt: null, nextFollowUpAt: null, nextAction: "Primer contacto",
+      attribution: { platform: "web", externalCampaignId: "123" }, clientId: "",
+      webForm: { formId: "f1" }, receivedAt: "2026-09-10T00:00:01Z",
+    })
+  })
+  const db = asActor(ACTORS.asistente)
+  await assertSucceeds(archive(db, ACTORS.asistente, "X5"))
+  await assertSucceeds(restore(db, ACTORS.asistente, "X5"))
+  await assertSucceeds(bookMeeting(db, ACTORS.asistente, { leadId: "X5" }))
 })
