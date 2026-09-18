@@ -1,12 +1,14 @@
 "use client"
 
-import { Suspense, useCallback, useState } from "react"
+import { Suspense, useCallback, useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { LeadsView } from "@/components/leads/leads-view"
 import { LeadTypeSwitch } from "@/components/shared/lead-type-switch"
 import { DataErrorState } from "@/components/shared/data-error-state"
 import { DemoRowsNotice } from "@/components/shared/demo-data-badge"
 import { useLeads, useLeadTypeCounts, type LeadTypeFilter } from "@/lib/firebase/leads"
+import { useWorkspace } from "@/lib/firebase/workspace-context"
+import { initialWorkspaceFilter } from "@/lib/leads/workspace-switch"
 import { Skeleton } from "@/components/ui/skeleton"
 
 /**
@@ -26,8 +28,21 @@ function LeadsLiveInner() {
   const searchParams = useSearchParams()
   const openLeadId = searchParams.get("lead")
   const [leadType, setLeadType] = useState<LeadTypeFilter>("all")
-  /** super_admin only; ignored by the data layer for every other role. */
-  const [workspaceFilter, setWorkspaceFilter] = useState<string | null>(null)
+  const { workspaceId } = useWorkspace()
+  /**
+   * The globally selected workspace is the source of truth: starting at
+   * `null` made the screen say "Todos los workspaces" while the query was
+   * already scoped, and left the trash without a target to empty.
+   * `null` here only ever means the global selection IS "Todos".
+   */
+  const [workspaceFilter, setWorkspaceFilter] = useState<string | null>(() =>
+    initialWorkspaceFilter(workspaceId),
+  )
+
+  // Switching workspace re-points the screen immediately, without a reload.
+  useEffect(() => {
+    setWorkspaceFilter(initialWorkspaceFilter(workspaceId))
+  }, [workspaceId])
 
   // Once the deep-linked lead is open, drop the param so a refresh doesn't reopen it.
   const clearOpenLead = useCallback(() => {

@@ -94,7 +94,7 @@ export function EmptyTrashDialog({ workspaceId, workspaceName, archivedCount, ca
         className="h-11 w-full border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive sm:h-9 sm:w-auto"
       >
         <Trash2 className="size-3.5" data-icon="inline-start" />
-        {t.leads.emptyTrash.action}
+        {t.leads.emptyTrash.actionFor(workspaceName, archivedCount)}
       </Button>
 
       <Dialog open={open} onOpenChange={(v) => { if (!busy) setOpen(v) }}>

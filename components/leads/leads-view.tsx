@@ -38,6 +38,11 @@ import {
 } from "@/lib/constants"
 import { displayStage, isActiveLead, leadTypeOf } from "@/lib/leads"
 import { t } from "@/lib/i18n"
+import {
+  countArchivedIn,
+  resolveTrashTarget,
+  showsLocalWorkspaceFilter,
+} from "@/lib/leads/workspace-switch"
 import { useUsersMap } from "@/lib/firebase/collections"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { formatRelativeTime, initials } from "@/lib/format"
@@ -99,7 +104,13 @@ export function LeadsView({
   // The list of workspaces comes from Firestore under Security Rules (see
   // useWorkspaces): it is the SAME authorization source the sidebar uses, so
   // this filter can only narrow what the person may already read.
-  const showWorkspaceFilter = isSuperAdmin && workspaces.length > 1
+  // Only with "Todos los workspaces" globally selected: with a concrete
+  // workspace active, a second selector could only contradict it.
+  const showWorkspaceFilter = showsLocalWorkspaceFilter(
+    isSuperAdmin,
+    workspaces.length,
+    activeWorkspaceId,
+  )
   const workspaceNames = useMemo(() => {
     const map: Record<string, string> = {}
     for (const w of workspaces) map[w.id] = w.name
@@ -194,19 +205,15 @@ export function LeadsView({
   const archivedCount = useMemo(() => leads.filter((l) => !isActiveLead(l)).length, [leads])
 
   /**
-   * The ONE workspace whose trash the button would empty. A super admin must
-   * have selected a workspace explicitly (`workspaceFilter`, or the active
-   * one); with "all workspaces" there is no target and the button is hidden.
+   * The ONE workspace whose trash the button would empty: the local selection
+   * when there is one, otherwise the globally active workspace. Only "Todos
+   * los workspaces" with nothing chosen leaves no target, and then the action
+   * stays disabled — a global wipe is never reachable.
    */
-  const trashWorkspace = useMemo(() => {
-    // For a super admin, `workspaceFilter === null` means "all workspaces".
-    // There is NO fallback to the active one: with no explicit selection
-    // there is no single target, so the button disappears entirely.
-    const id = isSuperAdmin ? workspaceFilter : activeWorkspaceId
-    if (!id) return null
-    const ws = workspaces.find((w) => w.id === id)
-    return ws ? { id: ws.id, name: ws.name } : null
-  }, [isSuperAdmin, workspaceFilter, activeWorkspaceId, workspaces])
+  const trashWorkspace = useMemo(
+    () => resolveTrashTarget(workspaceFilter, activeWorkspaceId, workspaces),
+    [workspaceFilter, activeWorkspaceId, workspaces],
+  )
 
   /**
    * Archived prospects OF THE TARGET WORKSPACE. `scope` can hold several
@@ -214,10 +221,7 @@ export function LeadsView({
    * promise to delete — a number that does not match what the route removes.
    */
   const trashTargetCount = useMemo(
-    () =>
-      trashWorkspace
-        ? leads.filter((l) => !isActiveLead(l) && l.workspaceId === trashWorkspace.id).length
-        : 0,
+    () => countArchivedIn(leads, trashWorkspace?.id ?? null),
     [leads, trashWorkspace],
   )
 
