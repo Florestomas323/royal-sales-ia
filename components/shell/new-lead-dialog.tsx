@@ -36,7 +36,6 @@ import {
   DEFAULT_COUNTRY_CODE,
 } from '@/lib/leads'
 import { createLead } from '@/lib/firebase/leads'
-import { sendNewLeadEmail } from '@/lib/firebase/notifications'
 import { useCampaigns, useUsers } from '@/lib/firebase/collections'
 import { useCan, useWorkspace } from '@/lib/firebase/workspace-context'
 import { describeError } from '@/lib/firebase/errors'
@@ -125,7 +124,7 @@ export function NewLeadDialog({
     const name = (form.get('name') as string)?.trim() || t.leads.defaultName
     // Stored as E.164 with an explicit country — never a silent guess.
     const phone = toE164(countryCode, national)
-    if (phone && !isValidE164(phone)) {
+    if (!phone || !isValidE164(phone)) {
       setPhoneError(t.leads.editDialog.phoneInvalid)
       return
     }
@@ -151,10 +150,7 @@ export function NewLeadDialog({
 
     setSubmitting(true)
     try {
-      const createdId = await createLead({
-        // Central 'new lead' trigger: admins of this workspace and the
-        // assignee get an in-app notification in the same batch.
-        notify: users,
+      const result = await createLead({
         workspaceId,
         leadType,
         source,
@@ -166,15 +162,33 @@ export function NewLeadDialog({
         campaignName: campaign?.name,
         clientId: campaign?.clientId,
         recruiting,
-        // Writes a `lead_created` activity in the same batch as the lead.
-        ...(membership?.userId && role ? { actor: { userId: membership.userId, role } } : {})
       })
-      // Email half of the "new lead" trigger. Best-effort: the lead and its
-      // in-app notifications are already saved; a failed email changes nothing.
-      void sendNewLeadEmail(createdId)
-      toast.success(t.leads.createdTitle, {
-        description: t.leads.createdDescription(name),
-      })
+      if (result.duplicate) {
+        // Four distinguishable outcomes. When a prospect was restored AND
+        // completed, the message says both. Only field NAMES are shown.
+        const fieldNames = (result.enrichedFields ?? [])
+          .map((f) => t.leads.enrichedFieldLabels[f] ?? f)
+        const title = result.restored
+          ? result.enriched
+            ? t.leads.duplicateRestoredEnrichedTitle
+            : t.leads.duplicateRestoredTitle
+          : result.enriched
+            ? t.leads.duplicateEnrichedTitle
+            : t.leads.duplicateTitle
+        toast.info(title, {
+          description: result.restored
+            ? result.enriched
+              ? t.leads.duplicateRestoredEnrichedDescription(name, fieldNames)
+              : t.leads.duplicateRestoredDescription(name)
+            : result.enriched
+              ? t.leads.duplicateEnrichedDescription(name, fieldNames)
+              : t.leads.duplicateDescription(name),
+        })
+      } else {
+        toast.success(t.leads.createdTitle, {
+          description: t.leads.createdDescription(name),
+        })
+      }
       setOpen(false)
       setCampaignId(NO_CAMPAIGN)
       setSource('manual')
