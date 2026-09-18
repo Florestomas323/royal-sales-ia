@@ -36,6 +36,12 @@ import {
   DEFAULT_COUNTRY_CODE,
 } from '@/lib/leads'
 import { createLead } from '@/lib/firebase/leads'
+import {
+  NO_CAMPAIGN,
+  newLeadSubmitBlock,
+  resolveAssignee,
+  resolveCampaignId,
+} from '@/lib/leads/workspace-switch'
 import { useCampaigns, useUsers } from '@/lib/firebase/collections'
 import { useCan, useWorkspace } from '@/lib/firebase/workspace-context'
 import { describeError } from '@/lib/firebase/errors'
@@ -43,8 +49,6 @@ import { cn } from '@/lib/utils'
 import { memberLabel } from '@/lib/team'
 import { t } from '@/lib/i18n'
 import type { LeadType, Platform, RecruitingProfile } from '@/types'
-
-const NO_CAMPAIGN = '__none__'
 
 const TYPE_OPTIONS: { value: LeadType; label: string; hint: string; icon: typeof Plus }[] = [
   { value: 'sales', label: t.leads.types.sales, hint: t.leads.types.salesHint, icon: ShoppingBag },
@@ -63,8 +67,8 @@ export function NewLeadDialog({
   trigger?: React.ReactNode
   defaultLeadType?: LeadType
 }) {
-  const { campaigns } = useCampaigns()
-  const { users } = useUsers()
+  const { campaigns, loading: loadingCampaigns } = useCampaigns()
+  const { users, loading: loadingUsers } = useUsers()
   const { workspaceId, role, membership } = useWorkspace()
   const { canCreateLeads } = useCan()
   const [open, setOpen] = React.useState(false)
@@ -80,10 +84,19 @@ export function NewLeadDialog({
 
   // Same rule as the edit dialog: invited members are valid assignees.
   const activeReps = workspaceId ? eligibleAssignees(users, workspaceId) : []
+  const activeRepIds = activeReps.map((u) => u.id)
   const isRep = role === 'sales_rep'
   const sources = sourcesFor(leadType)
   // Only campaigns whose objective matches the lead type are offered.
   const matchingCampaigns = campaigns.filter((c) => campaignObjective(c) === leadType)
+  const matchingCampaignIds = matchingCampaigns.map((c) => c.id)
+  // One rule for the disabled state, executable by a test.
+  const submitBlock = newLeadSubmitBlock({
+    workspaceId,
+    loadingReps: loadingUsers,
+    loadingCampaigns,
+    submitting,
+  })
 
   React.useEffect(() => {
     if (open) setLeadType(defaultLeadType)
@@ -94,21 +107,27 @@ export function NewLeadDialog({
     if (!sources.includes(source)) setSource('manual')
   }, [sources, source])
 
-  // Drop the campaign when the type changes and the current one no longer matches.
+  // Drop the campaign when it does not belong to the campaigns this workspace
+  // offers for this lead type — after a type change AND after a workspace change.
   React.useEffect(() => {
-    if (campaignId !== NO_CAMPAIGN && !matchingCampaigns.some((c) => c.id === campaignId)) {
-      setCampaignId(NO_CAMPAIGN)
-    }
-  }, [matchingCampaigns, campaignId])
+    if (loadingCampaigns) return
+    const next = resolveCampaignId(campaignId, matchingCampaignIds)
+    if (next !== campaignId) setCampaignId(next)
+  }, [matchingCampaignIds, campaignId, loadingCampaigns])
 
+  // The assignee must ALWAYS belong to the workspace on screen. Selecting only
+  // when the field was empty is what let a `users/{id}` of the previous
+  // workspace survive a switch and reach POST /api/leads as `invalid_assignee`.
   React.useEffect(() => {
-    // A sales rep can only create leads assigned to themselves (Rules enforce it).
-    if (isRep && membership?.userId) {
-      if (assignedToId !== membership.userId) setAssignedToId(membership.userId)
-      return
-    }
-    if (!assignedToId && activeReps.length > 0) setAssignedToId(activeReps[0].id)
-  }, [activeReps, assignedToId, isRep, membership])
+    // Nothing is decided while the new workspace is still loading: with no
+    // members yet, "first valid member" would clear a legitimate selection.
+    if (loadingUsers) return
+    const next = resolveAssignee(assignedToId, activeRepIds, {
+      isRep,
+      userId: membership?.userId,
+    })
+    if (next !== assignedToId) setAssignedToId(next)
+  }, [activeRepIds, assignedToId, isRep, membership, loadingUsers])
 
   function handleCampaignChange(value: string | null) {
     const next = value ?? NO_CAMPAIGN
@@ -130,11 +149,20 @@ export function NewLeadDialog({
     }
     setPhoneError(null)
     const email = (form.get('email') as string)?.trim()
-    const campaign = campaigns.find((c) => c.id === campaignId)
     if (!workspaceId) {
       toast.error(t.common.selectWorkspaceFirst)
       return
     }
+    // Last line of defence before the request: both ids are re-checked
+    // against THIS workspace, so nothing from the previous one is ever sent.
+    const safeCampaignId = resolveCampaignId(campaignId, matchingCampaignIds)
+    const campaign = matchingCampaigns.find((c) => c.id === safeCampaignId)
+    const safeAssignedToId = resolveAssignee(assignedToId, activeRepIds, {
+      isRep,
+      userId: membership?.userId,
+    })
+    if (safeCampaignId !== campaignId) setCampaignId(safeCampaignId)
+    if (safeAssignedToId !== assignedToId) setAssignedToId(safeAssignedToId)
 
     const recruiting: RecruitingProfile | undefined =
       leadType === 'recruiting'
@@ -157,7 +185,7 @@ export function NewLeadDialog({
         name,
         phone,
         email,
-        assignedToId,
+        assignedToId: safeAssignedToId,
         campaignId: campaign?.id,
         campaignName: campaign?.name,
         clientId: campaign?.clientId,
@@ -406,7 +434,7 @@ export function NewLeadDialog({
             <DialogClose render={<Button variant="outline" type="button" />}>
               {t.common.cancel}
             </DialogClose>
-            <Button type="submit" disabled={submitting || !workspaceId}>
+            <Button type="submit" disabled={submitBlock !== null}>
               {submitting ? t.common.creating : t.leads.create}
             </Button>
           </DialogFooter>

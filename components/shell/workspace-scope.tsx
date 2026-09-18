@@ -2,6 +2,7 @@
 
 import type React from "react"
 import { useWorkspace, ALL_WORKSPACES } from "@/lib/firebase/workspace-context"
+import { workspaceScopeKey } from "@/lib/leads/workspace-switch"
 
 /**
  * Remounts everything below it when the selected workspace changes.
@@ -25,10 +26,8 @@ export function WorkspaceScope({ children }: { children: React.ReactNode }) {
 
   // A super admin browsing every workspace at once is its own scope: moving
   // in or out of "Todos" must clear the per-workspace state just the same.
-  const scope =
-    status !== "ready"
-      ? "loading"
-      : workspaceId ?? (isSuperAdmin ? ALL_WORKSPACES : "none")
+  // The rule is a pure function so a test can execute it.
+  const scope = workspaceScopeKey(status, workspaceId, isSuperAdmin, ALL_WORKSPACES)
 
   return <div key={scope} className="contents">{children}</div>
 }
