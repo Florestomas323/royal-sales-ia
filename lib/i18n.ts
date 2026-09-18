@@ -545,6 +545,7 @@ export const t = {
     filtersLabel: 'Filtros',
     emptyTrash: {
       action: 'Vaciar papelera',
+      pickWorkspace: 'Selecciona un workspace para vaciar su papelera',
       title: 'Vaciar papelera',
       warning: (n: number, ws: string) =>
         `Esta acción eliminará definitivamente ${n} ${n === 1 ? 'prospecto archivado' : 'prospectos archivados'} de ${ws} y sus datos relacionados. No se puede deshacer.`,
@@ -560,6 +561,7 @@ export const t = {
       partialHint: 'Puedes volver a intentarlo: la operación es segura de repetir.',
       error: 'No se pudo vaciar la papelera.',
     },
+    trashLabel: (n: number) => `Papelera (${n})`,
     showArchived: 'Mostrar papelera',
     archivedCount: (n: number) => (n === 1 ? '1 en papelera' : `${n} en papelera`),
     editDialog: {
@@ -591,6 +593,7 @@ export const t = {
       nextActionLabel: 'Siguiente acción',
       saved: 'Prospecto actualizado',
       saveError: 'No se pudo guardar el prospecto',
+      partialSave: 'La campaña se guardó, pero el resto de los cambios no. Revisa y vuelve a guardar.',
       nothingChanged: 'No hay cambios que guardar.',
     },
     stageGroupSales: 'Etapas de ventas',
