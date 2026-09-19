@@ -56,8 +56,10 @@ interface CampaignDiagnostic {
   leadActionTypesPresentes: string[]
   /** Valor de cada action_type de lead presente. */
   desgloseLeads: Record<string, number | null>
-  /** EXACTAMENTE lo que Media Buyer IA muestra hoy (suma de los 4). */
+  /** EXACTAMENTE lo que Media Buyer IA muestra hoy. */
   calculoActualLeadsMeta: number | null
+  /** Qué action_type produjo el valor anterior. */
+  fuenteDelCalculo: string | null
   /** El mayor de los valores individuales de lead (referencia, NO aplicado). */
   maxIndividual: number | null
   /** true cuando coexisten 2+ action_type de lead en la misma fila. */
@@ -110,7 +112,8 @@ export async function GET(request: Request) {
     range: ranges.current,
     scope: scope ?? "all",
     actionTypesUsadosHoyComoLead: [...META_LEAD_ACTION_TYPES],
-    formulaActual: "metaLeads = SUMA de los valores de los 4 action_type anteriores (lib/meta/insights.ts)",
+    formulaActual:
+      "metaLeads = si existe `lead`, se usa SOLO ese valor; si no, se usa el mayor alias on-Facebook + el Pixel. Nunca la suma de los 4 (lib/meta/insights.ts).",
     errorCode: null as string | null,
     message: null as string | null,
   }
@@ -199,7 +202,8 @@ export async function GET(request: Request) {
       const valores = leadRows.map((a) => a.valueNumber ?? 0)
       const maxIndividual = valores.length > 0 ? Math.max(...valores) : null
       // Fuente de verdad del "hoy": la MISMA función que usa producción.
-      const calculoActualLeadsMeta = normalizeInsight(row).metaLeads
+      const normalizado = normalizeInsight(row)
+      const calculoActualLeadsMeta = normalizado.metaLeads
       const sospechaDuplicacion = leadRows.length > 1
 
       campanas.push({
@@ -216,6 +220,7 @@ export async function GET(request: Request) {
         leadActionTypesPresentes: leadRows.map((a) => a.action_type),
         desgloseLeads,
         calculoActualLeadsMeta,
+        fuenteDelCalculo: normalizado.metaLeadsSource,
         maxIndividual,
         sospechaDuplicacion,
         notaDuplicacion: sospechaDuplicacion
