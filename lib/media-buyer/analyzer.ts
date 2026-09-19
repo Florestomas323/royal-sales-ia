@@ -44,10 +44,13 @@ export interface CampaignMetrics {
   reach: number | null
   frequency: number | null
   clicks: number | null
+  /** Clics hacia el destino del anuncio (inline_link_clicks de Meta). */
+  linkClicks: number | null
   ctr: number | null
+  /** CPC DE ENLACE: inversión / clics en enlace. */
   cpc: number | null
   cpm: number | null
-  /** Leads Meta reports (action types listed in lib/meta/insights.ts). */
+  /** Leads Meta reports, de-duplicated in lib/meta/insights.ts (never a sum of aliases). */
   metaLeads: number | null
   cplMeta: number | null
   /** Leads that actually arrived in Royal Sales IA attributed to this campaign. */
@@ -134,6 +137,8 @@ export interface Analysis {
     spend: number | null
     crmLeads: number
     metaLeads: number | null
+    /** Suma de clics en enlace. null si Meta no los entregó en ninguna campaña. */
+    linkClicks: number | null
     cplCrm: number | null
     sales: number
     revenue: number | null
@@ -298,6 +303,7 @@ export function analyzeCampaignPerformance(
       reach: c.reach,
       frequency: c.frequency,
       clicks: c.clicks,
+      linkClicks: c.linkClicks,
       ctr: c.ctr,
       cpc: c.cpc,
       cpm: c.cpm,
@@ -352,6 +358,9 @@ export function analyzeCampaignPerformance(
    */
   const attributedInPeriod = [...attributed.values()].filter((l) => withinPeriod(l.createdAt, period))
   const totalCrm = attributedInPeriod.length
+  const linkClicksKnown = campaigns.filter((c) => c.linkClicks !== null)
+  const totalLinkClicks =
+    linkClicksKnown.length > 0 ? linkClicksKnown.reduce((s, c) => s + (c.linkClicks as number), 0) : null
   const metaKnown = campaigns.filter((c) => c.metaLeads !== null)
   const totalMeta = metaKnown.length > 0 ? metaKnown.reduce((s, c) => s + (c.metaLeads as number), 0) : null
   // Same reasoning for money: a sale is counted once, whatever claims it.
@@ -461,6 +470,7 @@ export function analyzeCampaignPerformance(
       spend: totalSpend,
       crmLeads: totalCrm,
       metaLeads: totalMeta,
+      linkClicks: totalLinkClicks,
       cplCrm: ratio(totalSpend, totalCrm),
       sales: totalSales,
       revenue: totalRevenue,
