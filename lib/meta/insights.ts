@@ -11,6 +11,14 @@ import type { GraphCampaignInsight } from "./graph"
  * The `actions` array mixes many event types. ONLY these are treated as
  * leads — explicitly, never "any action". Documented so the interpretation
  * can be audited against Meta's action_type list.
+ *
+ * THEY ARE NOT ADDITIVE. Meta reports the same conversion under several of
+ * these names at once. Measured on the real ad account (30 days, Sept 2026):
+ *
+ *   lead = 43 · onsite_conversion.lead_grouped = 31 · offsite_conversion.fb_pixel_lead = 12
+ *   31 + 12 = 43  →  `lead` is ALREADY the total.
+ *
+ * Adding them up returned 86 for 43 real leads. See `resolveMetaLeads`.
  */
 export const META_LEAD_ACTION_TYPES = [
   "lead",
@@ -18,6 +26,21 @@ export const META_LEAD_ACTION_TYPES = [
   "leadgen_grouped",
   "offsite_conversion.fb_pixel_lead",
 ] as const
+
+/** Meta's own aggregate of every lead of the campaign. Wins over everything. */
+const LEAD_TOTAL_ACTION_TYPE = "lead"
+
+/**
+ * On-Facebook lead forms. These two are aliases of EACH OTHER (same event,
+ * two names), so the fallback takes the largest, never their sum.
+ */
+const LEAD_ONSITE_ALIASES = ["onsite_conversion.lead_grouped", "leadgen_grouped"] as const
+
+/** Leads that happened on our own site, reported by the Pixel. */
+const LEAD_PIXEL_ACTION_TYPE = "offsite_conversion.fb_pixel_lead"
+
+/** How `metaLeads` was obtained, so the number can always be explained. */
+export type MetaLeadsSource = "lead" | "onsite" | "pixel" | "onsite_and_pixel"
 
 export interface CampaignInsight {
   metaCampaignId: string
@@ -34,10 +57,51 @@ export interface CampaignInsight {
   ctr: number | null
   cpc: number | null
   cpm: number | null
-  /** Leads Meta itself reports (sum of META_LEAD_ACTION_TYPES). null when absent. */
+  /**
+   * Leads Meta itself reports, DE-DUPLICATED (never the sum of the aliases).
+   * null when Meta sent no valid lead signal at all.
+   */
   metaLeads: number | null
-  /** Which action types were actually present, for transparency. */
+  /** Which action type actually produced `metaLeads`. null when there is none. */
+  metaLeadsSource: MetaLeadsSource | null
+  /** Which lead action types were present, for transparency. */
   metaLeadActionTypes: string[]
+}
+
+/**
+ * Turns Meta's `actions` array into ONE lead count.
+ *
+ * Precedence, never a sum of equivalents:
+ *  1. `lead` — Meta's own total. Used alone, the other names are ignored.
+ *  2. No `lead`: the on-Facebook form count (largest of its two aliases,
+ *     which are the same event) plus the Pixel count, which is a DIFFERENT
+ *     surface (our website). This mirrors exactly how Meta builds `lead`:
+ *     31 on-site + 12 pixel = 43.
+ *  3. Nothing usable → null. Never 0 by default.
+ */
+export function resolveMetaLeads(
+  actions: readonly { action_type: string; value: string }[],
+): { metaLeads: number | null; source: MetaLeadsSource | null; present: string[] } {
+  const byType = new Map<string, number>()
+  for (const a of actions) {
+    if (!(META_LEAD_ACTION_TYPES as readonly string[]).includes(a.action_type)) continue
+    const n = num(a.value)
+    if (n !== null) byType.set(a.action_type, n)
+  }
+  const present = [...byType.keys()]
+
+  const total = byType.get(LEAD_TOTAL_ACTION_TYPE)
+  if (total !== undefined) return { metaLeads: total, source: "lead", present }
+
+  // Aliases of the same on-Facebook event: take one, never both.
+  const onsiteValues = LEAD_ONSITE_ALIASES.map((t) => byType.get(t)).filter((v): v is number => v !== undefined)
+  const onsite = onsiteValues.length > 0 ? Math.max(...onsiteValues) : null
+  const pixel = byType.get(LEAD_PIXEL_ACTION_TYPE) ?? null
+
+  if (onsite === null && pixel === null) return { metaLeads: null, source: null, present }
+  if (onsite !== null && pixel !== null) return { metaLeads: onsite + pixel, source: "onsite_and_pixel", present }
+  if (onsite !== null) return { metaLeads: onsite, source: "onsite", present }
+  return { metaLeads: pixel, source: "pixel", present }
 }
 
 function num(value: string | undefined): number | null {
@@ -52,11 +116,10 @@ export function normalizeInsight(row: GraphCampaignInsight): CampaignInsight {
   const reach = num(row.reach)
   const clicks = num(row.clicks)
 
-  const leadActions = (row.actions ?? []).filter((a) =>
-    (META_LEAD_ACTION_TYPES as readonly string[]).includes(a.action_type),
-  )
-  const metaLeads =
-    leadActions.length > 0 ? leadActions.reduce((sum, a) => sum + (num(a.value) ?? 0), 0) : null
+  const leads = resolveMetaLeads(row.actions ?? [])
+  // Link clicks: clicks towards the ad's destination, NOT every interaction.
+  // `clicks` (all clicks) is never used as a silent substitute.
+  const linkClicks = num(row.inline_link_clicks)
 
   return {
     metaCampaignId: row.campaign_id,
@@ -69,12 +132,15 @@ export function normalizeInsight(row: GraphCampaignInsight): CampaignInsight {
     // Prefer Meta's own frequency; derive only when both inputs exist.
     frequency: num(row.frequency) ?? (impressions !== null && reach !== null && reach > 0 ? impressions / reach : null),
     clicks,
-    linkClicks: num(row.inline_link_clicks),
+    linkClicks,
     ctr: num(row.ctr) ?? (clicks !== null && impressions !== null && impressions > 0 ? (clicks / impressions) * 100 : null),
-    cpc: num(row.cpc) ?? (spend !== null && clicks !== null && clicks > 0 ? spend / clicks : null),
+    // CPC DE ENLACE: inversión / clics en enlace. Meta's own `cpc` field is
+    // cost per ANY click, which does not match the link-clicks card.
+    cpc: spend !== null && linkClicks !== null && linkClicks > 0 ? spend / linkClicks : null,
     cpm: num(row.cpm) ?? (spend !== null && impressions !== null && impressions > 0 ? (spend / impressions) * 1000 : null),
-    metaLeads,
-    metaLeadActionTypes: leadActions.map((a) => a.action_type),
+    metaLeads: leads.metaLeads,
+    metaLeadsSource: leads.source,
+    metaLeadActionTypes: leads.present,
   }
 }
 
