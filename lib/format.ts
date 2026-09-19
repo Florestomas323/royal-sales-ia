@@ -7,6 +7,21 @@ export function formatCurrency(value: number, compact = false): string {
   }).format(value)
 }
 
+/**
+ * Unit costs (CPC, CPL) with 2 decimals. `formatCurrency` rounds to whole
+ * dollars, which turns $0.74 into $1 and $4.38 into $4 — useless for a cost
+ * per click or per lead. PRESENTATION ONLY: the analyzer keeps the exact
+ * value, this just prints it.
+ */
+export function formatCostPerUnit(value: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value)
+}
+
 export function formatNumber(value: number): string {
   return new Intl.NumberFormat('en-US').format(value)
 }
