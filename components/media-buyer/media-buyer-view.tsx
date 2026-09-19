@@ -128,7 +128,10 @@ export function MediaBuyerView() {
             {/* The whole picture: 10 = 4 attributed + 6 with no campaign. */}
             <MetricCard label={m.summary.crmLeads} value={formatNumber(analysis.totals.allCrmLeads)} emphasis />
             <MetricCard label={m.summary.attributedLeads} value={formatNumber(analysis.totals.crmLeads)} />
-            <MetricCard label={m.summary.metaLeads} value={noData(analysis.totals.metaLeads) ? m.summary.noData : formatNumber(analysis.totals.metaLeads as number)} muted={noData(analysis.totals.metaLeads)} emphasis />
+            {/* Clics reales hacia el destino del anuncio (inline_link_clicks).
+                Nunca se sustituye por `clicks` generales: si Meta no los
+                entrega, la tarjeta dice "Sin datos". */}
+            <MetricCard label={m.summary.linkClicks} value={noData(analysis.totals.linkClicks) ? m.summary.noData : formatNumber(analysis.totals.linkClicks as number)} muted={noData(analysis.totals.linkClicks)} emphasis />
             <MetricCard label={m.summary.cplCrm} value={noData(analysis.totals.cplCrm) ? m.summary.noData : formatCurrency(analysis.totals.cplCrm as number)} muted={noData(analysis.totals.cplCrm)} emphasis />
             <MetricCard
               label={m.summary.unattributedLeads}

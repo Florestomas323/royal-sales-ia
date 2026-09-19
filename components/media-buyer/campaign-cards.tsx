@@ -75,6 +75,7 @@ export function CampaignCards({
                 <Cell label={c.labels.spend} value={money(cp.spend)} delta={hasPrevious ? cp.deltas?.spend ?? null : null} emphasis />
                 <Cell label={c.labels.crmLeads} value={formatNumber(cp.crmLeads)} emphasis />
                 <Cell label={c.labels.metaLeads} value={num(cp.metaLeads)} />
+                <Cell label={c.labels.linkClicks} value={num(cp.linkClicks)} />
                 <Cell label={c.labels.cplCrm} value={money(cp.cplCrm)} emphasis />
                 <Cell label={c.labels.cplMeta} value={money(cp.cplMeta)} />
                 <Cell label={c.labels.ctr} value={pct(cp.ctr)} delta={hasPrevious ? cp.deltas?.ctr ?? null : null} />
