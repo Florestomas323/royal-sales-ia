@@ -16,7 +16,7 @@ import { useLeads } from "@/lib/firebase/leads"
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import type { InsightsPeriod } from "@/lib/meta/insights"
 import { resolvePeriod, type PeriodKey } from "@/lib/metrics"
-import { formatCurrency, formatNumber, formatRelativeTime } from "@/lib/format"
+import { formatCurrency, formatNumber, formatRelativeTime, formatCostPerUnit } from "@/lib/format"
 import { t } from "@/lib/i18n"
 
 const m = t.modules.mediaBuyer
@@ -132,7 +132,7 @@ export function MediaBuyerView() {
                 Nunca se sustituye por `clicks` generales: si Meta no los
                 entrega, la tarjeta dice "Sin datos". */}
             <MetricCard label={m.summary.linkClicks} value={noData(analysis.totals.linkClicks ?? null) ? m.summary.noData : formatNumber(analysis.totals.linkClicks as number)} muted={noData(analysis.totals.linkClicks ?? null)} emphasis />
-            <MetricCard label={m.summary.cplCrm} value={noData(analysis.totals.cplCrm) ? m.summary.noData : formatCurrency(analysis.totals.cplCrm as number)} muted={noData(analysis.totals.cplCrm)} emphasis />
+            <MetricCard label={m.summary.cplCrm} value={noData(analysis.totals.cplCrm) ? m.summary.noData : formatCostPerUnit(analysis.totals.cplCrm as number)} muted={noData(analysis.totals.cplCrm)} emphasis />
             <MetricCard
               label={m.summary.unattributedLeads}
               value={formatNumber(analysis.totals.unattributedLeads)}

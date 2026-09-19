@@ -4,7 +4,7 @@ import { Building2, TrendingDown, TrendingUp } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import type { CampaignMetrics, Health } from "@/lib/media-buyer/analyzer"
-import { formatCurrency, formatNumber } from "@/lib/format"
+import { formatCostPerUnit, formatCurrency, formatNumber } from "@/lib/format"
 import { t } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
@@ -39,6 +39,8 @@ export function CampaignCards({
 }) {
   const noData = t.modules.mediaBuyer.summary.noData
   const money = (v: number | null, compact = false) => (v === null ? noData : formatCurrency(v, compact))
+  /** CPC / CPL: 2 decimals. Only formatting — the value itself is untouched. */
+  const cost = (v: number | null) => (v === null ? noData : formatCostPerUnit(v))
   const num = (v: number | null) => (v === null ? noData : formatNumber(v))
   const pct = (v: number | null) => (v === null ? noData : `${v.toFixed(2)}%`)
 
@@ -76,10 +78,10 @@ export function CampaignCards({
                 <Cell label={c.labels.crmLeads} value={formatNumber(cp.crmLeads)} emphasis />
                 <Cell label={c.labels.metaLeads} value={num(cp.metaLeads)} />
                 <Cell label={c.labels.linkClicks} value={num(cp.linkClicks)} />
-                <Cell label={c.labels.cplCrm} value={money(cp.cplCrm)} emphasis />
-                <Cell label={c.labels.cplMeta} value={money(cp.cplMeta)} />
+                <Cell label={c.labels.cplCrm} value={cost(cp.cplCrm)} emphasis />
+                <Cell label={c.labels.cplMeta} value={cost(cp.cplMeta)} />
                 <Cell label={c.labels.ctr} value={pct(cp.ctr)} delta={hasPrevious ? cp.deltas?.ctr ?? null : null} />
-                <Cell label={c.labels.cpc} value={money(cp.cpc)} />
+                <Cell label={c.labels.cpc} value={cost(cp.cpc)} />
                 <Cell label={c.labels.cpm} value={money(cp.cpm)} />
                 <Cell label={c.labels.impressions} value={num(cp.impressions)} />
                 <Cell label={c.labels.reach} value={num(cp.reach)} />
