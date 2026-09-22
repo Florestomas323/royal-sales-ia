@@ -36,6 +36,10 @@ jobs:
           pnpm exec firebase emulators:exec --only firestore --project demo-royal-sales-ia \
             "node --test tests/emulator/incident-super-admin.emulator.test.mjs" 2>&1 | tee incident-output.txt
 
+      - name: Compilar .test-build
+        if: always()
+        run: pnpm exec tsc -p tsconfig.test.json
+      
       - name: Suite completa del emulador (comando pedido)
         if: always()
         run: |
