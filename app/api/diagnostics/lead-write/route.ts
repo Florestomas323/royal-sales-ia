@@ -19,7 +19,8 @@ import {
 /**
  * TEMPORARY DIAGNOSTIC — READ-ONLY. Remove with lib/diagnostics/.
  *
- * GET  → deployment marker (no auth, no data): proves this build is live.
+ * GET  → deployment marker (no auth, no data): proves this build is live and
+ *        that the files which MOUNT the diagnostic UI are the diag versions.
  * POST → for a batch the browser just saw rejected:
  *   - fetches the Firestore rules PUBLISHED in this project (Admin SDK) and
  *     compares them with the audited repo file;
@@ -33,7 +34,7 @@ import {
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-const DIAG_BUILD = "diag-v2"
+const DIAG_BUILD = "diag-v3"
 /** sha256 of the firestore.rules audited in chat (1995 lines). */
 const AUDITED_RULES_SHA256 = "f7b7941282cd1e12e50433e7c05260fb41f9acf6582a2e7d55b5158374f4eb03"
 /** Same file with CRLF→LF, trailing spaces removed and trimmed (see normText). */
@@ -68,7 +69,22 @@ export async function GET() {
     commit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
     commitMessage: process.env.VERCEL_GIT_COMMIT_MESSAGE?.slice(0, 120) ?? null,
     env: process.env.VERCEL_ENV ?? null,
+    // true = the deployed source of that file contains the diag hook.
+    mounts: {
+      layout: hasMarker(path.join(process.cwd(), "app/(app)/layout.tsx"), "DiagOverlay"),
+      leadsScreen: hasMarker(path.join(process.cwd(), "components/leads/leads-live.tsx"), "DiagOverlay"),
+      editDialog: hasMarker(path.join(process.cwd(), "components/leads/edit-lead-dialog.tsx"), "reportSaveFailure"),
+      overlayVersion: hasMarker(path.join(process.cwd(), "components/diagnostics/diag-overlay.tsx"), "rsia-diag-root"),
+    },
   })
+}
+
+function hasMarker(file: string, marker: string): boolean | string {
+  try {
+    return readFileSync(file, "utf8").includes(marker)
+  } catch {
+    return "no disponible"
+  }
 }
 
 export async function POST(request: Request) {
