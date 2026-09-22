@@ -474,16 +474,14 @@ test("1. un parcial con cero eliminados NO dice «ya está vacía» y deja el mo
 test("2. las reglas impiden restaurar mientras la purga tiene reclamo", () => {
   const rules = read("firestore.rules")
   // `r` = resource.data y `d` = request.resource.data, calculados una vez en allow update.
-  // Una sola función: «no desarchivar ahora» o «no hay reclamo de purga».
-  const fn = ruleFunction(rules, "notRestoringDuringPurge")
-  assert.match(fn, /r\.get\('purgeClaimId', null\) == null/)
+  // notRestoringDuringPurge, en línea en el update: si se está desarchivando
+  // (archivado antes, no archivado después) no puede haber reclamo de purga.
   // Solo bloquea el desarchivado; el resto del documento sigue editable.
-  assert.match(fn, /r\.get\('archived', false\) == true/)
-  assert.match(fn, /d\.get\('archived', false\) != true/)
-  // Y la condición se aplica de verdad en el allow update de leads.
+  const fn = ruleFunction(rules, "leadUpdateChecks")
+  assert.match(fn, /\(\(r\.get\('archived', false\) == true && d\.get\('archived', false\) != true\)\s*\? r\.get\('purgeClaimId', null\) == null\s*: true\)/)
+  // Y los valores `d` y `r` son los documentos reales, pasados desde allow update.
   const leadsBlock = rules.slice(rules.indexOf("match /leads/{leadId}"), rules.indexOf("match /leads/{leadId}/activities"))
-  assert.match(leadsBlock, /&& notRestoringDuringPurge\(d, r\)/)
-  assert.match(leadsBlock, /request\.resource\.data,\s*resource\.data,\s*me\(\)\);/)
+  assert.match(leadsBlock, /request\.resource\.data,\s*resource\.data,\s*get\(\/databases\/\$\(database\)\/documents\/memberships\/\$\(request\.auth\.uid\)\)\.data\);/)
 })
 
 test("5. la ruta propaga los contadores acumulados cuando la purga se corta", () => {
