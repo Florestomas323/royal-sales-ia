@@ -10,6 +10,8 @@ import { useLeads, useLeadTypeCounts, type LeadTypeFilter } from "@/lib/firebase
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { initialWorkspaceFilter } from "@/lib/leads/workspace-switch"
 import { Skeleton } from "@/components/ui/skeleton"
+// TEMPORARY DIAGNOSTIC (?diag=1). Renders nothing outside diag mode.
+import { DiagOverlay } from "@/components/diagnostics/diag-overlay"
 
 /**
  * `useSearchParams` needs a Suspense boundary on statically rendered pages,
@@ -55,6 +57,7 @@ function LeadsLiveInner() {
 
   return (
     <div className="flex flex-col gap-4">
+      <DiagOverlay mount="leads" />
       <LeadTypeSwitch value={leadType} onChange={setLeadType} allowAll counts={counts} />
 
       {error && <DataErrorState error={error} />}

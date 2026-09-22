@@ -33,6 +33,8 @@ import { canReassignLead, displayStage, eligibleAssignees, isValidE164, leadType
 import { memberLabel } from "@/lib/team"
 import { t } from "@/lib/i18n"
 import type { Lead, PipelineStage, Platform } from "@/types"
+// TEMPORARY DIAGNOSTIC (?diag=1). No-op outside diag mode. Remove with lib/diagnostics/.
+import { reportSaveFailure } from "@/lib/diagnostics/diag-mode"
 
 const NO_OWNER = "__none__"
 const NO_CAMPAIGN = "__no_campaign__"
@@ -216,6 +218,13 @@ export function EditLeadDialog({
         err instanceof MutationError || err instanceof LeadValidationError
           ? err.message
           : describeError(err).message
+      reportSaveFailure({
+        source: `edit-lead-dialog:${writeStage}`,
+        lead: { id: lead.id, workspaceId: lead.workspaceId, stage: lead.stage, assignedToId: lead.assignedToId, leadType: lead.leadType },
+        patch: { ...patch },
+        actor: membership?.userId && role ? { userId: membership.userId, role } : null,
+        error: err,
+      })
       if (outcome === "partial_campaign_saved") {
         toast.warning(t.leads.editDialog.partialSave, { description: message })
       } else {
