@@ -33,6 +33,9 @@ import { canReassignLead, displayStage, eligibleAssignees, isValidE164, leadType
 import { memberLabel } from "@/lib/team"
 import { t } from "@/lib/i18n"
 import type { Lead, PipelineStage, Platform } from "@/types"
+// TEMPORARY DIAGNOSTIC (?diag=1). Remove with lib/diagnostics/lead-save-probe.ts.
+import { leadSaveDiagEnabled } from "@/lib/diagnostics/lead-save-probe"
+import { LeadSaveDiagnostic, type LeadSaveAttempt } from "@/components/diagnostics/lead-save-diagnostic"
 
 const NO_OWNER = "__none__"
 const NO_CAMPAIGN = "__no_campaign__"
@@ -94,6 +97,9 @@ export function EditLeadDialog({
   const [errors, setErrors] = React.useState<Partial<Record<keyof LeadPatch, string>>>({})
   const [formError, setFormError] = React.useState<string | null>(null)
   const [saving, setSaving] = React.useState(false)
+  // TEMPORARY DIAGNOSTIC: last failed attempt, kept only with ?diag=1.
+  const diagEnabled = React.useMemo(() => leadSaveDiagEnabled(), [])
+  const [diagAttempt, setDiagAttempt] = React.useState<LeadSaveAttempt | null>(null)
 
   /**
    * Re-seed the form whenever a DIFFERENT lead is opened — keyed by id, not
@@ -119,6 +125,7 @@ export function EditLeadDialog({
     setNextAction(lead.nextAction ?? "")
     setErrors({})
     setFormError(null)
+    setDiagAttempt(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, lead.id, type])
 
@@ -216,6 +223,13 @@ export function EditLeadDialog({
         err instanceof MutationError || err instanceof LeadValidationError
           ? err.message
           : describeError(err).message
+      if (diagEnabled) {
+        setDiagAttempt({
+          patch,
+          actor: membership?.userId && role ? { userId: membership.userId, role } : null,
+          error: err,
+        })
+      }
       if (outcome === "partial_campaign_saved") {
         toast.warning(t.leads.editDialog.partialSave, { description: message })
       } else {
@@ -404,6 +418,14 @@ export function EditLeadDialog({
               </Field>
             )}
           </FieldGroup>
+
+          {diagEnabled && diagAttempt && (
+            <LeadSaveDiagnostic
+              lead={lead}
+              attempt={diagAttempt}
+              memberName={(id) => members.find((m) => m.id === id)?.name ?? ""}
+            />
+          )}
 
           <DialogFooter className="mt-6 gap-2 sm:gap-2">
             <Button
