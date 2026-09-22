@@ -5,11 +5,14 @@ import { TopBar } from "@/components/shell/top-bar"
 import { RequireAuth } from "@/components/auth/require-auth"
 import { WorkspaceProvider } from "@/lib/firebase/workspace-context"
 import { WorkspaceScope } from "@/components/shell/workspace-scope"
+// TEMPORARY DIAGNOSTIC (?diag=1). Remove with lib/diagnostics/.
+import { DiagOverlay } from "@/components/diagnostics/diag-overlay"
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <RequireAuth>
       <WorkspaceProvider>
+      <DiagOverlay />
       <SidebarProvider>
         <AppSidebar />
         <SidebarInset>
