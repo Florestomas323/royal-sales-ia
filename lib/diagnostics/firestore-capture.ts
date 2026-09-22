@@ -37,6 +37,32 @@ export interface FailedCommit {
 
 type Listener = (c: FailedCommit) => void
 
+export interface CaptureStats {
+  installed: boolean
+  logEvents: number
+  writeRequests: number
+  errors: number
+  lastWrite: string | null
+  lastError: string | null
+}
+
+const stats: CaptureStats = { installed: false, logEvents: 0, writeRequests: 0, errors: 0, lastWrite: null, lastError: null }
+const statsListeners = new Set<(s: CaptureStats) => void>()
+
+export function getCaptureStats(): CaptureStats {
+  return { ...stats }
+}
+
+export function subscribeStats(fn: (s: CaptureStats) => void): () => void {
+  statsListeners.add(fn)
+  return () => statsListeners.delete(fn)
+}
+
+function emitStats() {
+  const snap = { ...stats }
+  statsListeners.forEach((l) => l(snap))
+}
+
 let installed = false
 const listeners = new Set<Listener>()
 let lastSend: { at: number; stream: string | null; writes: DecodedWrite[] } | null = null
@@ -59,10 +85,12 @@ export function subscribeFailures(fn: Listener): () => void {
 export function installFirestoreCapture(): void {
   if (installed || typeof window === "undefined") return
   installed = true
+  stats.installed = true
   setLogLevel("debug")
   onLog(
     (entry) => {
       try {
+        stats.logEvents++
         handle(entry.message ?? "")
       } catch {
         /* never let the diagnostic break the app */
@@ -81,6 +109,9 @@ function handle(message: string) {
     const parsed = JSON.parse(send[3]) as { writes?: unknown[] }
     if (Array.isArray(parsed.writes) && parsed.writes.length) {
       lastSend = { at: Date.now(), stream: send[2], writes: parsed.writes.map(decodeWrite) }
+      stats.writeRequests++
+      stats.lastWrite = `${new Date().toISOString()} · ${lastSend.writes.map((w) => `${w.op} ${w.path}`).join(" | ")}`
+      emitStats()
     }
     return
   }
@@ -90,9 +121,19 @@ function handle(message: string) {
   if (!isError) return
   recentErrors.push(message.slice(0, 600))
   if (recentErrors.length > 10) recentErrors.shift()
+  stats.errors++
+  stats.lastError = message.slice(0, 300)
+  emitStats()
 
-  if (!lastSend || Date.now() - lastSend.at > 30_000) return
-  const code = /code=([a-z-]+)/i.exec(message)?.[1] ?? (/permission/i.test(message) ? "permission-denied" : undefined)
+  if (!lastSend) return
+  // Only errors that belong to a WRITE: the Write stream / Commit RPC by
+  // name, or a stream close right after a write request. A denied Listen
+  // somewhere else in the app must not be mistaken for the save.
+  const writeStreamError = /RPC '(Write|Commit)' (?:stream )?(\S+) (?:received error|failed)/.exec(message)
+  const closeAfterWrite = /close with error/.test(message) && Date.now() - lastSend.at < 5_000
+  if (!writeStreamError && !closeAfterWrite) return
+  if (writeStreamError && writeStreamError[2] !== lastSend.stream && writeStreamError[1] === "Write") return
+  const code = /code=([a-z-]+)/i.exec(message)?.[1] ?? (/permission|PERMISSION_DENIED/i.test(message) ? "permission-denied" : undefined)
   const text = /\]:\s*([^\n"]+)/.exec(message)?.[1] ?? (/Missing or insufficient permissions/.test(message) ? "Missing or insufficient permissions." : undefined)
   const failure: FailedCommit = {
     at: new Date().toISOString(),
