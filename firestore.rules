@@ -1338,23 +1338,19 @@ service cloud.firestore {
        * `stage_change` activity; these rules guarantee the lead can never hold
        * incoherent closing data.
        *
-       * UPDATE-PATH PARAMETERS. Firestore evaluates at most 1,000 expressions
-       * per request, and the update rule used to recompute the same values in
-       * every helper — above all `diff().affectedKeys()`, once per field — so
-       * a plain stage change crossed the limit ("maximum of 1000 expressions
-       * … for 'update'"). They are now computed ONCE in `allow update` and
+       * EXPRESSION BUDGET. Firestore evaluates at most 1,000 expressions per
+       * request, and the official emulator showed that a DENIED update is
+       * evaluated in full — every branch — to report the refusal. So the
+       * update path must be small in TOTAL, not only on its happy path.
+       * Values several checks share are computed once in `allow update` and
        * passed down:
        *   ck  = request.resource.data.diff(resource.data).affectedKeys()
-       *   d   = request.resource.data        r   = resource.data
-       *   lta = lead type after              ltb = lead type before
-       *   adm = isSuperAdmin() || isWsAdmin(resource.data.workspaceId)
-       *         — the exact expression every admin-only branch used to repeat
-       * Every condition below is the same one as before, clause for clause.
+       *   d   = request.resource.data        r = resource.data
+       *   m   = the caller's membership, read once (hasMembership() first)
+       *   adm = super admin, or admin of THIS lead's workspace
+       *   lta = lead type after the write
+       * Every condition is the same one as before.
        */
-      function wonStageOf(type) {
-        return type == 'sales' ? 'sale' : 'rec_hired';
-      }
-
       /** Legacy docs may lack `leadType`; they were migrated as sales. */
       function leadTypeBeforeOf(r) {
         return r.get('leadType', null) == null
@@ -1384,97 +1380,57 @@ service cloud.firestore {
           : d.get('leadType', null);
       }
 
-      /** A field counts as absent when it is missing or explicitly null. */
-      function hasClosedValue(d) {
-        return d.get('closedValue', null) != null;
-      }
-
-      function hasClosedAt(d) {
-        return d.get('closedAt', null) != null;
-      }
-
-      function closedValueIsValid(d) {
-        return d.closedValue is number
-            && d.closedValue > 0;
-      }
-
       /**
-       * `wasWon` and `isWonNow` arrive already computed by closingChangeIsValid():
-       *   wasWon   = r.stage == wonStageOf(ltb)
-       *   isWonNow = d.stage == wonStageOf(lta)
+       * cv = d.get('closedValue', null) and hasClosedAt = closedAt non-null
+       * arrive computed: `cv != null` is the former hasClosedValue(), and
+       * `cv is number && cv > 0` the former closedValueIsValid().
        */
-      function closingInvariants(ck, d, lta, wasWon, isWonNow) {
+      function closingInvariants(sales, closingChanged, wasWon, isWonNow, cv, hasClosedAt) {
         //  1. A hire is not revenue: recruiting never carries an amount.
-        return (lta == 'sales' || !hasClosedValue(d))
+        return (sales || cv == null)
         //  2. Closing data only moves on a real won transition.
-        && (!ck.hasAny(['closedValue', 'closedAt']) || !wasWon == isWonNow)
+        && (!closingChanged || !wasWon == isWonNow)
         //  3. Entering the won stage: a sale needs a positive amount and a
         //     date; a hire needs the date and no amount.
         && ((wasWon || !isWonNow) || (
-              lta == 'sales'
-                ? (closedValueIsValid(d) && hasClosedAt(d))
-                : (!hasClosedValue(d) && hasClosedAt(d))
+              sales
+                ? (cv is number && cv > 0 && hasClosedAt)
+                : (cv == null && hasClosedAt)
             ))
-        //  4. Leaving the won stage clears both, in the same write.
-        && ((!wasWon || isWonNow) || (!hasClosedValue(d) && !hasClosedAt(d)))
-        //  5. A lead outside its won stage never holds closing data.
-        && (isWonNow || (!hasClosedValue(d) && !hasClosedAt(d)));
+        //  4. Leaving the won stage clears both, in the same write — and
+        //  5. a lead outside its won stage never holds closing data. (5
+        //     implies 4: whenever isWonNow is false it demands the same.)
+        && (isWonNow || (cv == null && !hasClosedAt));
       }
 
       /**
        * Link to the end customer. Absent or '' both mean "not converted yet";
-       * `get(..., '')` collapses them so there is one comparison.
-       */
-      function customerIdBefore(r) {
-        return r.get('customerId', '');
-      }
-
-      function customerIdAfter(d) {
-        return d.get('customerId', '');
-      }
-
-      /**
+       * `get(..., '')` collapses them: cb / ca = customerId before / after.
+       *
        * Write-once: from empty to a value, never from customer A to customer B
        * and never back to empty. A lead converts into ONE buyer, for good.
-       */
-      function customerLinkIsWriteOnce(d, r) {
-        return customerIdBefore(r) == customerIdAfter(d)
-            || (customerIdBefore(r) == '' && customerIdAfter(d).size() > 0);
-      }
-
-      /**
+       *
+       * And only at the MOMENT of the close: not won before, won now. A lead
+       * already sitting in `sale` can never gain a customer afterwards — that
+       * path would let anyone attach an arbitrary buyer to a closed deal.
+       * Legacy closed leads without a link stay unlinked; that is an
+       * administrative migration, not something the app may do.
+       *
        * The customer is created in the SAME transaction as this update, so
        * `get()` would not see it yet — `getAfter()` is required.
+       *
+       * (This is the former customerLinkIsWriteOnce() && customerLinkOnlyOnRealClose():
+       *  (cb == ca || P) && (cb == ca || Q)  ==  cb == ca || (P && Q).)
        */
-      function linkedCustomerExists(d) {
-        return existsAfter(/databases/$(database)/documents/customers/$(customerIdAfter(d)));
-      }
-
-      function linkedCustomer(d) {
-        return getAfter(/databases/$(database)/documents/customers/$(customerIdAfter(d))).data;
-      }
-
-      function linkedCustomerIsValid(d) {
-        return linkedCustomerExists(d)
-          && linkedCustomer(d).workspaceId == d.workspaceId;
-      }
-
-      /**
-       * The link may only appear at the MOMENT of the close: not won before,
-       * won now. A lead already sitting in `sale` can never gain a customer
-       * afterwards — that path would let anyone attach an arbitrary buyer to a
-       * closed deal. Legacy closed leads without a link stay unlinked; that is
-       * an administrative migration, not something the app may do.
-       */
-      function customerLinkOnlyOnRealClose(d, r, lta) {
-        return customerIdBefore(r) == customerIdAfter(d)
-            || (
-              customerIdBefore(r) == ''
-              && r.stage != 'sale'
-              && d.stage == 'sale'
-              && lta == 'sales'
-              && linkedCustomerIsValid(d)
-            );
+      function customerLinkIsValid(cb, ca, d, r, lta) {
+        return cb == ca
+          || (cb == ''
+            && ca.size() > 0
+            && r.stage != 'sale'
+            && d.stage == 'sale'
+            && lta == 'sales'
+            && existsAfter(/databases/$(database)/documents/customers/$(ca))
+            && getAfter(/databases/$(database)/documents/customers/$(ca)).data.workspaceId == d.workspaceId);
       }
 
       /**
@@ -1581,75 +1537,48 @@ service cloud.firestore {
        *
        * Security is not relaxed for new writes: changing a field to an
        * invalid value is still denied, immutable fields stay frozen below,
-       * and the role/workspace checks are unchanged.
+       * and the role/workspace checks are unchanged. Same conditions as
+       * before, per changed field:
+       *   required non-empty string   !(f in ck) || (d.f is string && d.f.size() > 0)
+       *   required string             !(f in ck) || d.f is string
+       *   optional string/bool/number !(f in ck) || d.get(f, null) == null || d.f is <type>
+       * (`d.get(f, null) == null` is exactly the former `!(f in d) || d.f == null`.)
        *
-       * Same per-field conditions as before, written inline and grouped:
-       *   required non-empty string   !(f in ck) || (d[f] is string && d[f].size() > 0)
-       *   required string             !(f in ck) || d[f] is string
-       *   optional string/bool/number !(f in ck) || !(f in d) || d[f] == null || d[f] is <type>
-       * `f in ck` is exactly the former `changedKeys().hasAny([f])`. A write
-       * that touches none of these fields (a plain stage change) costs one set
-       * test; inside, a group none of whose fields it touches costs one more.
+       * Fields not listed below stay protected by a STRICTER condition that
+       * applies to every update, which makes their type check redundant:
+       *   workspaceId, attribution, createdAt, clientId, webForm — immutable;
+       *   source            — channelChangeIsValid(): one of validPlatform();
+       *   attributionSource — manualAttributionIsValid(): must be 'manual';
+       *   campaignId        — manualAttributionIsValid(): must be a string;
+       *   closedValue       — closingInvariants(): null/absent, or a positive
+       *                       number on a real close;
+       *   customerId        — customerLinkIsValid(): unchanged, or a non-empty
+       *                       string naming a customer of this workspace, set
+       *                       only at a real close.
        */
       function validChangedLeadShape(ck, d) {
-        return !ck.hasAny(['workspaceId', 'createdAt', 'name', 'phone', 'assignedToId', 'source',
-                           'email', 'nextAction', 'notes', 'assignedToName', 'campaignId', 'campaignName',
-                           'clientId', 'receivedAt', 'updatedAt', 'emailNotifiedAt', 'lastContactAt',
-                           'nextFollowUpAt', 'archived', 'archivedAt', 'archivedBy', 'archivedByName',
-                           'closedAt', 'closedValue', 'customerId', 'temperature', 'attributionSource',
-                           'potentialValue', 'score', 'attribution', 'webForm', 'recruiting'])
-          || validChangedLeadFields(ck, d);
-      }
-
-      function validChangedLeadFields(ck, d) {
-        return (!ck.hasAny(['workspaceId', 'createdAt'])
-            || ((!('workspaceId' in ck) || (d.workspaceId is string && d.workspaceId.size() > 0))
-              && (!('createdAt' in ck) || d.createdAt is string)))
-          && (!ck.hasAny(['name', 'phone'])
-            || ((!('name' in ck) || (d.name is string && d.name.size() > 0))
-              && (!('phone' in ck) || d.phone is string)))
-          && (!ck.hasAny(['assignedToId', 'source'])
-            || ((!('assignedToId' in ck) || d.assignedToId is string)
-              && (!('source' in ck) || d.source is string)))
-          && (!ck.hasAny(['email', 'nextAction', 'notes'])
-            || ((!('email' in ck) || !('email' in d) || d.email == null || d.email is string)
-              && (!('nextAction' in ck) || !('nextAction' in d) || d.nextAction == null || d.nextAction is string)
-              && (!('notes' in ck) || !('notes' in d) || d.notes == null || d.notes is string)))
-          && (!ck.hasAny(['assignedToName', 'campaignId', 'campaignName', 'clientId'])
-            || ((!('assignedToName' in ck) || !('assignedToName' in d) || d.assignedToName == null || d.assignedToName is string)
-              && (!('campaignId' in ck) || !('campaignId' in d) || d.campaignId == null || d.campaignId is string)
-              && (!('campaignName' in ck) || !('campaignName' in d) || d.campaignName == null || d.campaignName is string)
-              && (!('clientId' in ck) || !('clientId' in d) || d.clientId == null || d.clientId is string)))
-          && (!ck.hasAny(['receivedAt', 'updatedAt', 'emailNotifiedAt'])
-            || ((!('receivedAt' in ck) || !('receivedAt' in d) || d.receivedAt == null || d.receivedAt is string)
-              && (!('updatedAt' in ck) || !('updatedAt' in d) || d.updatedAt == null || d.updatedAt is string)
-              && (!('emailNotifiedAt' in ck) || !('emailNotifiedAt' in d) || d.emailNotifiedAt == null || d.emailNotifiedAt is string)))
-          && (!ck.hasAny(['lastContactAt', 'nextFollowUpAt'])
-            || ((!('lastContactAt' in ck) || !('lastContactAt' in d) || d.lastContactAt == null || d.lastContactAt is string)
-              && (!('nextFollowUpAt' in ck) || !('nextFollowUpAt' in d) || d.nextFollowUpAt == null || d.nextFollowUpAt is string)))
-          && (!ck.hasAny(['archived', 'archivedAt', 'archivedBy', 'archivedByName'])
-            || ((!('archived' in ck) || !('archived' in d) || d.archived == null || d.archived is bool)
-              && (!('archivedAt' in ck) || !('archivedAt' in d) || d.archivedAt == null || d.archivedAt is string)
-              && (!('archivedBy' in ck) || !('archivedBy' in d) || d.archivedBy == null || d.archivedBy is string)
-              && (!('archivedByName' in ck) || !('archivedByName' in d) || d.archivedByName == null || d.archivedByName is string)))
-          && (!ck.hasAny(['closedAt', 'closedValue', 'customerId'])
-            || ((!('closedAt' in ck) || !('closedAt' in d) || d.closedAt == null || d.closedAt is string)
-              && (!('closedValue' in ck) || !('closedValue' in d) || d.closedValue == null || d.closedValue is number)
-              && (!('customerId' in ck) || !('customerId' in d) || d.customerId == null || d.customerId is string)))
-          && (!ck.hasAny(['temperature', 'attributionSource', 'potentialValue', 'score'])
-            || ((!('temperature' in ck)
-                || !('temperature' in d)
-                || d.temperature == null
-                || d.temperature in ['hot', 'warm', 'cold'])
-              && (!('attributionSource' in ck)
-                || !('attributionSource' in d)
-                || d.attributionSource in ['meta', 'manual', 'web'])
-              && (!('potentialValue' in ck) || !('potentialValue' in d) || d.potentialValue == null || d.potentialValue is number)
-              && (!('score' in ck) || !('score' in d) || d.score == null || d.score is number)))
-          && (!ck.hasAny(['attribution', 'webForm', 'recruiting'])
-            || ((!('attribution' in ck) || !('attribution' in d) || d.attribution == null || d.attribution is map)
-              && (!('webForm' in ck) || !('webForm' in d) || d.webForm == null || d.webForm is map)
-              && (!('recruiting' in ck) || !('recruiting' in d) || d.recruiting == null || d.recruiting is map)));
+        return (!('name' in ck) || (d.name is string && d.name.size() > 0))
+          && (!('phone' in ck) || d.phone is string)
+          && (!('assignedToId' in ck) || d.assignedToId is string)
+          && (!('email' in ck) || d.get('email', null) == null || d.email is string)
+          && (!('assignedToName' in ck) || d.get('assignedToName', null) == null || d.assignedToName is string)
+          && (!('campaignName' in ck) || d.get('campaignName', null) == null || d.campaignName is string)
+          && (!('receivedAt' in ck) || d.get('receivedAt', null) == null || d.receivedAt is string)
+          && (!('updatedAt' in ck) || d.get('updatedAt', null) == null || d.updatedAt is string)
+          && (!('emailNotifiedAt' in ck) || d.get('emailNotifiedAt', null) == null || d.emailNotifiedAt is string)
+          && (!('notes' in ck) || d.get('notes', null) == null || d.notes is string)
+          && (!('temperature' in ck) || d.get('temperature', null) == null || d.temperature in ['hot', 'warm', 'cold'])
+          && (!('lastContactAt' in ck) || d.get('lastContactAt', null) == null || d.lastContactAt is string)
+          && (!('nextFollowUpAt' in ck) || d.get('nextFollowUpAt', null) == null || d.nextFollowUpAt is string)
+          && (!('nextAction' in ck) || d.get('nextAction', null) == null || d.nextAction is string)
+          && (!('archivedAt' in ck) || d.get('archivedAt', null) == null || d.archivedAt is string)
+          && (!('archivedBy' in ck) || d.get('archivedBy', null) == null || d.archivedBy is string)
+          && (!('archivedByName' in ck) || d.get('archivedByName', null) == null || d.archivedByName is string)
+          && (!('closedAt' in ck) || d.get('closedAt', null) == null || d.closedAt is string)
+          && (!('archived' in ck) || d.get('archived', null) == null || d.archived is bool)
+          && (!('potentialValue' in ck) || d.get('potentialValue', null) == null || d.potentialValue is number)
+          && (!('score' in ck) || d.get('score', null) == null || d.score is number)
+          && (!('recruiting' in ck) || d.get('recruiting', null) == null || d.recruiting is map);
       }
 
       /** Only a pipeline write needs the pipeline to be re-validated. */
@@ -1664,9 +1593,15 @@ service cloud.firestore {
        * changes. An archive or attribution edit must not be blocked by stale
        * closing metadata that it neither reads nor modifies.
        */
-      function closingChangeIsValid(ck, d, r, lta, ltb) {
+      function closingChangeIsValid(ck, d, r, lta) {
         return !ck.hasAny(['leadType', 'stage', 'closedValue', 'closedAt'])
-          || closingInvariants(ck, d, lta, r.stage == wonStageOf(ltb), d.stage == wonStageOf(lta));
+          || closingInvariants(
+              lta == 'sales',
+              ck.hasAny(['closedValue', 'closedAt']),
+              r.stage == (leadTypeBeforeOf(r) == 'sales' ? 'sale' : 'rec_hired'),
+              d.stage == (lta == 'sales' ? 'sale' : 'rec_hired'),
+              d.get('closedValue', null),
+              d.get('closedAt', null) != null);
       }
 
       /**
@@ -1682,17 +1617,11 @@ service cloud.firestore {
        * a crashed run releases its grip after STALE_CLAIM_MS, so no lead is
        * ever permanently locked.
        */
-      function purgeClaimHeld(r) {
-        return r.get('purgeClaimId', null) != null;
-      }
-
-      function unarchivingNow(d, r) {
-        return r.get('archived', false) == true
-          && d.get('archived', false) != true;
-      }
-
       function notRestoringDuringPurge(d, r) {
-        return !unarchivingNow(d, r) || !purgeClaimHeld(r);
+        // not (un-archiving now: archived before, not archived after)
+        // or no purge claim held.
+        return !(r.get('archived', false) == true && d.get('archived', false) != true)
+          || r.get('purgeClaimId', null) == null;
       }
 
       /**
@@ -1746,9 +1675,14 @@ service cloud.firestore {
             (d.campaignId == ''
               && d.get('campaignName', '') == '')
             || (exists(/databases/$(database)/documents/campaigns/$(d.campaignId))
-              && attributedCampaign(d).workspaceId == r.workspaceId
-              && d.get('campaignName', '') == attributedCampaign(d).name)
+              && campaignMatches(d, r, attributedCampaign(d)))
           );
+      }
+
+      /** c = the attributed campaign, read once. */
+      function campaignMatches(d, r, c) {
+        return c.workspaceId == r.workspaceId
+          && d.get('campaignName', '') == c.name;
       }
 
       /**
@@ -1805,62 +1739,68 @@ service cloud.firestore {
       //  4. the role checks are exactly the previous ones, plus: a rep may not
       //     reassign the lead nor change its type.
       //
-      // The shared values are computed ONCE here (see "UPDATE-PATH
-      // PARAMETERS" above) — this is what keeps a stage change under
-      // Firestore's 1,000-expression limit.
-      function leadUpdateIsValid(ck, d, r, sa) {
-        return leadUpdateChecks(ck, d, r,
-          sa || isWsAdmin(r.workspaceId),
-          leadTypeAfterOf(d, r), leadTypeBeforeOf(r));
+      // Cheapest refusals first — who is writing, then the immutable and
+      // server-only fields, then field shapes — and only then the pipeline,
+      // closing, customer-link and attribution checks. See EXPRESSION BUDGET.
+
+      /**
+       * `m` is the caller's membership, read ONCE (hasMembership() is already
+       * established by allow update). These are the exact conditions of
+       * isSuperAdmin(), isWsAdmin() and isWsRep() for this lead's workspace —
+       * inWorkspace() = ws is string && myWorkspace() == ws && active — with
+       * the role test first, so a super admin never evaluates the rest.
+       * Keep them in sync with the global helpers.
+       */
+      function leadCallerInWorkspace(m, r) {
+        return r.workspaceId is string
+          && m.workspaceId == r.workspaceId
+          && m.get('status', 'active') == 'active';
       }
 
-      function leadUpdateChecks(ck, d, r, adm, lta, ltb) {
-        // Revalidate the pipeline only when this write changes it. Archive,
-        // campaign and channel edits may preserve unrelated legacy values.
-        return validChangedLeadShape(ck, d)
-          && pipelineChangeIsValid(ck, d, lta)
+      function leadUpdateIsValid(ck, d, r, m) {
+        return leadUpdateChecks(ck, d, r,
+          // adm: isSuperAdmin() || isWsAdmin(r.workspaceId)
+          m.role == 'super_admin'
+            || (m.role in ['client_admin', 'manager'] && leadCallerInWorkspace(m, r)),
+          // rep: isWsRep(r.workspaceId) && r.assignedToId == myUserId()
+          m.role == 'sales_rep' && leadCallerInWorkspace(m, r) && r.assignedToId == m.userId,
+          leadTypeAfterOf(d, r));
+      }
+
+      function leadUpdateChecks(ck, d, r, adm, rep, lta) {
+        // Who: an admin of this lead's workspace (or a super admin), or the
+        // Telemarketing rep it is assigned to — through a WHITELIST:
+        // reassigning, archiving, restoring or touching integration data is
+        // not on it.
+        return (adm || (rep && ck.hasOnly(repEditableFields())))
           // `attribution` stays frozen for everyone: the Meta ids are the record
           // of where the lead really came from, and correcting the channel must
           // never erase them. Only `source` (the channel shown in the app) may
           // be corrected, and only by an admin — see channelChangeIsValid().
           && !ck.hasAny(['workspaceId', 'attribution', 'createdAt', 'clientId', 'webForm'])
+          // …and no client may touch the purge bookkeeping itself.
+          && purgeFieldsUntouched(ck)
+          && validChangedLeadShape(ck, d)
+          // Revalidate the pipeline only when this write changes it. Archive,
+          // campaign and channel edits may preserve unrelated legacy values.
+          && pipelineChangeIsValid(ck, d, lta)
           && channelChangeIsValid(ck, d, adm)
           // A restore cannot win a race against a purge that already holds the lead.
           && notRestoringDuringPurge(d, r)
-          // …and no client may touch the purge bookkeeping itself.
-          && purgeFieldsUntouched(ck)
-          && closingChangeIsValid(ck, d, r, lta, ltb)
-          && customerLinkIsWriteOnce(d, r)
-          && customerLinkOnlyOnRealClose(d, r, lta)
+          && closingChangeIsValid(ck, d, r, lta)
+          && customerLinkIsValid(r.get('customerId', ''), d.get('customerId', ''), d, r, lta)
           // Attribution moves only by an admin, and only to a campaign of the
           // same workspace (or to none). Telemarketing's whitelist excludes it.
-          && (
-            !attributionChanges(ck)
-            || (adm && manualAttributionIsValid(d, r))
-          )
-          && (
-            !('leadType' in ck)
-            || (
-              adm
-              && d.stage == initialStageFor(lta)
-            )
-          )
-          && (
-            adm
-            // A rep works their own lead through a WHITELIST: reassigning,
-            // archiving, restoring or touching integration data is not on it.
-            || (isWsRep(r.workspaceId)
-                && r.assignedToId == myUserId()
-                && ck.hasOnly(repEditableFields()))
-          );
+          && (!attributionChanges(ck) || (adm && manualAttributionIsValid(d, r)))
+          && (!('leadType' in ck) || (adm && d.stage == initialStageFor(lta)));
       }
 
-      allow update: if leadUpdateIsValid(
-        request.resource.data.diff(resource.data).affectedKeys(),
-        request.resource.data,
-        resource.data,
-        isSuperAdmin()
-      );
+      allow update: if hasMembership()
+        && leadUpdateIsValid(
+          request.resource.data.diff(resource.data).affectedKeys(),
+          request.resource.data,
+          resource.data,
+          me());
 
       allow delete: if isSuperAdmin() || isWsAdmin(resource.data.workspaceId);
     }
