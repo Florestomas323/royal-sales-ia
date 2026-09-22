@@ -115,12 +115,17 @@ async function seedLead(id, { legacy = false, stage = "new_lead", assignedToId =
 
 const asActor = (a) => env.authenticatedContext(a.uid, { email: `${a.userId}@x.com`, email_verified: true }).firestore()
 
-/** The batch createAppointment() performs: appointment + stage + activity. */
-async function bookMeeting(db, actor, { leadId, leadType = "sales", stage = "new_lead" }) {
+/**
+ * The batch createAppointment() performs: appointment + stage + activity.
+ * `leadName` is the lead's REAL name, as the app sends it (the server route
+ * copies `current.name`; the Rules require leadName == referencedLead().name).
+ * It defaults to the name seedLead() uses.
+ */
+async function bookMeeting(db, actor, { leadId, leadType = "sales", stage = "new_lead", leadName = "María González" }) {
   const batch = writeBatch(db)
   const apptRef = doc(db, "appointments", `appt-${leadId}-${Date.now()}`)
   batch.set(apptRef, {
-    workspaceId: WS, leadId, leadName: "María González", leadType,
+    workspaceId: WS, leadId, leadName, leadType,
     assignedToId: actor.userId, scheduledAt: "2026-10-01T15:00:00Z", durationMinutes: 60,
     type: "demo", status: "scheduled", createdBy: actor.userId,
     location: { addressLine1: "1 Main St", city: "Austin", state: "TX", postalCode: "78701" },
@@ -366,10 +371,12 @@ test("the full booking batch is atomic: appointment + stage + activity, or nothi
   })
 })
 
-test("a lead shaped like a website integration lead (source web, empty assignedToId) is writable", async () => {
+/** A lead shaped like a website integration lead: source web, no owner, webForm. */
+const WEB_LEAD_NAME = "Web Lead"
+async function seedWebLead(id) {
   await env.withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(ctx.firestore(), "leads", "X5"), {
-      workspaceId: WS, leadType: "sales", name: "Web Lead", phone: "+15555550199", email: "",
+    await setDoc(doc(ctx.firestore(), "leads", id), {
+      workspaceId: WS, leadType: "sales", name: WEB_LEAD_NAME, phone: "+15555550199", email: "",
       source: "web", campaignId: "", campaignName: "", score: 50, temperature: "warm",
       stage: "new_lead", assignedToId: "", potentialValue: 0,
       createdAt: "2026-09-10T00:00:00Z", lastContactAt: null, nextFollowUpAt: null, nextAction: "Primer contacto",
@@ -377,10 +384,39 @@ test("a lead shaped like a website integration lead (source web, empty assignedT
       webForm: { formId: "f1" }, receivedAt: "2026-09-10T00:00:01Z",
     })
   })
+}
+
+test("a lead shaped like a website integration lead (source web, empty assignedToId) is writable", async () => {
+  await seedWebLead("X5")
   const db = asActor(ACTORS.asistente)
   await assertSucceeds(archive(db, ACTORS.asistente, "X5"))
   await assertSucceeds(restore(db, ACTORS.asistente, "X5"))
-  await assertSucceeds(bookMeeting(db, ACTORS.asistente, { leadId: "X5" }))
+  await assertSucceeds(bookMeeting(db, ACTORS.asistente, { leadId: "X5", leadName: WEB_LEAD_NAME }))
+})
+
+// The same three operations, one per test, so a failure names the operation.
+test("website-shaped lead: the Asistente archives it", async () => {
+  await seedWebLead("X5a")
+  await assertSucceeds(archive(asActor(ACTORS.asistente), ACTORS.asistente, "X5a"))
+})
+
+test("website-shaped lead: the Asistente restores it", async () => {
+  await seedWebLead("X5r")
+  const db = asActor(ACTORS.asistente)
+  await assertSucceeds(archive(db, ACTORS.asistente, "X5r"))
+  await assertSucceeds(restore(db, ACTORS.asistente, "X5r"))
+})
+
+test("website-shaped lead: the Asistente books a meeting on it", async () => {
+  await seedWebLead("X5b")
+  await assertSucceeds(bookMeeting(asActor(ACTORS.asistente), ACTORS.asistente, { leadId: "X5b", leadName: WEB_LEAD_NAME }))
+})
+
+// What made the combined test fail: the appointment named a different person
+// than the lead. That refusal is the Rules working (appointmentMatchesLead).
+test("an appointment whose leadName is not the lead's name is refused", async () => {
+  await seedWebLead("X5n")
+  await assertFails(bookMeeting(asActor(ACTORS.asistente), ACTORS.asistente, { leadId: "X5n", leadName: "María González" }))
 })
 
 /* ============ purge fields are SERVER-ONLY (real client writes) ========== */
