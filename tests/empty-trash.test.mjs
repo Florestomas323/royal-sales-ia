@@ -499,10 +499,12 @@ test("el selector de campañas se liga al workspace DEL PROSPECTO, no al activo"
 
 test("los campos de purga son server-only en las reglas", () => {
   const rules = readFileSync(join(root, "firestore.rules"), "utf8")
-  assert.match(rules, /function purgeFieldsUntouched\(\)/)
-  assert.match(rules, /!changedKeys\(\)\.hasAny\(\['purgeClaimId', 'purgeClaimedAt', 'purgeState'\]\)/)
+  // The affected-key set is computed once in allow update and passed as `ck`.
+  assert.match(rules, /function purgeFieldsUntouched\(ck\)/)
+  assert.match(rules, /!ck\.hasAny\(\['purgeClaimId', 'purgeClaimedAt', 'purgeState'\]\)/)
   const leadsBlock = rules.slice(rules.indexOf("match /leads/{leadId}"), rules.indexOf("match /leads/{leadId}/activities"))
-  assert.match(leadsBlock, /&& purgeFieldsUntouched\(\)/)
+  assert.match(leadsBlock, /&& purgeFieldsUntouched\(ck\)/)
+  assert.match(leadsBlock, /allow update: if leadUpdateIsValid\(\s*request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\)/)
   // Tampoco pueden nacer con el lead.
   assert.match(leadsBlock, /hasAny\(\['purgeClaimId', 'purgeClaimedAt', 'purgeState'\]\)/)
 })

@@ -472,16 +472,18 @@ test("1. un parcial con cero eliminados NO dice «ya está vacía» y deja el mo
 
 test("2. las reglas impiden restaurar mientras la purga tiene reclamo", () => {
   const rules = read("firestore.rules")
-  assert.match(rules, /function purgeClaimHeld\(\)/)
-  assert.match(rules, /resource\.data\.get\('purgeClaimId', null\) != null/)
-  assert.match(rules, /function notRestoringDuringPurge\(\)/)
+  // `r` = resource.data y `d` = request.resource.data, calculados una vez en allow update.
+  assert.match(rules, /function purgeClaimHeld\(r\)/)
+  assert.match(rules, /r\.get\('purgeClaimId', null\) != null/)
+  assert.match(rules, /function notRestoringDuringPurge\(d, r\)/)
   // Y la condición se aplica de verdad en el allow update de leads.
   const leadsBlock = rules.slice(rules.indexOf("match /leads/{leadId}"), rules.indexOf("match /leads/{leadId}/activities"))
-  assert.match(leadsBlock, /&& notRestoringDuringPurge\(\)/)
+  assert.match(leadsBlock, /&& notRestoringDuringPurge\(d, r\)/)
+  assert.match(leadsBlock, /request\.resource\.data,\s*resource\.data,\s*isSuperAdmin\(\)\s*\);/)
   // Solo bloquea el desarchivado; el resto del documento sigue editable.
-  const fn = rules.slice(rules.indexOf("function unarchivingNow()"), rules.indexOf("function notRestoringDuringPurge()"))
-  assert.match(fn, /resource\.data\.get\('archived', false\) == true/)
-  assert.match(fn, /request\.resource\.data\.get\('archived', false\) != true/)
+  const fn = rules.slice(rules.indexOf("function unarchivingNow(d, r)"), rules.indexOf("function notRestoringDuringPurge(d, r)"))
+  assert.match(fn, /r\.get\('archived', false\) == true/)
+  assert.match(fn, /d\.get\('archived', false\) != true/)
 })
 
 test("5. la ruta propaga los contadores acumulados cuando la purga se corta", () => {

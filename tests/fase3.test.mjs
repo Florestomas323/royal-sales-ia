@@ -272,11 +272,13 @@ test("the sync is exposed to workspace admins on the Agenda", () => {
 
 const attrValid = ruleFunction(RULES, "manualAttributionIsValid")
 
+// manualAttributionIsValid(d, r): `d` = request.resource.data, `r` = resource.data,
+// both passed down from allow update (computed once).
 function attribution({ campaignId, campaignName = "", source = "manual", campaign, exists = campaign !== undefined, leadWorkspace = "ws-A" }) {
   return evaluate(attrValid, {
     vars: {
-      resource: { data: { workspaceId: leadWorkspace } },
-      request: { resource: { data: { campaignId, campaignName, attributionSource: source } } },
+      r: { workspaceId: leadWorkspace },
+      d: { campaignId, campaignName, attributionSource: source },
     },
     fns: { exists: () => exists, attributedCampaign: () => campaign },
   })
@@ -309,7 +311,13 @@ test("Telemarketing cannot touch attribution: not in the whitelist, and the rule
   const wl = RULES.match(/function repEditableFields\(\) \{[\s\S]*?\]/)[0]
   for (const f of ["campaignId", "campaignName", "attributionSource"]) assert.ok(!wl.includes(`'${f}'`), f)
   const leadsBlock = RULES.slice(RULES.indexOf("match /leads/{leadId}"))
-  assert.match(leadsBlock, /!attributionChanges\(\)\s*\|\| \(\(isSuperAdmin\(\) \|\| isWsAdmin\(resource\.data\.workspaceId\)\) && manualAttributionIsValid\(\)\)/)
+  assert.match(leadsBlock, /!attributionChanges\(ck\)\s*\|\| \(adm && manualAttributionIsValid\(d, r\)\)/)
+  // `adm` IS isSuperAdmin() || isWsAdmin(lead workspace), bound once — the
+  // exact expression this branch used to repeat inline.
+  assert.match(leadsBlock, /function leadUpdateIsValid\(ck, d, r, sa\)/)
+  assert.match(ruleFunction(RULES, "leadUpdateIsValid"), /sa \|\| isWsAdmin\(r\.workspaceId\)/)
+  assert.match(leadsBlock, /function leadUpdateChecks\(ck, d, r, adm, lta, ltb\)/)
+  assert.match(leadsBlock, /allow update: if leadUpdateIsValid\(\s*request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\),\s*request\.resource\.data,\s*resource\.data,\s*isSuperAdmin\(\)\s*\);/)
 })
 
 test("attributionSource is typed: absent on legacy, or meta / manual / web", () => {
@@ -424,8 +432,9 @@ test("attributionSource: absent is legacy-valid, null is not a value", () => {
 })
 
 test("the workspace isolation of manual attribution is untouched", () => {
-  assert.match(RULES, /attributedCampaign\(\)\.workspaceId == resource\.data\.workspaceId/)
-  assert.match(RULES, /request\.resource\.data\.get\('campaignName', ''\) == attributedCampaign\(\)\.name/)
+  assert.match(RULES, /attributedCampaign\(d\)\.workspaceId == r\.workspaceId/)
+  assert.match(RULES, /d\.get\('campaignName', ''\) == attributedCampaign\(d\)\.name/)
+  assert.match(RULES, /get\(\/databases\/\$\(database\)\/documents\/campaigns\/\$\(d\.campaignId\)\)\.data/)
 })
 
 /* ============ V4: guardar campaña y editar canal ======================== */
@@ -494,12 +503,10 @@ test("only an admin may correct the channel; Telemarketing cannot", () => {
   const fn = ruleFunction(RULES, "channelChangeIsValid")
   const run = ({ changed, admin, source = "meta" }) =>
     evaluate(fn, {
-      vars: { request: { resource: { data: { source } } }, resource: { data: { workspaceId: "ws-A" } } },
+      // adm = isSuperAdmin() || isWsAdmin(lead workspace), computed once upstream.
+      vars: { ck: changed, d: { source }, adm: admin === "super" || admin === "ws" },
       methods,
       fns: {
-        changedKeys: () => changed,
-        isSuperAdmin: () => admin === "super",
-        isWsAdmin: () => admin === "ws",
         validPlatform: (v) => ["meta", "whatsapp"].includes(v),
       },
     })
@@ -510,14 +517,14 @@ test("only an admin may correct the channel; Telemarketing cannot", () => {
   assert.equal(run({ changed: ["source"], admin: "ws", source: "inventado" }), false)
   // The rule must actually invoke it in allow update.
   const leadsBlock = RULES.slice(RULES.indexOf("match /leads/{leadId}"))
-  assert.match(leadsBlock, /&& channelChangeIsValid\(\)/)
+  assert.match(leadsBlock, /&& channelChangeIsValid\(ck, d, adm\)/)
   // And `source` is not in the rep whitelist either.
   const wl = RULES.match(/function repEditableFields\(\) \{[\s\S]*?\]/)[0]
   assert.ok(!wl.includes("'source'"))
 })
 
 test("workspace isolation of attribution is untouched by the channel change", () => {
-  assert.match(RULES, /attributedCampaign\(\)\.workspaceId == resource\.data\.workspaceId/)
+  assert.match(RULES, /attributedCampaign\(d\)\.workspaceId == r\.workspaceId/)
 })
 
 /* ========== V5: prospectos sin leadType (compatibilidad legacy) ========== */
@@ -535,16 +542,21 @@ test("every leadType read on the UPDATE path is legacy-tolerant", () => {
   // No direct read survives in the update rule itself…
   assert.doesNotMatch(update, /validLeadType\(request\.resource\.data\.leadType\)/)
   assert.doesNotMatch(update, /stageMatchesType\(request\.resource\.data\.leadType/)
+  // The lead type after the write is computed ONCE, legacy-tolerantly, by
+  // leadTypeAfterOf(d, r) and passed down as `lta`.
+  assert.match(update, /leadUpdateIsValid\(/)
+  assert.match(ruleFunction(RULES, "leadUpdateIsValid"), /leadTypeAfterOf\(d, r\), leadTypeBeforeOf\(r\)/)
   // Since the APC-compatible rules, the pipeline check runs only when the
   // write touches it, inside pipelineChangeIsValid().
-  assert.match(update, /pipelineChangeIsValid\(\)/)
+  assert.match(ruleFunction(RULES, "leadUpdateChecks"), /pipelineChangeIsValid\(ck, d, lta\)/)
   const pipeline = ruleFunction(RULES, "pipelineChangeIsValid")
-  assert.match(pipeline, /validLeadType\(leadTypeAfter\(\)\)/)
-  assert.match(pipeline, /stageMatchesType\(leadTypeAfter\(\), request\.resource\.data\.stage\)/)
+  assert.match(pipeline, /validLeadType\(lta\)/)
+  assert.match(pipeline, /stageMatchesType\(lta, d\.stage\)/)
   // …nor in the helpers the update path calls.
-  for (const fn of ["isWonNow", "closingInvariants", "customerLinkOnlyOnRealClose"]) {
+  for (const fn of ["leadUpdateChecks", "closingChangeIsValid", "closingInvariants", "customerLinkOnlyOnRealClose"]) {
     const body = ruleFunction(RULES, fn)
     assert.doesNotMatch(body, /request\.resource\.data\.leadType/, `${fn} still reads the field directly`)
+    assert.doesNotMatch(body, /\bd\.leadType\b/, `${fn} still reads the field directly`)
   }
 })
 
@@ -556,11 +568,11 @@ test("create stays strict: a new lead must declare its type", () => {
 })
 
 test("the default applies only when the field is ABSENT; an invalid value is still refused", () => {
-  const after = ruleFunction(RULES, "leadTypeAfter")
+  const after = ruleFunction(RULES, "leadTypeAfterOf")
   // The default now needs the field to be null/absent BEFORE and AFTER, so a
   // valid type cannot be nulled out and silently read as "sales".
   const run = (data, before = {}) =>
-    evaluate(after, { vars: { request: { resource: { data } }, resource: { data: before } }, methods })
+    evaluate(after, { vars: { d: data, r: before }, methods })
   assert.equal(run({ stage: "new_lead" }), "sales", "absent before and after → sales")
   assert.equal(run({ leadType: null }, { leadType: null }), "sales", "explicit null on a legacy doc → sales")
   assert.equal(run({ leadType: "recruiting" }), "recruiting", "present → itself")
@@ -597,9 +609,9 @@ test("a legacy lead now passes the two conditions that blocked every update", ()
 
 test("role and workspace restrictions are untouched by the legacy default", () => {
   const leadsBlock = RULES.slice(RULES.indexOf("match /leads/{leadId}"))
-  assert.match(leadsBlock, /isWsAdmin\(resource\.data\.workspaceId\)/)
-  assert.match(leadsBlock, /isWsRep\(resource\.data\.workspaceId\)\s*\n\s*&& resource\.data\.assignedToId == myUserId\(\)/)
-  assert.match(leadsBlock, /changedKeys\(\)\.hasOnly\(repEditableFields\(\)\)/)
+  assert.match(leadsBlock, /sa \|\| isWsAdmin\(r\.workspaceId\)/)
+  assert.match(leadsBlock, /adm\s*\n(\s*\/\/[^\n]*\n)*\s*\|\| \(isWsRep\(r\.workspaceId\)\s*\n\s*&& r\.assignedToId == myUserId\(\)/)
+  assert.match(leadsBlock, /ck\.hasOnly\(repEditableFields\(\)\)/)
 })
 
 test("the scheduling copy no longer contradicts Fase 3", () => {
