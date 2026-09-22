@@ -37,7 +37,7 @@ const RULES = readFileSync(join(root, "firestore.rules"), "utf8")
 /** Rules published in production when the incident was reproduced (DENIED). */
 const PUBLISHED_RULES_SHA256 = "f7b7941282cd1e12e50433e7c05260fb41f9acf6582a2e7d55b5158374f4eb03"
 /** Rules of this branch (the refactor under test). */
-const BRANCH_RULES_SHA256 = "080e3b516f633fcb33e7e0b1c82d3eb1b84d768a8a27a96a4fb38810d5eaf285"
+const BRANCH_RULES_SHA256 = "ad72932a18e316949751ac3643e91f20e7f0a3909b602bf525f5b62c7effeb6c"
 
 /** `emulators:exec --project X` exports X; single-project mode expects it. */
 const PROJECT_ID = process.env.GCLOUD_PROJECT || "demo-royal-sales-ia"
