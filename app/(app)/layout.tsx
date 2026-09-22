@@ -12,7 +12,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <RequireAuth>
       <WorkspaceProvider>
-      <DiagOverlay />
+      <DiagOverlay mount="layout" />
       <SidebarProvider>
         <AppSidebar />
         <SidebarInset>
