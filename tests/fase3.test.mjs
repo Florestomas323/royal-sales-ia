@@ -280,7 +280,13 @@ function attribution({ campaignId, campaignName = "", source = "manual", campaig
       r: { workspaceId: leadWorkspace },
       d: { campaignId, campaignName, attributionSource: source },
     },
-    fns: { exists: () => exists, attributedCampaign: () => campaign },
+    fns: {
+      exists: () => exists,
+      attributedCampaign: () => campaign,
+      // c = the attributed campaign, read once; same body as in the Rules.
+      campaignMatches: (d, r, c) =>
+        evaluate(ruleFunction(RULES, "campaignMatches"), { vars: { d, r, c } }),
+    },
   })
 }
 
@@ -311,13 +317,11 @@ test("Telemarketing cannot touch attribution: not in the whitelist, and the rule
   const wl = RULES.match(/function repEditableFields\(\) \{[\s\S]*?\]/)[0]
   for (const f of ["campaignId", "campaignName", "attributionSource"]) assert.ok(!wl.includes(`'${f}'`), f)
   const leadsBlock = RULES.slice(RULES.indexOf("match /leads/{leadId}"))
-  assert.match(leadsBlock, /!attributionChanges\(ck\)\s*\|\| \(adm && manualAttributionIsValid\(d, r\)\)/)
-  // `adm` IS isSuperAdmin() || isWsAdmin(lead workspace), bound once — the
-  // exact expression this branch used to repeat inline.
-  assert.match(leadsBlock, /function leadUpdateIsValid\(ck, d, r, sa\)/)
-  assert.match(ruleFunction(RULES, "leadUpdateIsValid"), /sa \|\| isWsAdmin\(r\.workspaceId\)/)
-  assert.match(leadsBlock, /function leadUpdateChecks\(ck, d, r, adm, lta, ltb\)/)
-  assert.match(leadsBlock, /allow update: if leadUpdateIsValid\(\s*request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\),\s*request\.resource\.data,\s*resource\.data,\s*isSuperAdmin\(\)\s*\);/)
+  assert.match(leadsBlock, /!attributionChanges\(ck\) \|\| \(adm && manualAttributionIsValid\(d, r\)\)/)
+  // `adm` IS isSuperAdmin() || isWsAdmin(lead workspace), computed once from
+  // the caller's membership `m` — see the mirror test below.
+  assert.match(leadsBlock, /function leadUpdateChecks\(ck, d, r, adm, rep, lta\)/)
+  assert.match(leadsBlock, /allow update: if hasMembership\(\)\s*&& leadUpdateIsValid\(\s*request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\),\s*request\.resource\.data,\s*resource\.data,\s*me\(\)\);/)
 })
 
 test("attributionSource is typed: absent on legacy, or meta / manual / web", () => {
@@ -432,8 +436,10 @@ test("attributionSource: absent is legacy-valid, null is not a value", () => {
 })
 
 test("the workspace isolation of manual attribution is untouched", () => {
-  assert.match(RULES, /attributedCampaign\(d\)\.workspaceId == r\.workspaceId/)
-  assert.match(RULES, /d\.get\('campaignName', ''\) == attributedCampaign\(d\)\.name/)
+  assert.match(RULES, /campaignMatches\(d, r, attributedCampaign\(d\)\)/)
+  const match = ruleFunction(RULES, "campaignMatches")
+  assert.match(match, /c\.workspaceId == r\.workspaceId/)
+  assert.match(match, /d\.get\('campaignName', ''\) == c\.name/)
   assert.match(RULES, /get\(\/databases\/\$\(database\)\/documents\/campaigns\/\$\(d\.campaignId\)\)\.data/)
 })
 
@@ -524,7 +530,7 @@ test("only an admin may correct the channel; Telemarketing cannot", () => {
 })
 
 test("workspace isolation of attribution is untouched by the channel change", () => {
-  assert.match(RULES, /attributedCampaign\(d\)\.workspaceId == r\.workspaceId/)
+  assert.match(ruleFunction(RULES, "campaignMatches"), /c\.workspaceId == r\.workspaceId/)
 })
 
 /* ========== V5: prospectos sin leadType (compatibilidad legacy) ========== */
@@ -545,7 +551,8 @@ test("every leadType read on the UPDATE path is legacy-tolerant", () => {
   // The lead type after the write is computed ONCE, legacy-tolerantly, by
   // leadTypeAfterOf(d, r) and passed down as `lta`.
   assert.match(update, /leadUpdateIsValid\(/)
-  assert.match(ruleFunction(RULES, "leadUpdateIsValid"), /leadTypeAfterOf\(d, r\), leadTypeBeforeOf\(r\)/)
+  assert.match(ruleFunction(RULES, "leadUpdateIsValid"), /leadTypeAfterOf\(d, r\)/)
+  assert.match(ruleFunction(RULES, "closingChangeIsValid"), /leadTypeBeforeOf\(r\)/)
   // Since the APC-compatible rules, the pipeline check runs only when the
   // write touches it, inside pipelineChangeIsValid().
   assert.match(ruleFunction(RULES, "leadUpdateChecks"), /pipelineChangeIsValid\(ck, d, lta\)/)
@@ -553,7 +560,7 @@ test("every leadType read on the UPDATE path is legacy-tolerant", () => {
   assert.match(pipeline, /validLeadType\(lta\)/)
   assert.match(pipeline, /stageMatchesType\(lta, d\.stage\)/)
   // …nor in the helpers the update path calls.
-  for (const fn of ["leadUpdateChecks", "closingChangeIsValid", "closingInvariants", "customerLinkOnlyOnRealClose"]) {
+  for (const fn of ["leadUpdateChecks", "closingChangeIsValid", "closingInvariants", "customerLinkIsValid"]) {
     const body = ruleFunction(RULES, fn)
     assert.doesNotMatch(body, /request\.resource\.data\.leadType/, `${fn} still reads the field directly`)
     assert.doesNotMatch(body, /\bd\.leadType\b/, `${fn} still reads the field directly`)
@@ -609,9 +616,29 @@ test("a legacy lead now passes the two conditions that blocked every update", ()
 
 test("role and workspace restrictions are untouched by the legacy default", () => {
   const leadsBlock = RULES.slice(RULES.indexOf("match /leads/{leadId}"))
-  assert.match(leadsBlock, /sa \|\| isWsAdmin\(r\.workspaceId\)/)
-  assert.match(leadsBlock, /adm\s*\n(\s*\/\/[^\n]*\n)*\s*\|\| \(isWsRep\(r\.workspaceId\)\s*\n\s*&& r\.assignedToId == myUserId\(\)/)
-  assert.match(leadsBlock, /ck\.hasOnly\(repEditableFields\(\)\)/)
+  // Who may write: an admin (adm), or the assigned rep (rep) through the whitelist.
+  assert.match(ruleFunction(RULES, "leadUpdateChecks"), /\(adm \|\| \(rep && ck\.hasOnly\(repEditableFields\(\)\)\)\)/)
+  const upd = ruleFunction(RULES, "leadUpdateIsValid")
+  // adm = isSuperAdmin() || isWsAdmin(r.workspaceId)
+  assert.match(upd, /m\.role == 'super_admin'\s*\|\| \(m\.role in \['client_admin', 'manager'\] && leadCallerInWorkspace\(m, r\)\)/)
+  // rep = isWsRep(r.workspaceId) && r.assignedToId == myUserId()
+  assert.match(upd, /m\.role == 'sales_rep' && leadCallerInWorkspace\(m, r\) && r\.assignedToId == m\.userId/)
+})
+
+test("the leads update identity checks mirror the global helpers exactly", () => {
+  // If any of these global helpers changes, leadCallerInWorkspace() and the
+  // adm / rep expressions in leadUpdateIsValid() must change with it.
+  const body = (n) => ruleFunction(RULES, n).replace(/\s+/g, " ").trim()
+  assert.equal(body("isSuperAdmin"), "hasMembership() && role() == 'super_admin'")
+  assert.equal(body("inWorkspace"), "hasMembership() && ws is string && myWorkspace() == ws && membershipIsActive()")
+  assert.equal(body("isWsAdmin"), "inWorkspace(ws) && role() in ['client_admin', 'manager']")
+  assert.equal(body("isWsRep"), "inWorkspace(ws) && role() == 'sales_rep'")
+  assert.equal(body("membershipIsActive"), "me().get('status', 'active') == 'active'")
+  assert.equal(body("myWorkspace"), "me().workspaceId")
+  assert.equal(body("myUserId"), "me().userId")
+  // …and the mirror, with ws = r.workspaceId and hasMembership() established by allow update:
+  assert.equal(body("leadCallerInWorkspace"),
+    "r.workspaceId is string && m.workspaceId == r.workspaceId && m.get('status', 'active') == 'active'")
 })
 
 test("the scheduling copy no longer contradicts Fase 3", () => {

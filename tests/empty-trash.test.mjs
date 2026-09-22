@@ -504,7 +504,7 @@ test("los campos de purga son server-only en las reglas", () => {
   assert.match(rules, /!ck\.hasAny\(\['purgeClaimId', 'purgeClaimedAt', 'purgeState'\]\)/)
   const leadsBlock = rules.slice(rules.indexOf("match /leads/{leadId}"), rules.indexOf("match /leads/{leadId}/activities"))
   assert.match(leadsBlock, /&& purgeFieldsUntouched\(ck\)/)
-  assert.match(leadsBlock, /allow update: if leadUpdateIsValid\(\s*request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\)/)
+  assert.match(leadsBlock, /allow update: if hasMembership\(\)\s*&& leadUpdateIsValid\(\s*request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\)/)
   // Tampoco pueden nacer con el lead.
   assert.match(leadsBlock, /hasAny\(\['purgeClaimId', 'purgeClaimedAt', 'purgeState'\]\)/)
 })
