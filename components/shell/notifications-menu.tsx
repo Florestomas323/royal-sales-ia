@@ -22,7 +22,12 @@ import {
 import { useWorkspace } from "@/lib/firebase/workspace-context"
 import { useLeads } from "@/lib/firebase/leads"
 import { isActiveLead } from "@/lib/leads"
-import { dedupeNotifications, unreadCount, type LogicalNotification } from "@/lib/notifications"
+import {
+  notificationsPending,
+  unreadCount,
+  visibleNotifications,
+  type LogicalNotification,
+} from "@/lib/notifications"
 import { toast } from "sonner"
 import { describeError } from "@/lib/firebase/errors"
 import { formatRelativeTime } from "@/lib/format"
@@ -39,7 +44,7 @@ export function NotificationsMenu() {
   const router = useRouter()
   const { membership, isSuperAdmin, workspaceId, workspaces } = useWorkspace()
   const { leads, loading: leadsLoading } = useLeads("all")
-  const { items, error } = useNotifications({
+  const { items, loading: notificationsLoading, error } = useNotifications({
     userId: membership?.userId ?? null,
     isSuperAdmin,
     workspaceId,
@@ -73,22 +78,47 @@ export function NotificationsMenu() {
    * somebody else's document, and a distributor's read state is not theirs.
    */
   const [receipts, setReceipts] = useState<ReadonlySet<string>>(new Set())
+  /**
+   * Until this is true, a super admin's receipts are unknown — NOT "none".
+   * Treating the empty initial set as the answer made every event look
+   * unread for the few frames between the first snapshot and the fetch, which
+   * is what made the badge flash a large number.
+   */
+  const [receiptsLoaded, setReceiptsLoaded] = useState(false)
+  /**
+   * Receipts belong to ONE person: a different super admin (same role, other
+   * account) must never inherit them, so the fetch is keyed by identity, not
+   * only by role. And the reset happens before the role check, so switching
+   * to a member also drops whatever was held.
+   */
+  const identityKey = `${membership?.userId ?? ""}|${membership?.role ?? ""}|${isSuperAdmin ? "super" : "member"}`
   useEffect(() => {
+    setReceipts((prev) => (prev.size === 0 ? prev : new Set()))
+    setReceiptsLoaded(false)
     if (!isSuperAdmin) return
     let cancelled = false
-    void fetchReadReceipts().then((keys) => { if (!cancelled) setReceipts(keys) })
+    void fetchReadReceipts().then((keys) => {
+      if (cancelled) return
+      setReceipts(keys)
+      setReceiptsLoaded(true)
+    })
     return () => { cancelled = true }
-  }, [isSuperAdmin])
+  }, [isSuperAdmin, identityKey])
 
+  /** Leads, notifications and (for a super admin) receipts must all be in. */
+  const pending = notificationsPending({ isSuperAdmin, leadsLoading, notificationsLoading, receiptsLoaded })
   const live = useMemo(
     () =>
-      leadsLoading
-        ? []
-        : dedupeNotifications(
-            items.filter((n) => !archivedLeadIds.has(n.leadId)),
-            { byEvent: isSuperAdmin, readKeys: receipts },
-          ),
-    [items, archivedLeadIds, leadsLoading, isSuperAdmin, receipts],
+      visibleNotifications({
+        items,
+        archivedLeadIds,
+        isSuperAdmin,
+        readKeys: receipts,
+        leadsLoading,
+        notificationsLoading,
+        receiptsLoaded,
+      }),
+    [items, archivedLeadIds, isSuperAdmin, receipts, leadsLoading, notificationsLoading, receiptsLoaded],
   )
   const unread = useMemo(() => unreadCount(live), [live])
   const recent = useMemo(() => live.slice(0, 30), [live])
@@ -166,6 +196,10 @@ export function NotificationsMenu() {
         <DropdownMenuSeparator className="my-0" />
         {error ? (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">{t.notifications.loadError}</p>
+        ) : pending ? (
+          // Never "no hay notificaciones", and never a row marked unread on
+          // an unknown receipt: the menu waits with the rest.
+          <p className="px-3 py-6 text-center text-sm text-muted-foreground">{t.common.loading}</p>
         ) : recent.length === 0 ? (
           <div className="flex flex-col gap-1 px-3 py-6 text-center">
             <span className="text-sm font-medium">{t.notifications.emptyTitle}</span>
