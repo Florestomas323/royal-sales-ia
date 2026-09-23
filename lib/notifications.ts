@@ -144,6 +144,83 @@ export function dedupeNotifications(
   return sortNotifications(rows) as LogicalNotification[]
 }
 
+/* ------------------------------------------------------- what the bell shows */
+
+/**
+ * Identity of the query the bell SHOULD be showing. A member reads their own
+ * documents; a super admin reads a workspace's (or every one of them).
+ */
+export function notificationsQueryKey(input: {
+  userId: string | null
+  isSuperAdmin: boolean
+  workspaceId: string | null
+}): string {
+  return input.isSuperAdmin ? `super|${input.workspaceId ?? "all"}` : `user|${input.userId ?? ""}`
+}
+
+/** Stable empty array: a new one per render would churn every memo downstream. */
+const NO_NOTIFICATIONS: AppNotification[] = []
+
+/**
+ * What the hook may expose, given what is currently LOADED and what is now
+ * being asked for.
+ *
+ * The check is made while rendering, not inside an effect: effects run AFTER
+ * the render, so between a workspace switch and the new listener there was
+ * one render still holding the previous query's documents with loading
+ * already false — the badge showed the old workspace's number. Comparing the
+ * loaded key with the requested one removes that window entirely.
+ */
+export function selectNotifications(
+  loaded: { key: string; items: AppNotification[] },
+  key: string,
+): { items: AppNotification[]; loading: boolean } {
+  const fresh = loaded.key === key
+  return { items: fresh ? loaded.items : NO_NOTIFICATIONS, loading: !fresh }
+}
+
+export interface NotificationViewInput {
+  items: AppNotification[]
+  /** Leads in the trash: their notifications are hidden, as before. */
+  archivedLeadIds: ReadonlySet<string>
+  isSuperAdmin: boolean
+  /** A super admin's read receipts; ignored for a member. */
+  readKeys: ReadonlySet<string>
+  leadsLoading: boolean
+  notificationsLoading: boolean
+  /** Super admin: false until fetchReadReceipts() has resolved. */
+  receiptsLoaded: boolean
+}
+
+/**
+ * True while any input the bell depends on is still loading.
+ *
+ * The badge flickered because the receipts were NOT one of those inputs: the
+ * notifications arrived first, the receipt set was still empty, so every
+ * event looked unread and the badge showed a large number for a few frames
+ * before dropping to the real one. The same applies to a workspace switch,
+ * where the previous listener's documents are still in state.
+ */
+export function notificationsPending(
+  input: Pick<NotificationViewInput, "isSuperAdmin" | "leadsLoading" | "notificationsLoading" | "receiptsLoaded">,
+): boolean {
+  return input.leadsLoading
+    || input.notificationsLoading
+    || (input.isSuperAdmin && !input.receiptsLoaded)
+}
+
+/**
+ * The rows the menu and the badge may use. Empty while anything is pending —
+ * no provisional count, no false unread — and the usual dedupe afterwards.
+ */
+export function visibleNotifications(input: NotificationViewInput): LogicalNotification[] {
+  if (notificationsPending(input)) return []
+  return dedupeNotifications(
+    input.items.filter((n) => !input.archivedLeadIds.has(n.leadId)),
+    { byEvent: input.isSuperAdmin, readKeys: input.readKeys },
+  )
+}
+
 export function buildNotification(
   lead: Pick<Lead, "id" | "workspaceId" | "leadType" | "name" | "source">,
   form: string | null | undefined,
