@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { collection, doc, onSnapshot, query, where, writeBatch } from "firebase/firestore"
 import { db } from "./client"
-import { NOTIFICATIONS, sortNotifications } from "@/lib/notifications"
+import { NOTIFICATIONS, notificationsQueryKey, selectNotifications, sortNotifications } from "@/lib/notifications"
 import type { AppNotification } from "@/types"
 
 const col = collection(db, NOTIFICATIONS)
@@ -21,30 +21,43 @@ export function useNotifications(input: {
   isSuperAdmin: boolean
   workspaceId: string | null
 }) {
-  const [items, setItems] = useState<AppNotification[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
+  /**
+   * The documents are stored together with the query they came from, and what
+   * the hook exposes is DERIVED from comparing that key with the one being
+   * asked for right now. Clearing state inside the effect was not enough: an
+   * effect runs after the render, so a workspace switch still had one render
+   * exposing the previous listener's items with loading already false.
+   */
+  const key = notificationsQueryKey(input)
+  const [loaded, setLoaded] = useState<{ key: string; items: AppNotification[] }>({ key: "", items: [] })
+  const [failure, setFailure] = useState<{ key: string; error: Error } | null>(null)
 
   useEffect(() => {
     const filters = input.isSuperAdmin
       ? (input.workspaceId ? [where("workspaceId", "==", input.workspaceId)] : [])
       : input.userId ? [where("userId", "==", input.userId)] : null
+    // Nothing to listen to (no identity yet): that IS the answer for this key.
     if (!filters) {
-      setItems([]); setLoading(false)
+      setLoaded({ key, items: [] })
       return
     }
-    setLoading(true)
     return onSnapshot(
       query(col, ...filters),
       (snap) => {
-        setItems(sortNotifications(snap.docs.map((d) => ({ ...(d.data() as Omit<AppNotification, "id">), id: d.id }))))
-        setLoading(false); setError(null)
+        setLoaded({
+          key,
+          items: sortNotifications(snap.docs.map((d) => ({ ...(d.data() as Omit<AppNotification, "id">), id: d.id }))),
+        })
+        setFailure(null)
       },
-      (err) => { setError(err); setLoading(false) },
+      // A failed query answers the key too: empty, with the error surfaced —
+      // never the previous query's documents.
+      (err) => { setFailure({ key, error: err }); setLoaded({ key, items: [] }) },
     )
-  }, [input.userId, input.isSuperAdmin, input.workspaceId])
+  }, [key, input.userId, input.isSuperAdmin, input.workspaceId])
 
-  return { items, loading, error }
+  const { items, loading } = selectNotifications(loaded, key)
+  return { items, loading, error: failure?.key === key ? failure.error : null }
 }
 
 /**
