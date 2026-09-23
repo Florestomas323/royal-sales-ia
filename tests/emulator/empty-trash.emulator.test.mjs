@@ -13,8 +13,35 @@
  */
 import test from "node:test"
 import assert from "node:assert/strict"
+import Module from "node:module"
+import { existsSync } from "node:fs"
+import { fileURLToPath } from "node:url"
+import { dirname, join } from "node:path"
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing"
 import { collection, doc, getDoc, getDocs, setDoc, query, where } from "firebase/firestore"
+
+/*
+ * The helper under test is TypeScript, compiled to .test-build by
+ * `tsc -p tsconfig.test.json` (the first half of `pnpm test`). The compiled
+ * CommonJS still requires the app's `@/…` path alias, which Node does not
+ * know — so it is resolved to .test-build here, exactly as
+ * tests/empty-trash.test.mjs does. Unlike that unit test, NOTHING is stubbed:
+ * firebase-admin is the real SDK, pointed at the emulator.
+ */
+const root = join(dirname(fileURLToPath(import.meta.url)), "../..")
+const build = join(root, ".test-build")
+if (!existsSync(join(build, "lib/leads/empty-trash-server.js"))) {
+  throw new Error("Missing .test-build: run `pnpm exec tsc -p tsconfig.test.json` before the emulator suite.")
+}
+const resolveOriginal = Module._resolveFilename
+Module._resolveFilename = function (request, ...rest) {
+  if (request.startsWith("@/")) {
+    for (const c of [`${build}/${request.slice(2)}.js`, `${build}/${request.slice(2)}/index.js`]) {
+      try { return resolveOriginal.call(this, c, ...rest) } catch { /* next */ }
+    }
+  }
+  return resolveOriginal.call(this, request, ...rest)
+}
 
 const WS = "ws-APC"
 const OTHER = "ws-otro"
@@ -67,7 +94,7 @@ async function seed(db, leads) {
  * It expects an Admin-SDK-shaped Firestore, which the emulator provides
  * through firebase-admin pointed at FIRESTORE_EMULATOR_HOST.
  */
-const { emptyWorkspaceTrash } = await import("../../.test-build/lib/leads/empty-trash-server.js")
+const { emptyWorkspaceTrash } = await import(join(build, "lib/leads/empty-trash-server.js"))
 
 test("6-7. only archived prospects are deleted; active ones survive untouched", async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {

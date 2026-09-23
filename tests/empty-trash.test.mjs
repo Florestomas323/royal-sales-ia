@@ -19,6 +19,7 @@ import { createRequire } from "node:module"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
+import { ruleFunction } from "./helpers/cel.mjs"
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 const build = join(root, ".test-build")
@@ -499,10 +500,11 @@ test("el selector de campañas se liga al workspace DEL PROSPECTO, no al activo"
 
 test("los campos de purga son server-only en las reglas", () => {
   const rules = readFileSync(join(root, "firestore.rules"), "utf8")
-  assert.match(rules, /function purgeFieldsUntouched\(\)/)
-  assert.match(rules, /!changedKeys\(\)\.hasAny\(\['purgeClaimId', 'purgeClaimedAt', 'purgeState'\]\)/)
+  // purgeFieldsUntouched, inlined in the update checks over `ck` — the
+  // affected-key set computed ONCE in allow update.
   const leadsBlock = rules.slice(rules.indexOf("match /leads/{leadId}"), rules.indexOf("match /leads/{leadId}/activities"))
-  assert.match(leadsBlock, /&& purgeFieldsUntouched\(\)/)
+  assert.match(ruleFunction(rules, "leadUpdateChecks"), /&& !ck\.hasAny\(\['purgeClaimId', 'purgeClaimedAt', 'purgeState'\]\)/)
+  assert.match(leadsBlock, /allow update: if request\.auth != null[\s\S]*?&& leadUpdateIsValid\(\s*request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\)/)
   // Tampoco pueden nacer con el lead.
   assert.match(leadsBlock, /hasAny\(\['purgeClaimId', 'purgeClaimedAt', 'purgeState'\]\)/)
 })
@@ -617,7 +619,10 @@ test("markPurging devuelve un resultado explícito y condiciona el borrado", () 
 test("1b. los TRES campos de purga están prohibidos en create y update", () => {
   const rules = readFileSync(join(root, "firestore.rules"), "utf8")
   const leadsBlock = rules.slice(rules.indexOf("match /leads/{leadId}"), rules.indexOf("match /leads/{leadId}/activities"))
-  const untouched = leadsBlock.slice(leadsBlock.indexOf("function purgeFieldsUntouched"), leadsBlock.indexOf("function purgeFieldsUntouched") + 200)
+  // Raw text (the marker is a comment): the inlined purgeFieldsUntouched check.
+  const at = leadsBlock.indexOf("// purgeFieldsUntouched:")
+  assert.ok(at > 0)
+  const untouched = leadsBlock.slice(at, at + 200)
   const createBan = leadsBlock.slice(leadsBlock.indexOf("Purge bookkeeping is server-only"))
   for (const field of ["purgeClaimId", "purgeClaimedAt", "purgeState"]) {
     assert.ok(untouched.includes(`'${field}'`), `${field} debe estar en purgeFieldsUntouched`)

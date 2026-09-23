@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
+import { ruleFunction } from "./helpers/cel.mjs"
 import { createRequire } from "node:module"
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
@@ -472,16 +473,15 @@ test("1. un parcial con cero eliminados NO dice «ya está vacía» y deja el mo
 
 test("2. las reglas impiden restaurar mientras la purga tiene reclamo", () => {
   const rules = read("firestore.rules")
-  assert.match(rules, /function purgeClaimHeld\(\)/)
-  assert.match(rules, /resource\.data\.get\('purgeClaimId', null\) != null/)
-  assert.match(rules, /function notRestoringDuringPurge\(\)/)
-  // Y la condición se aplica de verdad en el allow update de leads.
-  const leadsBlock = rules.slice(rules.indexOf("match /leads/{leadId}"), rules.indexOf("match /leads/{leadId}/activities"))
-  assert.match(leadsBlock, /&& notRestoringDuringPurge\(\)/)
+  // `r` = resource.data y `d` = request.resource.data, calculados una vez en allow update.
+  // notRestoringDuringPurge, en línea en el update: si se está desarchivando
+  // (archivado antes, no archivado después) no puede haber reclamo de purga.
   // Solo bloquea el desarchivado; el resto del documento sigue editable.
-  const fn = rules.slice(rules.indexOf("function unarchivingNow()"), rules.indexOf("function notRestoringDuringPurge()"))
-  assert.match(fn, /resource\.data\.get\('archived', false\) == true/)
-  assert.match(fn, /request\.resource\.data\.get\('archived', false\) != true/)
+  const fn = ruleFunction(rules, "leadUpdateChecks")
+  assert.match(fn, /\(\(r\.get\('archived', false\) == true && d\.get\('archived', false\) != true\)\s*\? r\.get\('purgeClaimId', null\) == null\s*: true\)/)
+  // Y los valores `d` y `r` son los documentos reales, pasados desde allow update.
+  const leadsBlock = rules.slice(rules.indexOf("match /leads/{leadId}"), rules.indexOf("match /leads/{leadId}/activities"))
+  assert.match(leadsBlock, /request\.resource\.data,\s*resource\.data,\s*get\(\/databases\/\$\(database\)\/documents\/memberships\/\$\(request\.auth\.uid\)\)\.data\);/)
 })
 
 test("5. la ruta propaga los contadores acumulados cuando la purga se corta", () => {
