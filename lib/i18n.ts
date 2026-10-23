@@ -692,6 +692,7 @@ export const t = {
         manager: 'Asistente',
         sales_rep: 'Telemarketing',
         viewer: 'Solo lectura',
+        integration: 'Sofía (WhatsApp)',
       },
       addNote: 'Agregar nota',
       notePlaceholder: 'Escribe una nota interna sobre este prospecto…',
